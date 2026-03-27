@@ -1,0 +1,383 @@
+use serde::{Deserialize, Serialize};
+
+// --- LCU connection ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LcuCredentials {
+    pub port: u16,
+    pub password: String,
+}
+
+// --- App state emitted to frontend ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionStatus {
+    Disconnected,
+    Connected,
+    ChampSelect,
+    InGame,
+    PostGame,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftPlayer {
+    pub champion_id: i64,
+    pub position: String,
+    pub is_local: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftState {
+    pub allies: Vec<DraftPlayer>,
+    pub enemies: Vec<DraftPlayer>,
+    pub bans: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PickRecommendation {
+    pub champion_id: i64,
+    pub score: f64,
+    pub win_rate: f64,
+    pub counters_count: i32,  // how many enemies this pick counters
+    pub synergies_count: i32, // how many allies this pick synergizes with
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppState {
+    pub status: ConnectionStatus,
+    pub summoner_name: Option<String>,
+    #[serde(skip)]
+    pub summoner_id: Option<i64>,
+    pub champion_id: Option<i64>,
+    pub champion_name: Option<String>,
+    pub assigned_position: Option<String>,
+    pub build: Option<ChampionBuild>,
+    pub build_alternatives: Option<BuildAlternatives>,
+    pub counters: std::collections::HashMap<String, f64>,
+    pub draft: Option<DraftState>,
+    pub recommendations: Vec<PickRecommendation>,
+    pub match_history: Vec<MatchHistoryEntry>,
+    pub live_game: Option<LiveGameState>,
+    pub post_game: Option<PostGameStats>,
+    pub game_mode: String,
+    pub auto_apply: bool,
+    pub region: String,
+}
+
+// --- Post-game stats ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostGameStats {
+    pub teams: Vec<PostGameTeam>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostGameTeam {
+    pub is_winner: bool,
+    pub players: Vec<PostGamePlayer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostGamePlayer {
+    pub champion_id: i64,
+    pub summoner_name: String,
+    pub position: String,
+    pub is_local: bool,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub total_damage: i64,
+    pub gold_earned: i64,
+    pub items: Vec<i64>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            status: ConnectionStatus::Disconnected,
+            summoner_name: None,
+            summoner_id: None,
+            champion_id: None,
+            champion_name: None,
+            assigned_position: None,
+            build: None,
+            build_alternatives: None,
+            counters: std::collections::HashMap::new(),
+            draft: None,
+            recommendations: vec![],
+            match_history: vec![],
+            live_game: None,
+            post_game: None,
+            game_mode: "classic".to_string(),
+            auto_apply: true,
+            region: "euw".to_string(),
+        }
+    }
+}
+
+// --- Champ select session (LCU) ---
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampSelectSession {
+    pub local_player_cell_id: i64,
+    pub my_team: Vec<ChampSelectPlayer>,
+    #[serde(default)]
+    pub their_team: Vec<ChampSelectPlayer>,
+    pub actions: Vec<Vec<ChampSelectAction>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampSelectPlayer {
+    pub cell_id: i64,
+    pub champion_id: i64,
+    #[allow(dead_code)]
+    pub spell1_id: i64,
+    #[allow(dead_code)]
+    pub spell2_id: i64,
+    pub assigned_position: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampSelectAction {
+    pub actor_cell_id: i64,
+    pub champion_id: i64,
+    #[serde(rename = "type")]
+    pub action_type: String,
+    pub completed: bool,
+}
+
+// --- OP.GG API responses ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggResponse {
+    pub data: OpggChampionData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggChampionData {
+    #[serde(default)]
+    pub runes: Vec<OpggRune>,
+    #[serde(default)]
+    pub core_items: Vec<OpggCoreItems>,
+    #[serde(default)]
+    pub starter_items: Vec<OpggStarterItems>,
+    #[serde(default)]
+    pub boots: Vec<OpggBoots>,
+    #[serde(default)]
+    pub summoner_spells: Vec<OpggSummonerSpells>,
+    #[serde(default)]
+    pub skill_masteries: Vec<OpggSkillMastery>,
+    #[serde(default)]
+    pub counters: Vec<OpggCounter>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggRune {
+    pub id: i64,
+    pub primary_page_id: i64,
+    pub primary_rune_ids: Vec<i64>,
+    pub secondary_page_id: i64,
+    pub secondary_rune_ids: Vec<i64>,
+    pub stat_mod_ids: Vec<i64>,
+    pub play: i64,
+    pub win: i64,
+    pub pick_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggCoreItems {
+    pub ids: Vec<i64>,
+    pub play: i64,
+    pub win: i64,
+    pub pick_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggStarterItems {
+    pub ids: Vec<i64>,
+    pub play: i64,
+    pub win: i64,
+    pub pick_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggBoots {
+    pub ids: Vec<i64>,
+    pub play: i64,
+    pub win: i64,
+    pub pick_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggSummonerSpells {
+    pub ids: Vec<i64>,
+    pub play: i64,
+    pub win: i64,
+    pub pick_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggSkillMastery {
+    pub ids: Vec<String>,
+    pub play: i64,
+    pub win: i64,
+    pub pick_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggCounter {
+    pub champion_id: i64,
+    pub play: i64,
+    pub win: i64,
+}
+
+// --- OP.GG tier list ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggTierListResponse {
+    pub data: Vec<OpggTierChampion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggTierChampion {
+    pub id: i64,
+    pub average_stats: OpggAverageStats,
+    pub positions: Vec<OpggPositionStats>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggAverageStats {
+    pub win_rate: f64,
+    pub pick_rate: f64,
+    pub ban_rate: f64,
+    #[serde(default)]
+    pub tier: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggPositionStats {
+    pub name: String,
+    pub stats: OpggPositionWinRate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggPositionWinRate {
+    pub win_rate: f64,
+    pub pick_rate: f64,
+    #[serde(default)]
+    pub tier: i64,
+}
+
+// --- Build recommendation (sent to frontend) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChampionBuild {
+    pub runes: Option<RuneBuild>,
+    pub summoner_spells: Option<[i64; 2]>,
+    pub starter_items: Vec<i64>,
+    pub core_items: Vec<i64>,
+    pub boots: Vec<i64>,
+    pub skill_order: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuneBuild {
+    pub primary_style_id: i64,
+    pub sub_style_id: i64,
+    pub selected_perk_ids: Vec<i64>,
+}
+
+// --- Build alternatives ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildAlternatives {
+    pub runes: Vec<RuneOption>,
+    pub summoner_spells: Vec<SpellOption>,
+    pub core_items: Vec<ItemOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuneOption {
+    pub build: RuneBuild,
+    pub win_rate: f64,
+    pub pick_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpellOption {
+    pub ids: [i64; 2],
+    pub win_rate: f64,
+    pub pick_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ItemOption {
+    pub ids: Vec<i64>,
+    pub win_rate: f64,
+    pub pick_rate: f64,
+}
+
+// --- Fetch result from OP.GG (internal) ---
+
+pub struct ChampionFetchResult {
+    pub build: ChampionBuild,
+    pub counters: std::collections::HashMap<i64, f64>,
+    pub alternatives: BuildAlternatives,
+}
+
+// --- LCU rune page ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LcuRunePage {
+    pub id: Option<i64>,
+    pub name: String,
+    pub primary_style_id: i64,
+    pub sub_style_id: i64,
+    pub selected_perk_ids: Vec<i64>,
+    pub current: bool,
+}
+
+// --- Summoner ---
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LcuSummoner {
+    pub display_name: Option<String>,
+    pub game_name: Option<String>,
+    #[allow(dead_code)]
+    pub summoner_id: Option<i64>,
+}
+
+// --- Match history ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchHistoryEntry {
+    pub champion_id: i64,
+    pub game_mode: String,
+    pub win: bool,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub duration_secs: i64,
+    pub timestamp: i64, // epoch ms
+}
+
+// --- Live game ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiveGameState {
+    pub queue_name: String,
+    pub allies: Vec<LiveGamePlayer>,
+    pub enemies: Vec<LiveGamePlayer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiveGamePlayer {
+    pub champion_id: i64,
+    pub summoner_name: String,
+}
