@@ -10,6 +10,17 @@ use tokio::sync::Mutex;
 
 type SharedState = Arc<Mutex<AppState>>;
 
+fn notify(title: &str, body: &str) {
+    let _ = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(format!(
+            "display notification \"{}\" with title \"{}\"",
+            body.replace('"', "\\\""),
+            title.replace('"', "\\\"")
+        ))
+        .spawn();
+}
+
 fn map_position(pos: &str) -> &'static str {
     match pos {
         "top" => "top",
@@ -70,9 +81,12 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
                     s.status = ConnectionStatus::Connected;
                     s.summoner_name = summoner.game_name.or(summoner.display_name);
                     s.summoner_id = summoner.summoner_id;
-                    // Fetch match history
+                    // Fetch match history and ranked stats
                     if let Ok(history) = lcu::get_match_history(&creds).await {
                         s.match_history = history;
+                    }
+                    if let Ok(ranked) = lcu::get_ranked_stats(&creds).await {
+                        s.ranked = Some(ranked);
                     }
                     let _ = app_handle.emit("app-state-changed", s.clone());
                     log::info!("Connected to LCU");
@@ -102,7 +116,10 @@ async fn poll_loop(
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
         let phase = match lcu::get_gameflow_phase(&creds).await {
-            Ok(p) => p,
+            Ok(p) => {
+                log::debug!("Phase: {}", p);
+                p
+            }
             Err(_) => {
                 let mut s = state.lock().await;
                 s.status = ConnectionStatus::Disconnected;
@@ -118,17 +135,23 @@ async fn poll_loop(
         };
 
         if phase == "ChampSelect" {
-            // Detect game mode (ARAM vs Classic)
-            let is_aram = if let Ok((queue_id, _)) = lcu::get_current_queue(&creds).await {
-                let mut s = state.lock().await;
-                if queue_id == 450 || queue_id == 900 { // ARAM queue IDs
-                    s.game_mode = "aram".to_string();
-                    true
-                } else {
-                    s.game_mode = "classic".to_string();
-                    false
+            // Detect game mode once when entering champ select
+            {
+                let s = state.lock().await;
+                if s.status != ConnectionStatus::ChampSelect {
+                    // First tick in champ select — detect queue
+                    drop(s);
+                    if let Ok((queue_id, _)) = lcu::get_current_queue(&creds).await {
+                        let mut s = state.lock().await;
+                        if queue_id == 450 || queue_id == 900 {
+                            s.game_mode = "aram".to_string();
+                        } else {
+                            s.game_mode = "classic".to_string();
+                        }
+                    }
                 }
-            } else { false };
+            }
+            let is_aram = state.lock().await.game_mode == "aram";
 
             let session = match lcu::get_champ_select_session(&creds).await {
                 Ok(s) => s,
@@ -153,6 +176,7 @@ async fn poll_loop(
                 let mut s = state.lock().await;
                 if s.status != ConnectionStatus::ChampSelect {
                     s.status = ConnectionStatus::ChampSelect;
+                    notify("QueryLoL", "Champion Select has started!");
                 }
                 s.draft = Some(draft.clone());
                 let _ = app_handle.emit("app-state-changed", s.clone());
@@ -256,11 +280,15 @@ async fn poll_loop(
                 }
             }
         } else if phase == "InProgress" || phase == "GameStart" {
-            let mut s = state.lock().await;
-            if s.status != ConnectionStatus::InGame {
+            let (already_in_game, sid) = {
+                let s = state.lock().await;
+                (s.status == ConnectionStatus::InGame, s.summoner_id)
+            };
+            if !already_in_game {
                 // Fetch live game info once on transition
-                match lcu::get_live_game(&creds).await {
+                match lcu::get_live_game(&creds, sid).await {
                     Ok(live) => {
+                        let mut s = state.lock().await;
                         s.status = ConnectionStatus::InGame;
                         s.live_game = Some(live);
                         s.champion_id = None;
@@ -300,6 +328,7 @@ async fn poll_loop(
                 }
             }
         } else {
+            log::info!("Gameflow phase: {}", phase);
             let mut s = state.lock().await;
             if s.status != ConnectionStatus::Connected {
                 s.status = ConnectionStatus::Connected;
@@ -316,9 +345,12 @@ async fn poll_loop(
                 s.game_mode = "classic".to_string();
                 last_champion_id = 0;
                 last_draft_hash = 0;
-                // Refresh match history
+                // Refresh match history and ranked stats
                 if let Ok(history) = lcu::get_match_history(&creds).await {
                     s.match_history = history;
+                }
+                if let Ok(ranked) = lcu::get_ranked_stats(&creds).await {
+                    s.ranked = Some(ranked);
                 }
                 let _ = app_handle.emit("app-state-changed", s.clone());
             }

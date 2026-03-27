@@ -57,6 +57,7 @@ pub struct AppState {
     pub counters: std::collections::HashMap<String, f64>,
     pub draft: Option<DraftState>,
     pub recommendations: Vec<PickRecommendation>,
+    pub ranked: Option<RankedInfo>,
     pub match_history: Vec<MatchHistoryEntry>,
     pub live_game: Option<LiveGameState>,
     pub post_game: Option<PostGameStats>,
@@ -89,6 +90,8 @@ pub struct PostGamePlayer {
     pub assists: i64,
     pub total_damage: i64,
     pub gold_earned: i64,
+    pub cs: i64,
+    pub vision_score: i64,
     pub items: Vec<i64>,
 }
 
@@ -106,6 +109,7 @@ impl Default for AppState {
             counters: std::collections::HashMap::new(),
             draft: None,
             recommendations: vec![],
+            ranked: None,
             match_history: vec![],
             live_game: None,
             post_game: None,
@@ -351,6 +355,17 @@ pub struct LcuSummoner {
     pub game_name: Option<String>,
     #[allow(dead_code)]
     pub summoner_id: Option<i64>,
+}
+
+// --- Ranked info ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RankedInfo {
+    pub tier: String,
+    pub rank: String,
+    pub lp: i64,
+    pub wins: i64,
+    pub losses: i64,
 }
 
 // --- Match history ---

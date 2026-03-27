@@ -14,10 +14,11 @@ pub async fn fetch_champion_data(
     champion_id: i64,
     position: &str,
 ) -> Result<ChampionFetchResult, String> {
-    let url = format!(
-        "{}/{}/champions/ranked/{}/{}",
-        OPGG_API_BASE, region, champion_id, position
-    );
+    let url = if position == "aram" {
+        format!("{}/{}/champions/aram/{}/none", OPGG_API_BASE, region, champion_id)
+    } else {
+        format!("{}/{}/champions/ranked/{}/{}", OPGG_API_BASE, region, champion_id, position)
+    };
     info!("Fetching champion data from OP.GG: {}", url);
 
     let data: OpggResponse = http_client()

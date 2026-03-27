@@ -320,6 +320,9 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                         assists: stats.get("ASSISTS").and_then(|v| v.as_i64()).unwrap_or(0),
                         total_damage: stats.get("TOTAL_DAMAGE_DEALT_TO_CHAMPIONS").and_then(|v| v.as_i64()).unwrap_or(0),
                         gold_earned: stats.get("GOLD_EARNED").and_then(|v| v.as_i64()).unwrap_or(0),
+                        cs: stats.get("MINIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0)
+                            + stats.get("NEUTRAL_MINIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0),
+                        vision_score: stats.get("VISION_SCORE").and_then(|v| v.as_i64()).unwrap_or(0),
                         items,
                     });
                 }
@@ -415,6 +418,41 @@ pub fn extract_champion_from_session(session: &ChampSelectSession) -> (i64, Stri
     (0, position)
 }
 
+/// Fetch ranked stats for current summoner.
+pub async fn get_ranked_stats(creds: &LcuCredentials) -> Result<RankedInfo, String> {
+    let client = lcu_client();
+    let resp = client
+        .get(lcu_url(creds, "/lol-ranked/v1/current-ranked-stats"))
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get ranked stats: {}", e))?;
+
+    let raw: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Failed to parse ranked stats: {}", e))?;
+
+    // Find solo queue stats
+    let queues = raw.get("queues").and_then(|q| q.as_array());
+    if let Some(queues) = queues {
+        for q in queues {
+            let queue_type = q.get("queueType").and_then(|v| v.as_str()).unwrap_or("");
+            if queue_type == "RANKED_SOLO_5x5" {
+                return Ok(RankedInfo {
+                    tier: q.get("tier").and_then(|v| v.as_str()).unwrap_or("UNRANKED").to_string(),
+                    rank: q.get("division").and_then(|v| v.as_str())
+                        .or_else(|| q.get("rank").and_then(|v| v.as_str()))
+                        .unwrap_or("").to_string(),
+                    lp: q.get("leaguePoints").and_then(|v| v.as_i64()).unwrap_or(0),
+                    wins: q.get("wins").and_then(|v| v.as_i64()).unwrap_or(0),
+                    losses: q.get("losses").and_then(|v| v.as_i64()).unwrap_or(0),
+                });
+            }
+        }
+    }
+
+    Err("No ranked data found".to_string())
+}
+
 /// Fetch match history for current summoner (last 10 games).
 pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistoryEntry>, String> {
     let client = lcu_client();
@@ -498,7 +536,7 @@ pub async fn get_current_queue(creds: &LcuCredentials) -> Result<(i64, String), 
 }
 
 /// Get live game session info (players in current game).
-pub async fn get_live_game(creds: &LcuCredentials) -> Result<LiveGameState, String> {
+pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) -> Result<LiveGameState, String> {
     let client = lcu_client();
     let resp = client
         .get(lcu_url(creds, "/lol-gameflow/v1/session"))
@@ -517,48 +555,63 @@ pub async fn get_live_game(creds: &LcuCredentials) -> Result<LiveGameState, Stri
         .unwrap_or("Game")
         .to_string();
 
-    // Get our team ID
-    let my_team_id = raw.get("gameData")
-        .and_then(|g| g.get("teamOne"))
-        .and_then(|t| t.as_array())
-        .and_then(|arr| arr.iter().find(|p| {
-            p.get("lastSelectedSkinIndex").is_some() // heuristic for local player
-        }))
-        .and_then(|p| p.get("teamId"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(100);
+    // Log gameData keys for debugging
+    if let Some(gd) = raw.get("gameData").and_then(|g| g.as_object()) {
+        let keys: Vec<&str> = gd.keys().map(|k| k.as_str()).collect();
+        info!("Live game gameData keys: {:?}", keys);
+    }
 
     let mut allies = vec![];
     let mut enemies = vec![];
 
-    for team_key in &["teamOne", "teamTwo"] {
-        if let Some(players) = raw.get("gameData")
-            .and_then(|g| g.get(team_key))
-            .and_then(|t| t.as_array())
-        {
-            let team_id = players.first()
-                .and_then(|p| p.get("teamId"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+    // Parse teamOne and teamTwo, then figure out which is ours
+    let mut team_one = vec![];
+    let mut team_two = vec![];
+    let mut my_team_is_one = true;
 
-            for p in players {
-                let player = LiveGamePlayer {
-                    champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
-                    summoner_name: p.get("riotIdGameName")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty())
-                        .or_else(|| p.get("summonerName").and_then(|v| v.as_str()))
-                        .unwrap_or("Unknown")
-                        .to_string(),
-                };
+    fn parse_players(arr: &[serde_json::Value]) -> Vec<(LiveGamePlayer, i64)> {
+        arr.iter().map(|p| {
+            let sid = p.get("summonerId").and_then(|v| v.as_i64()).unwrap_or(0);
+            let player = LiveGamePlayer {
+                champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
+                summoner_name: p.get("riotIdGameName")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| p.get("summonerName").and_then(|v| v.as_str()))
+                    .unwrap_or("Unknown")
+                    .to_string(),
+            };
+            (player, sid)
+        }).collect()
+    }
 
-                if team_id == my_team_id {
-                    allies.push(player);
-                } else {
-                    enemies.push(player);
-                }
+    if let Some(arr) = raw.get("gameData").and_then(|g| g.get("teamOne")).and_then(|t| t.as_array()) {
+        let parsed = parse_players(arr);
+        // Check if our summoner is in this team
+        if let Some(sid) = my_summoner_id {
+            if parsed.iter().any(|(_, id)| *id == sid) {
+                my_team_is_one = true;
             }
         }
+        team_one = parsed.into_iter().map(|(p, _)| p).collect();
+    }
+
+    if let Some(arr) = raw.get("gameData").and_then(|g| g.get("teamTwo")).and_then(|t| t.as_array()) {
+        let parsed = parse_players(arr);
+        if let Some(sid) = my_summoner_id {
+            if parsed.iter().any(|(_, id)| *id == sid) {
+                my_team_is_one = false;
+            }
+        }
+        team_two = parsed.into_iter().map(|(p, _)| p).collect();
+    }
+
+    if my_team_is_one {
+        allies = team_one;
+        enemies = team_two;
+    } else {
+        allies = team_two;
+        enemies = team_one;
     }
 
     Ok(LiveGameState { queue_name, allies, enemies })

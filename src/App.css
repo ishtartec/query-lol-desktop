@@ -56,6 +56,21 @@
 .status-post_game { background: var(--accent-blue); }
 .summoner-name { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 
+.ranked-badge {
+  font-size: 11px; font-weight: 700; padding: 2px 8px;
+  border-radius: 4px; letter-spacing: 0.3px;
+}
+.rank-iron { color: #8a8a8a; background: rgba(138,138,138,0.12); }
+.rank-bronze { color: #b08d57; background: rgba(176,141,87,0.12); }
+.rank-silver { color: #a0b0c0; background: rgba(160,176,192,0.12); }
+.rank-gold { color: var(--accent-gold); background: rgba(200,155,60,0.12); }
+.rank-platinum { color: #4dc9b0; background: rgba(77,201,176,0.12); }
+.rank-emerald { color: #2ecc71; background: rgba(46,204,113,0.12); }
+.rank-diamond { color: #68b8ff; background: rgba(104,184,255,0.12); }
+.rank-master { color: #c084fc; background: rgba(192,132,252,0.12); }
+.rank-grandmaster { color: #ef4444; background: rgba(239,68,68,0.12); }
+.rank-challenger { color: #fbbf24; background: rgba(251,191,36,0.15); }
+
 /* === Connect === */
 .section-connect { flex: 1; display: flex; align-items: center; justify-content: center; }
 .connect-card { text-align: center; padding: 40px; }
@@ -427,11 +442,20 @@
 .mh-losses { color: var(--accent-red); }
 .mh-wr { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 
-.mh-list { display: flex; flex-direction: column; gap: 4px; }
+.mh-streak {
+  font-size: 11px; font-weight: 700; padding: 2px 8px;
+  border-radius: 4px;
+}
+.streak-win { color: var(--accent-green); background: rgba(31,173,79,0.12); }
+.streak-loss { color: var(--accent-red); background: rgba(232,64,87,0.12); }
+
+.mh-list {
+  display: flex; flex-direction: column; gap: 4px;
+}
 
 .mh-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 14px; background: var(--bg-card);
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px; background: var(--bg-card);
   border: 1px solid var(--border); border-radius: 8px;
   border-left: 3px solid transparent;
   transition: background 0.1s;
@@ -441,12 +465,13 @@
 .mh-row-loss { border-left-color: var(--accent-red); }
 
 .mh-result {
-  font-size: 12px; font-weight: 800; width: 18px; text-align: center;
+  font-size: 13px; font-weight: 800; width: 20px; text-align: center;
+  flex-shrink: 0;
 }
 .mh-result.win { color: var(--accent-green); }
 .mh-result.loss { color: var(--accent-red); }
 
-.mh-info { flex: 1; min-width: 0; }
+.mh-info { width: 140px; flex-shrink: 0; min-width: 0; }
 .mh-champ {
   font-size: 13px; font-weight: 600; color: var(--text-primary);
   display: block; line-height: 1.2;
@@ -458,8 +483,23 @@
   width: 90px; flex-shrink: 0;
 }
 
+.mh-kda-bar {
+  width: 120px; height: 6px; border-radius: 3px;
+  display: flex; overflow: hidden; flex-shrink: 0;
+}
+.mh-kda-bar-k { background: var(--accent-green); }
+.mh-kda-bar-d { background: var(--accent-red); }
+.mh-kda-bar-a { background: var(--text-muted); }
+
+.mh-duration {
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  width: 40px; text-align: center; flex-shrink: 0;
+}
+
+.mh-spacer { flex: 1; }
+
 .mh-ago {
-  font-size: 10px; color: var(--text-muted); width: 50px;
+  font-size: 11px; color: var(--text-secondary); width: 65px;
   text-align: right; flex-shrink: 0;
 }
 
@@ -587,6 +627,8 @@
   opacity: 0.7; transition: width 0.3s ease;
 }
 
+.pg-col-cs { width: 40px; text-align: right; flex-shrink: 0; }
+.pg-col-vision { width: 35px; text-align: right; flex-shrink: 0; }
 .pg-col-gold { width: 55px; text-align: right; flex-shrink: 0; }
 .pg-gold { color: var(--accent-gold); }
 

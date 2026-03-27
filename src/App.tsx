@@ -50,6 +50,8 @@ interface PostGamePlayer {
   assists: number;
   total_damage: number;
   gold_earned: number;
+  cs: number;
+  vision_score: number;
   items: number[];
 }
 
@@ -82,6 +84,14 @@ interface LiveGameState {
 interface LiveGamePlayer {
   champion_id: number;
   summoner_name: string;
+}
+
+interface RankedInfo {
+  tier: string;
+  rank: string;
+  lp: number;
+  wins: number;
+  losses: number;
 }
 
 interface RuneOption {
@@ -118,6 +128,7 @@ interface AppState {
   build_alternatives: BuildAlternatives | null;
   counters: Record<string, number>;
   draft: DraftState | null;
+  ranked: RankedInfo | null;
   match_history: MatchHistoryEntry[];
   live_game: LiveGameState | null;
   post_game: PostGameStats | null;
@@ -258,7 +269,7 @@ function App() {
     status: "disconnected", summoner_name: null, champion_id: null,
     champion_name: null, assigned_position: null, build: null,
     build_alternatives: null, counters: {},
-    draft: null, match_history: [], live_game: null, post_game: null,
+    draft: null, ranked: null, match_history: [], live_game: null, post_game: null,
     game_mode: "classic", recommendations: [], auto_apply: true, region: "euw",
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
@@ -306,6 +317,11 @@ function App() {
           <span className={`status-dot status-${state.status}`} />
           {isConnected && state.summoner_name && (
             <span className="summoner-name">{state.summoner_name}</span>
+          )}
+          {isConnected && state.ranked && state.ranked.tier !== "UNRANKED" && (
+            <span className={`ranked-badge rank-${state.ranked.tier.toLowerCase()}`}>
+              {state.ranked.tier} {state.ranked.rank} &middot; {state.ranked.lp} LP
+            </span>
           )}
         </div>
       </header>
@@ -672,11 +688,24 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
   const losses = history.length - wins;
   const wr = history.length > 0 ? ((wins / history.length) * 100).toFixed(0) : "0";
 
+  // Calculate current streak
+  let streakCount = 0;
+  let streakWin = history.length > 0 ? history[0].win : true;
+  for (const m of history) {
+    if (m.win === streakWin) streakCount++;
+    else break;
+  }
+
   return (
     <div className="mh-layout">
       <div className="mh-header">
         <h3 className="section-title">Recent Matches</h3>
         <div className="mh-summary">
+          {streakCount >= 2 && (
+            <span className={`mh-streak ${streakWin ? "streak-win" : "streak-loss"}`}>
+              {streakCount} {streakWin ? "Win" : "Loss"} Streak
+            </span>
+          )}
           <span className="mh-wl">
             <span className="mh-wins">{wins}W</span> <span className="mh-losses">{losses}L</span>
           </span>
@@ -697,14 +726,15 @@ function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
   const kda = m.deaths === 0 ? "Perfect" : ((m.kills + m.assists) / m.deaths).toFixed(1);
   const mins = Math.floor(m.duration_secs / 60);
   const ago = timeAgo(m.timestamp);
+  const total = m.kills + m.deaths + m.assists || 1;
 
   return (
     <div className={`mh-row ${m.win ? "mh-row-win" : "mh-row-loss"}`}>
       <div className={`mh-result ${m.win ? "win" : "loss"}`}>{m.win ? "W" : "L"}</div>
-      <ChampionIcon championId={m.champion_id} size={32} />
+      <ChampionIcon championId={m.champion_id} size={36} />
       <div className="mh-info">
         <span className="mh-champ">{champInfo?.name || "..."}</span>
-        <span className="mh-mode">{m.game_mode === "ARAM" ? "ARAM" : mins + "m"}</span>
+        <span className="mh-mode">{m.game_mode === "ARAM" ? "ARAM" : "Ranked"}</span>
       </div>
       <div className="mh-kda-col">
         <span className="pg-kda">
@@ -716,6 +746,13 @@ function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
         </span>
         <span className="pg-kda-ratio">{kda} KDA</span>
       </div>
+      <div className="mh-kda-bar">
+        <div className="mh-kda-bar-k" style={{ width: `${(m.kills / total) * 100}%` }} />
+        <div className="mh-kda-bar-d" style={{ width: `${(m.deaths / total) * 100}%` }} />
+        <div className="mh-kda-bar-a" style={{ width: `${(m.assists / total) * 100}%` }} />
+      </div>
+      <span className="mh-duration">{mins}m</span>
+      <div className="mh-spacer" />
       <span className="mh-ago">{ago}</span>
     </div>
   );
@@ -844,6 +881,12 @@ function PostGameRow({ player: p, maxDamage }: { player: PostGamePlayer; maxDama
         <div className="pg-dmg-bar">
           <div className="pg-dmg-fill" style={{ width: `${dmgPct}%` }} />
         </div>
+      </div>
+      <div className="pg-col-cs">
+        <span className="pg-stat">{p.cs}</span>
+      </div>
+      <div className="pg-col-vision">
+        <span className="pg-stat">{p.vision_score}</span>
       </div>
       <div className="pg-col-gold">
         <span className="pg-stat pg-gold">{formatNumber(p.gold_earned)}</span>
