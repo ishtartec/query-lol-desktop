@@ -7,6 +7,16 @@ pub struct UserConfig {
     pub auto_apply: bool,
     #[serde(default)]
     pub auto_lock: bool,
+    #[serde(default)]
+    pub lp_history: Vec<LpEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LpEntry {
+    pub timestamp: i64,
+    pub lp: i64,
+    pub tier: String,
+    pub rank: String,
 }
 
 impl Default for UserConfig {
@@ -15,6 +25,7 @@ impl Default for UserConfig {
             region: "euw".to_string(),
             auto_apply: true,
             auto_lock: false,
+            lp_history: vec![],
         }
     }
 }

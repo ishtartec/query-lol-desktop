@@ -108,6 +108,13 @@ interface ComfortPick {
   meta_win_rate: number;
 }
 
+interface LpEntry {
+  timestamp: number;
+  lp: number;
+  tier: string;
+  rank: string;
+}
+
 interface RankedInfo {
   tier: string;
   rank: string;
@@ -151,6 +158,7 @@ interface AppState {
   counters: Record<string, number>;
   draft: DraftState | null;
   ranked: RankedInfo | null;
+  lp_history: LpEntry[];
   ban_suggestions: BanSuggestion[];
   comfort_picks: ComfortPick[];
   match_history: MatchHistoryEntry[];
@@ -295,7 +303,7 @@ function App() {
     status: "disconnected", summoner_name: null, champion_id: null,
     champion_name: null, assigned_position: null, build: null,
     build_alternatives: null, counters: {},
-    draft: null, ranked: null, ban_suggestions: [], comfort_picks: [],
+    draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [],
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", recommendations: [], ban_phase_active: false,
     auto_apply: true, auto_lock: false, region: "euw",
@@ -404,7 +412,10 @@ function App() {
       {isConnected && !inChampSelect && !inGame && !inPostGame && (
         <section className="section-lobby">
           {state.match_history.length > 0 ? (
-            <MatchHistoryView history={state.match_history} />
+            <>
+              {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
+              <MatchHistoryView history={state.match_history} />
+            </>
           ) : (
             <div className="section-waiting">
               <div className="pulse-ring" />
@@ -739,6 +750,64 @@ function RecCard({ rec }: { rec: PickRecommendation }) {
         </div>
       </div>
       <div className="rec-score">{(rec.score * 100).toFixed(0)}</div>
+    </div>
+  );
+}
+
+// --- LP Chart ---
+
+function LpChart({ history }: { history: LpEntry[] }) {
+  const width = 400;
+  const height = 80;
+  const pad = { top: 8, bottom: 20, left: 8, right: 8 };
+
+  const lps = history.map(h => h.lp);
+  const minLp = Math.min(...lps) - 5;
+  const maxLp = Math.max(...lps) + 5;
+  const range = Math.max(maxLp - minLp, 10);
+
+  const points = history.map((h, i) => {
+    const x = pad.left + (i / Math.max(history.length - 1, 1)) * (width - pad.left - pad.right);
+    const y = pad.top + (1 - (h.lp - minLp) / range) * (height - pad.top - pad.bottom);
+    return { x, y, lp: h.lp, tier: h.tier, rank: h.rank };
+  });
+
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+
+  const first = history[0];
+  const last = history[history.length - 1];
+  const diff = last.lp - first.lp;
+  const diffColor = diff >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+
+  return (
+    <div className="lp-chart-container">
+      <div className="lp-chart-header">
+        <h3 className="section-title">LP Progress</h3>
+        <span className="lp-diff" style={{ color: diffColor }}>
+          {diff >= 0 ? "+" : ""}{diff} LP
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="lp-chart-svg">
+        {/* Grid line at current LP */}
+        <line x1={pad.left} y1={points[points.length-1].y} x2={width - pad.right} y2={points[points.length-1].y}
+          stroke="var(--border)" strokeWidth="1" strokeDasharray="4 2" />
+
+        {/* Line */}
+        <path d={linePath} fill="none" stroke="var(--accent-gold)" strokeWidth="2" strokeLinejoin="round" />
+
+        {/* Dots */}
+        {points.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 4 : 2.5}
+            fill={i === points.length - 1 ? "var(--accent-gold)" : "var(--bg-card)"}
+            stroke="var(--accent-gold)" strokeWidth="1.5" />
+        ))}
+
+        {/* Current LP label */}
+        <text x={width - pad.right} y={height - 4} textAnchor="end"
+          fill="var(--text-secondary)" fontSize="10" fontWeight="600">
+          {last.lp} LP
+        </text>
+      </svg>
     </div>
   );
 }

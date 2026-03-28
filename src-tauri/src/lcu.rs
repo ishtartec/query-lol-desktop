@@ -332,12 +332,13 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
 
             // Calculate MVP scores
             for p in &mut players {
-                p.mvp_score = p.kills as f64 * 3.0
-                    + p.assists as f64 * 1.5
-                    - p.deaths as f64 * 2.0
-                    + p.total_damage as f64 / 1000.0 * 0.5
-                    + p.cs as f64 * 0.5
-                    + p.vision_score as f64 * 0.3;
+                p.mvp_score = p.kills as f64 * 4.0
+                    + p.assists as f64 * 2.0
+                    - p.deaths as f64 * 3.0
+                    + p.total_damage as f64 / 1000.0 * 1.0
+                    + p.cs as f64 * 0.1
+                    + p.vision_score as f64 * 0.2
+                    + (p.kills + p.assists) as f64 / (p.deaths.max(1)) as f64 * 5.0;
             }
 
             // Mark MVP (highest score)

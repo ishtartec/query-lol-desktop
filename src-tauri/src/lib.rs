@@ -10,6 +10,15 @@ use tokio::sync::Mutex;
 
 type SharedState = Arc<Mutex<AppState>>;
 
+fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
+    config::save(app, &config::UserConfig {
+        region: s.region.clone(),
+        auto_apply: s.auto_apply,
+        auto_lock: s.auto_lock,
+        lp_history: s.lp_history.clone(),
+    });
+}
+
 fn notify(title: &str, body: &str) {
     let _ = std::process::Command::new("osascript")
         .arg("-e")
@@ -46,11 +55,7 @@ async fn set_auto_apply(
     let mut s = state.lock().await;
     s.auto_apply = enabled;
     let _ = app_handle.emit("app-state-changed", s.clone());
-    config::save(&app_handle, &config::UserConfig {
-        region: s.region.clone(),
-        auto_apply: s.auto_apply,
-        auto_lock: s.auto_lock,
-    });
+    save_config(&app_handle, &s);
     Ok(())
 }
 
@@ -63,11 +68,7 @@ async fn set_region(
     let mut s = state.lock().await;
     s.region = region;
     let _ = app_handle.emit("app-state-changed", s.clone());
-    config::save(&app_handle, &config::UserConfig {
-        region: s.region.clone(),
-        auto_apply: s.auto_apply,
-        auto_lock: s.auto_lock,
-    });
+    save_config(&app_handle, &s);
     Ok(())
 }
 
@@ -88,6 +89,21 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
                         s.match_history = history;
                     }
                     if let Ok(ranked) = lcu::get_ranked_stats(&creds).await {
+                        // Record initial LP if history is empty or LP changed
+                        let should_record = s.lp_history.last()
+                            .map(|last| last.lp != ranked.lp || last.tier != ranked.tier || last.rank != ranked.rank)
+                            .unwrap_or(true);
+                        if should_record && ranked.tier != "UNRANKED" {
+                            s.lp_history.push(config::LpEntry {
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as i64,
+                                lp: ranked.lp,
+                                tier: ranked.tier.clone(),
+                                rank: ranked.rank.clone(),
+                            });
+                        }
                         s.ranked = Some(ranked);
                     }
                     let _ = app_handle.emit("app-state-changed", s.clone());
@@ -438,6 +454,30 @@ async fn poll_loop(
                     s.match_history = history;
                 }
                 if let Ok(ranked) = lcu::get_ranked_stats(&creds).await {
+                    // Record LP if it changed
+                    let should_record = s.ranked.as_ref()
+                        .map(|old| old.lp != ranked.lp || old.tier != ranked.tier || old.rank != ranked.rank)
+                        .unwrap_or(true);
+
+                    if should_record && ranked.tier != "UNRANKED" {
+                        let entry = config::LpEntry {
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as i64,
+                            lp: ranked.lp,
+                            tier: ranked.tier.clone(),
+                            rank: ranked.rank.clone(),
+                        };
+                        s.lp_history.push(entry);
+                        // Keep last 50 entries
+                        if s.lp_history.len() > 50 {
+                            s.lp_history = s.lp_history[s.lp_history.len()-50..].to_vec();
+                        }
+                        // Persist
+                        save_config(&app_handle, &s);
+                    }
+
                     s.ranked = Some(ranked);
                 }
                 let _ = app_handle.emit("app-state-changed", s.clone());
@@ -535,11 +575,7 @@ async fn set_auto_lock(
     let mut s = state.lock().await;
     s.auto_lock = enabled;
     let _ = app_handle.emit("app-state-changed", s.clone());
-    config::save(&app_handle, &config::UserConfig {
-        region: s.region.clone(),
-        auto_apply: s.auto_apply,
-        auto_lock: s.auto_lock,
-    });
+    save_config(&app_handle, &s);
     Ok(())
 }
 
@@ -633,6 +669,7 @@ pub fn run() {
                 s.region = cfg.region;
                 s.auto_apply = cfg.auto_apply;
                 s.auto_lock = cfg.auto_lock;
+                s.lp_history = cfg.lp_history;
             }
 
             // Spawn auto-reconnect watcher
