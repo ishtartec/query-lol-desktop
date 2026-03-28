@@ -257,9 +257,9 @@ async fn poll_loop(
 
                 // Only recommend if we haven't picked yet and not ARAM
                 if my_champ == 0 && !opgg_pos.is_empty() && !is_aram {
-                    let enemy_ids: Vec<i64> = draft.enemies.iter()
-                        .map(|e| e.champion_id)
-                        .filter(|&id| id > 0)
+                    let enemies_with_pos: Vec<(i64, String)> = draft.enemies.iter()
+                        .filter(|e| e.champion_id > 0)
+                        .map(|e| (e.champion_id, map_position(&e.position).to_string()))
                         .collect();
                     let ally_ids: Vec<i64> = draft.allies.iter()
                         .filter(|a| !a.is_local)
@@ -268,7 +268,7 @@ async fn poll_loop(
                         .collect();
 
                     match opgg::recommend_picks(
-                        &region, opgg_pos, &enemy_ids, &draft.bans, &ally_ids
+                        &region, opgg_pos, &enemies_with_pos, &draft.bans, &ally_ids
                     ).await {
                         Ok(recs) => {
                             let mut s = state.lock().await;

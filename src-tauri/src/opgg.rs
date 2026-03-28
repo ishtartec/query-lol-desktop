@@ -170,24 +170,26 @@ pub async fn fetch_tier_list(
 pub async fn recommend_picks(
     region: &str,
     position: &str,
-    enemy_champion_ids: &[i64],
+    enemies_with_pos: &[(i64, String)],
     banned_ids: &[i64],
     ally_champion_ids: &[i64],
 ) -> Result<Vec<PickRecommendation>, String> {
     let tier_list = fetch_tier_list(region, position).await?;
 
     let mut enemy_counter_data: Vec<HashMap<i64, f64>> = vec![];
-    for &enemy_id in enemy_champion_ids {
-        if enemy_id > 0 {
-            if let Ok(counters) = fetch_counters(region, enemy_id, "").await {
+    for (enemy_id, enemy_pos) in enemies_with_pos {
+        if *enemy_id > 0 {
+            // Use enemy's position for counter lookup, fallback to "mid"
+            let pos = if enemy_pos.is_empty() { "mid" } else { enemy_pos };
+            if let Ok(counters) = fetch_counters(region, *enemy_id, pos).await {
                 enemy_counter_data.push(counters);
             }
         }
     }
 
-    let all_picked: Vec<i64> = enemy_champion_ids.iter()
-        .chain(ally_champion_ids.iter())
-        .copied()
+    let all_picked: Vec<i64> = enemies_with_pos.iter()
+        .map(|(id, _)| *id)
+        .chain(ally_champion_ids.iter().copied())
         .filter(|&id| id > 0)
         .collect();
 
