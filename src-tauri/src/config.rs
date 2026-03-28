@@ -5,6 +5,8 @@ use std::path::PathBuf;
 pub struct UserConfig {
     pub region: String,
     pub auto_apply: bool,
+    #[serde(default)]
+    pub auto_lock: bool,
 }
 
 impl Default for UserConfig {
@@ -12,6 +14,7 @@ impl Default for UserConfig {
         Self {
             region: "euw".to_string(),
             auto_apply: true,
+            auto_lock: false,
         }
     }
 }

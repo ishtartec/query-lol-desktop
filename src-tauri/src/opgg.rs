@@ -166,6 +166,81 @@ pub async fn fetch_tier_list(
     Ok(results)
 }
 
+/// Fetch ban suggestions for a position (high threat champions).
+pub async fn fetch_ban_suggestions(
+    region: &str,
+    position: &str,
+) -> Result<Vec<BanSuggestion>, String> {
+    let url = format!("{}/{}/champions/ranked", OPGG_API_BASE, region);
+
+    let data: OpggTierListResponse = http_client()
+        .get(&url)
+        .header("User-Agent", "QueryLoLDesktop/0.1")
+        .send()
+        .await
+        .map_err(|e| format!("HTTP: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Parse: {}", e))?;
+
+    let mut suggestions: Vec<BanSuggestion> = vec![];
+    for champ in &data.data {
+        if let Some(pos) = champ.positions.iter().find(|p| p.name.to_lowercase() == position) {
+            let wr = pos.stats.win_rate;
+            let pr = pos.stats.pick_rate;
+            let br = champ.average_stats.ban_rate;
+
+            // Only suggest if meaningful pick rate and good win rate
+            if pr > 0.02 && wr > 0.50 {
+                let score = wr * 0.4 + pr * 0.3 + br * 0.3;
+                suggestions.push(BanSuggestion {
+                    champion_id: champ.id,
+                    win_rate: wr,
+                    pick_rate: pr,
+                    ban_rate: br,
+                    score,
+                });
+            }
+        }
+    }
+
+    suggestions.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    suggestions.truncate(3);
+    Ok(suggestions)
+}
+
+/// Fetch win rate for specific champions from the tier list (for comfort picks).
+pub async fn fetch_champion_win_rates(
+    region: &str,
+    position: &str,
+    champion_ids: &[i64],
+) -> Result<HashMap<i64, f64>, String> {
+    let url = format!("{}/{}/champions/ranked", OPGG_API_BASE, region);
+
+    let data: OpggTierListResponse = http_client()
+        .get(&url)
+        .header("User-Agent", "QueryLoLDesktop/0.1")
+        .send()
+        .await
+        .map_err(|e| format!("HTTP: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Parse: {}", e))?;
+
+    let mut rates = HashMap::new();
+    for champ in &data.data {
+        if champion_ids.contains(&champ.id) {
+            // Try position-specific, fallback to average
+            if let Some(pos) = champ.positions.iter().find(|p| p.name.to_lowercase() == position) {
+                rates.insert(champ.id, pos.stats.win_rate);
+            } else {
+                rates.insert(champ.id, champ.average_stats.win_rate);
+            }
+        }
+    }
+    Ok(rates)
+}
+
 /// Generate pick recommendations.
 pub async fn recommend_picks(
     region: &str,

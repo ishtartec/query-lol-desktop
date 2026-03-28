@@ -58,11 +58,17 @@ pub struct AppState {
     pub draft: Option<DraftState>,
     pub recommendations: Vec<PickRecommendation>,
     pub ranked: Option<RankedInfo>,
+    pub ban_suggestions: Vec<BanSuggestion>,
+    pub ban_phase_active: bool,
+    pub comfort_picks: Vec<ComfortPick>,
     pub match_history: Vec<MatchHistoryEntry>,
     pub live_game: Option<LiveGameState>,
     pub post_game: Option<PostGameStats>,
+    #[serde(skip)]
+    pub viewing_past_match: bool,
     pub game_mode: String,
     pub auto_apply: bool,
+    pub auto_lock: bool,
     pub region: String,
 }
 
@@ -77,6 +83,10 @@ pub struct PostGameStats {
 pub struct PostGameTeam {
     pub is_winner: bool,
     pub players: Vec<PostGamePlayer>,
+    pub avg_damage: i64,
+    pub avg_gold: i64,
+    pub avg_cs: i64,
+    pub avg_vision: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +102,8 @@ pub struct PostGamePlayer {
     pub gold_earned: i64,
     pub cs: i64,
     pub vision_score: i64,
+    pub mvp_score: f64,
+    pub is_mvp: bool,
     pub items: Vec<i64>,
 }
 
@@ -110,11 +122,16 @@ impl Default for AppState {
             draft: None,
             recommendations: vec![],
             ranked: None,
+            ban_suggestions: vec![],
+            ban_phase_active: false,
+            comfort_picks: vec![],
             match_history: vec![],
             live_game: None,
             post_game: None,
+            viewing_past_match: false,
             game_mode: "classic".to_string(),
             auto_apply: true,
+            auto_lock: false,
             region: "euw".to_string(),
         }
     }
@@ -152,6 +169,10 @@ pub struct ChampSelectAction {
     #[serde(rename = "type")]
     pub action_type: String,
     pub completed: bool,
+    #[serde(default)]
+    pub is_in_progress: bool,
+    #[serde(default)]
+    pub id: i64,
 }
 
 // --- OP.GG API responses ---
@@ -368,11 +389,33 @@ pub struct RankedInfo {
     pub losses: i64,
 }
 
+// --- Ban suggestions ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BanSuggestion {
+    pub champion_id: i64,
+    pub win_rate: f64,
+    pub pick_rate: f64,
+    pub ban_rate: f64,
+    pub score: f64,
+}
+
+// --- Comfort picks ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComfortPick {
+    pub champion_id: i64,
+    pub games_played: i32,
+    pub meta_win_rate: f64,
+}
+
 // --- Match history ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MatchHistoryEntry {
+    pub game_id: i64,
     pub champion_id: i64,
+    pub queue_id: i64,
     pub game_mode: String,
     pub win: bool,
     pub kills: i64,

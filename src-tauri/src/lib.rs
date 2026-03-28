@@ -49,6 +49,7 @@ async fn set_auto_apply(
     config::save(&app_handle, &config::UserConfig {
         region: s.region.clone(),
         auto_apply: s.auto_apply,
+        auto_lock: s.auto_lock,
     });
     Ok(())
 }
@@ -65,6 +66,7 @@ async fn set_region(
     config::save(&app_handle, &config::UserConfig {
         region: s.region.clone(),
         auto_apply: s.auto_apply,
+        auto_lock: s.auto_lock,
     });
     Ok(())
 }
@@ -135,18 +137,61 @@ async fn poll_loop(
         };
 
         if phase == "ChampSelect" {
-            // Detect game mode once when entering champ select
-            {
-                let s = state.lock().await;
-                if s.status != ConnectionStatus::ChampSelect {
-                    // First tick in champ select — detect queue
-                    drop(s);
-                    if let Ok((queue_id, _)) = lcu::get_current_queue(&creds).await {
-                        let mut s = state.lock().await;
-                        if queue_id == 450 || queue_id == 900 {
-                            s.game_mode = "aram".to_string();
-                        } else {
-                            s.game_mode = "classic".to_string();
+            // Detect game mode + fetch ban suggestions + comfort picks on first tick
+            let first_tick = state.lock().await.status != ConnectionStatus::ChampSelect;
+            if first_tick {
+                let mut is_aram_mode = false;
+                if let Ok((queue_id, _)) = lcu::get_current_queue(&creds).await {
+                    is_aram_mode = queue_id == 450 || queue_id == 900;
+                    let mut s = state.lock().await;
+                    s.game_mode = if is_aram_mode { "aram".to_string() } else { "classic".to_string() };
+                }
+
+                if !is_aram_mode {
+                    // Extract what we need from state BEFORE making HTTP calls
+                    let (region, history) = {
+                        let s = state.lock().await;
+                        (s.region.clone(), s.match_history.clone())
+                    };
+
+                    if let Ok(session) = lcu::get_champ_select_session(&creds).await {
+                        let my_pos = session.my_team.iter()
+                            .find(|p| p.cell_id == session.local_player_cell_id)
+                            .and_then(|p| p.assigned_position.clone())
+                            .unwrap_or_default()
+                            .to_lowercase();
+                        let opgg_pos = map_position(&my_pos);
+
+                        // Fetch ban suggestions (no lock held during HTTP)
+                        if let Ok(bans) = opgg::fetch_ban_suggestions(&region, opgg_pos).await {
+                            state.lock().await.ban_suggestions = bans;
+                        }
+
+                        // Calculate comfort picks from match history
+                        let mut champ_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
+                        for m in &history {
+                            *champ_counts.entry(m.champion_id).or_insert(0) += 1;
+                        }
+                        let mut top_champs: Vec<(i64, i32)> = champ_counts.into_iter()
+                            .filter(|(_, count)| *count >= 2)
+                            .collect();
+                        top_champs.sort_by(|a, b| b.1.cmp(&a.1));
+                        top_champs.truncate(3);
+
+                        if !top_champs.is_empty() {
+                            let champ_ids: Vec<i64> = top_champs.iter().map(|(id, _)| *id).collect();
+                            if let Ok(win_rates) = opgg::fetch_champion_win_rates(
+                                &region, opgg_pos, &champ_ids
+                            ).await {
+                                let comfort: Vec<models::ComfortPick> = top_champs.iter().map(|(id, count)| {
+                                    models::ComfortPick {
+                                        champion_id: *id,
+                                        games_played: *count,
+                                        meta_win_rate: win_rates.get(id).copied().unwrap_or(0.5),
+                                    }
+                                }).collect();
+                                state.lock().await.comfort_picks = comfort;
+                            }
                         }
                     }
                 }
@@ -160,6 +205,10 @@ async fn poll_loop(
 
             let (champion_id, position) = lcu::extract_champion_from_session(&session);
             let draft = lcu::extract_draft_state(&session);
+
+            // Check if ban phase is still active
+            let ban_active = session.actions.iter().flatten()
+                .any(|a| a.action_type == "ban" && !a.completed);
 
             // Hash draft state to detect changes
             let draft_hash = {
@@ -176,9 +225,12 @@ async fn poll_loop(
                 let mut s = state.lock().await;
                 if s.status != ConnectionStatus::ChampSelect {
                     s.status = ConnectionStatus::ChampSelect;
+                    s.viewing_past_match = false;
+                    s.post_game = None;
                     notify("QueryLoL", "Champion Select has started!");
                 }
                 s.draft = Some(draft.clone());
+                s.ban_phase_active = ban_active;
                 let _ = app_handle.emit("app-state-changed", s.clone());
             }
 
@@ -278,6 +330,35 @@ async fn poll_loop(
                         Err(e) => log::warn!("Failed to get recommendations: {}", e),
                     }
                 }
+
+                // Fetch counters for visible enemies (even before we pick)
+                let visible_enemies: Vec<(i64, String)> = draft.enemies.iter()
+                    .filter(|e| e.champion_id > 0)
+                    .map(|e| (e.champion_id, map_position(&e.position).to_string()))
+                    .collect();
+
+                if !visible_enemies.is_empty() && !is_aram {
+                    let mut all_counters: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+                    for (enemy_id, enemy_pos) in &visible_enemies {
+                        let pos = if enemy_pos.is_empty() { opgg_pos } else { enemy_pos.as_str() };
+                        if let Ok(counters) = opgg::fetch_counters(&region, *enemy_id, pos).await {
+                            // Store as "our WR vs this enemy" — invert the perspective
+                            // counters contains enemy's WR against each champion
+                            // We want: for each enemy, what's the average WR against them
+                            let avg_wr = if counters.is_empty() { 0.5 } else {
+                                counters.values().sum::<f64>() / counters.len() as f64
+                            };
+                            // avg_wr is the enemy's average WR against all champions
+                            // So 1.0 - avg_wr is roughly "how beatable" the enemy is
+                            all_counters.insert(enemy_id.to_string(), 1.0 - avg_wr);
+                        }
+                    }
+                    if !all_counters.is_empty() {
+                        let mut s = state.lock().await;
+                        s.counters = all_counters;
+                        let _ = app_handle.emit("app-state-changed", s.clone());
+                    }
+                }
             }
         } else if phase == "InProgress" || phase == "GameStart" {
             let (already_in_game, sid) = {
@@ -328,8 +409,12 @@ async fn poll_loop(
                 }
             }
         } else {
-            log::info!("Gameflow phase: {}", phase);
             let mut s = state.lock().await;
+            // When viewing a past match, only interrupt for important phases
+            if s.viewing_past_match {
+                drop(s);
+                continue;
+            }
             if s.status != ConnectionStatus::Connected {
                 s.status = ConnectionStatus::Connected;
                 s.champion_id = None;
@@ -345,7 +430,10 @@ async fn poll_loop(
                 s.game_mode = "classic".to_string();
                 last_champion_id = 0;
                 last_draft_hash = 0;
-                // Refresh match history and ranked stats
+                // Refresh match history and ranked stats (delay for API indexing)
+                drop(s);
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                let mut s = state.lock().await;
                 if let Ok(history) = lcu::get_match_history(&creds).await {
                     s.match_history = history;
                 }
@@ -438,6 +526,83 @@ async fn select_build_option(
     Ok(())
 }
 
+#[tauri::command]
+async fn set_auto_lock(
+    enabled: bool,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut s = state.lock().await;
+    s.auto_lock = enabled;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    config::save(&app_handle, &config::UserConfig {
+        region: s.region.clone(),
+        auto_apply: s.auto_apply,
+        auto_lock: s.auto_lock,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn pick_champion(
+    champion_id: i64,
+    state: tauri::State<'_, SharedState>,
+) -> Result<(), String> {
+    let creds = lcu::read_lockfile().ok_or("League client not found")?;
+    let session = lcu::get_champ_select_session(&creds).await?;
+    let auto_lock = state.lock().await.auto_lock;
+
+    let action_id = lcu::find_my_action(&session, "pick")
+        .ok_or("No active pick action — it's not your turn to pick")?;
+
+    lcu::select_champion(&creds, action_id, champion_id, auto_lock).await
+}
+
+#[tauri::command]
+async fn ban_champion(
+    champion_id: i64,
+    state: tauri::State<'_, SharedState>,
+) -> Result<(), String> {
+    let creds = lcu::read_lockfile().ok_or("League client not found")?;
+    let session = lcu::get_champ_select_session(&creds).await?;
+    let auto_lock = state.lock().await.auto_lock;
+
+    let action_id = lcu::find_my_action(&session, "ban")
+        .ok_or("No active ban action — it's not your turn to ban")?;
+
+    lcu::select_champion(&creds, action_id, champion_id, auto_lock).await
+}
+
+#[tauri::command]
+async fn view_match_details(
+    game_id: i64,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let creds = lcu::read_lockfile().ok_or("League client not found")?;
+    let stats = lcu::get_match_details(&creds, game_id).await?;
+
+    let mut s = state.lock().await;
+    s.post_game = Some(stats);
+    s.status = models::ConnectionStatus::PostGame;
+    s.viewing_past_match = true;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    Ok(())
+}
+
+#[tauri::command]
+async fn back_to_lobby(
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut s = state.lock().await;
+    s.status = models::ConnectionStatus::Connected;
+    s.post_game = None;
+    s.viewing_past_match = false;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -453,6 +618,11 @@ pub fn run() {
             set_region,
             apply_build_now,
             select_build_option,
+            set_auto_lock,
+            pick_champion,
+            ban_champion,
+            view_match_details,
+            back_to_lobby,
         ])
         .setup(|app| {
             // Load persisted preferences
@@ -462,6 +632,7 @@ pub fn run() {
                 let mut s = tauri::async_runtime::block_on(state.lock());
                 s.region = cfg.region;
                 s.auto_apply = cfg.auto_apply;
+                s.auto_lock = cfg.auto_lock;
             }
 
             // Spawn auto-reconnect watcher

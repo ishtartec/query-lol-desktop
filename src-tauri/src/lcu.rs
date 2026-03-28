@@ -323,17 +323,108 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                         cs: stats.get("MINIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0)
                             + stats.get("NEUTRAL_MINIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0),
                         vision_score: stats.get("VISION_SCORE").and_then(|v| v.as_i64()).unwrap_or(0),
+                        mvp_score: 0.0,
+                        is_mvp: false,
                         items,
                     });
                 }
             }
 
-            teams.push(PostGameTeam { is_winner, players });
+            // Calculate MVP scores
+            for p in &mut players {
+                p.mvp_score = p.kills as f64 * 3.0
+                    + p.assists as f64 * 1.5
+                    - p.deaths as f64 * 2.0
+                    + p.total_damage as f64 / 1000.0 * 0.5
+                    + p.cs as f64 * 0.5
+                    + p.vision_score as f64 * 0.3;
+            }
+
+            // Mark MVP (highest score)
+            if let Some(max_score) = players.iter().map(|p| p.mvp_score).reduce(f64::max) {
+                if let Some(mvp) = players.iter_mut().find(|p| (p.mvp_score - max_score).abs() < 0.01) {
+                    mvp.is_mvp = true;
+                }
+            }
+
+            // Calculate team averages
+            let count = players.len().max(1) as i64;
+            let avg_damage = players.iter().map(|p| p.total_damage).sum::<i64>() / count;
+            let avg_gold = players.iter().map(|p| p.gold_earned).sum::<i64>() / count;
+            let avg_cs = players.iter().map(|p| p.cs).sum::<i64>() / count;
+            let avg_vision = players.iter().map(|p| p.vision_score).sum::<i64>() / count;
+
+            teams.push(PostGameTeam {
+                is_winner, players,
+                avg_damage, avg_gold, avg_cs, avg_vision,
+            });
         }
     }
 
     info!("Post-game stats parsed: {} teams", teams.len());
     Ok(PostGameStats { teams })
+}
+
+/// Select a champion in champ select (hover). Optionally lock it in.
+pub async fn select_champion(
+    creds: &LcuCredentials,
+    action_id: i64,
+    champion_id: i64,
+    lock: bool,
+) -> Result<(), String> {
+    let client = lcu_client();
+
+    // Select (hover) the champion
+    let url = lcu_url(creds, &format!("/lol-champ-select/v1/session/actions/{}", action_id));
+    let resp = client
+        .patch(&url)
+        .header("Authorization", auth_header(&creds.password))
+        .json(&serde_json::json!({ "championId": champion_id }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to select champion: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Select champion failed: {}", resp.status()));
+    }
+
+    info!("Champion {} selected on action {}", champion_id, action_id);
+
+    // Lock in if requested
+    if lock {
+        let lock_url = lcu_url(creds, &format!("/lol-champ-select/v1/session/actions/{}/complete", action_id));
+        let resp = client
+            .post(&lock_url)
+            .header("Authorization", auth_header(&creds.password))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to lock champion: {}", e))?;
+
+        if resp.status().is_success() {
+            info!("Champion {} locked in", champion_id);
+        } else {
+            return Err(format!("Lock champion failed: {}", resp.status()));
+        }
+    }
+
+    Ok(())
+}
+
+/// Find the current player's active pick or ban action ID.
+pub fn find_my_action(session: &ChampSelectSession, action_type: &str) -> Option<i64> {
+    let my_cell = session.local_player_cell_id;
+    for group in &session.actions {
+        for action in group {
+            if action.actor_cell_id == my_cell
+                && action.action_type == action_type
+                && action.is_in_progress
+                && !action.completed
+            {
+                return Some(action.id);
+            }
+        }
+    }
+    None
 }
 
 /// Extract full draft state from champ select session.
@@ -474,6 +565,7 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
     if let Some(games) = raw.get("games").and_then(|g| g.get("games")).and_then(|g| g.as_array()) {
         for game in games.iter().take(10) {
             let game_mode = game.get("gameMode").and_then(|v| v.as_str()).unwrap_or("CLASSIC").to_string();
+            let queue_id = game.get("queueId").and_then(|v| v.as_i64()).unwrap_or(0);
             let duration = game.get("gameDuration").and_then(|v| v.as_i64()).unwrap_or(0);
             let timestamp = game.get("gameCreation").and_then(|v| v.as_i64()).unwrap_or(0);
 
@@ -487,8 +579,11 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
                     let deaths = stats.get("deaths").and_then(|v| v.as_i64()).unwrap_or(0);
                     let assists = stats.get("assists").and_then(|v| v.as_i64()).unwrap_or(0);
 
+                    let game_id = game.get("gameId").and_then(|v| v.as_i64()).unwrap_or(0);
                     entries.push(MatchHistoryEntry {
+                        game_id,
                         champion_id,
+                        queue_id,
                         game_mode,
                         win,
                         kills,
@@ -504,6 +599,124 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
 
     info!("Match history: {} entries", entries.len());
     Ok(entries)
+}
+
+/// Fetch details for a past match by game ID.
+pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<PostGameStats, String> {
+    let client = lcu_client();
+    let resp = client
+        .get(lcu_url(creds, &format!("/lol-match-history/v1/games/{}", game_id)))
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get match details: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Match details returned: {}", resp.status()));
+    }
+
+    let raw: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Failed to parse match details: {}", e))?;
+
+    // Match details have a different structure: participants + participantIdentities
+    let mut team_map: std::collections::HashMap<i64, Vec<PostGamePlayer>> = std::collections::HashMap::new();
+    let mut winning_team: i64 = 0;
+
+    // Get winning team from teams array
+    if let Some(teams) = raw.get("teams").and_then(|t| t.as_array()) {
+        for t in teams {
+            let win = t.get("win").and_then(|v| v.as_str()).unwrap_or("") == "Win";
+            if win {
+                winning_team = t.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0);
+            }
+        }
+    }
+
+    // Build identity map: participantId -> name
+    let mut names: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    if let Some(identities) = raw.get("participantIdentities").and_then(|p| p.as_array()) {
+        for ident in identities {
+            let pid = ident.get("participantId").and_then(|v| v.as_i64()).unwrap_or(0);
+            let name = ident.get("player")
+                .and_then(|p| p.get("gameName").and_then(|v| v.as_str())
+                    .or_else(|| p.get("summonerName").and_then(|v| v.as_str())))
+                .unwrap_or("Unknown")
+                .to_string();
+            names.insert(pid, name);
+        }
+    }
+
+    if let Some(participants) = raw.get("participants").and_then(|p| p.as_array()) {
+        for p in participants {
+            let pid = p.get("participantId").and_then(|v| v.as_i64()).unwrap_or(0);
+            let team_id = p.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0);
+            let stats = p.get("stats").unwrap_or(&serde_json::Value::Null);
+
+            let kills = stats.get("kills").and_then(|v| v.as_i64()).unwrap_or(0);
+            let deaths = stats.get("deaths").and_then(|v| v.as_i64()).unwrap_or(0);
+            let assists = stats.get("assists").and_then(|v| v.as_i64()).unwrap_or(0);
+            let total_damage = stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0);
+            let gold_earned = stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0);
+            let cs = stats.get("totalMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0)
+                + stats.get("neutralMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0);
+            let vision_score = stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0);
+
+            let items: Vec<i64> = (0..6).filter_map(|i| {
+                stats.get(&format!("item{}", i)).and_then(|v| v.as_i64()).filter(|&id| id > 0)
+            }).collect();
+
+            let position = p.get("timeline")
+                .and_then(|t| t.get("lane"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_uppercase();
+
+            let mut player = PostGamePlayer {
+                champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
+                summoner_name: names.get(&pid).cloned().unwrap_or_else(|| "Unknown".to_string()),
+                position,
+                is_local: false,
+                kills, deaths, assists, total_damage, gold_earned, cs, vision_score,
+                mvp_score: 0.0,
+                is_mvp: false,
+                items,
+            };
+
+            player.mvp_score = kills as f64 * 3.0
+                + assists as f64 * 1.5
+                - deaths as f64 * 2.0
+                + total_damage as f64 / 1000.0 * 0.5
+                + cs as f64 * 0.5
+                + vision_score as f64 * 0.3;
+
+            team_map.entry(team_id).or_default().push(player);
+        }
+    }
+
+    let mut teams = vec![];
+    for (team_id, mut players) in team_map {
+        // Mark MVP
+        if let Some(max_score) = players.iter().map(|p| p.mvp_score).reduce(f64::max) {
+            if let Some(mvp) = players.iter_mut().find(|p| (p.mvp_score - max_score).abs() < 0.01) {
+                mvp.is_mvp = true;
+            }
+        }
+
+        let count = players.len().max(1) as i64;
+        teams.push(PostGameTeam {
+            is_winner: team_id == winning_team,
+            avg_damage: players.iter().map(|p| p.total_damage).sum::<i64>() / count,
+            avg_gold: players.iter().map(|p| p.gold_earned).sum::<i64>() / count,
+            avg_cs: players.iter().map(|p| p.cs).sum::<i64>() / count,
+            avg_vision: players.iter().map(|p| p.vision_score).sum::<i64>() / count,
+            players,
+        });
+    }
+
+    // Sort teams: winning team first
+    teams.sort_by(|a, b| b.is_winner.cmp(&a.is_winner));
+
+    Ok(PostGameStats { teams })
 }
 
 /// Get the current queue ID from the gameflow session.

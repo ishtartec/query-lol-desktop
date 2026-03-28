@@ -52,12 +52,18 @@ interface PostGamePlayer {
   gold_earned: number;
   cs: number;
   vision_score: number;
+  mvp_score: number;
+  is_mvp: boolean;
   items: number[];
 }
 
 interface PostGameTeam {
   is_winner: boolean;
   players: PostGamePlayer[];
+  avg_damage: number;
+  avg_gold: number;
+  avg_cs: number;
+  avg_vision: number;
 }
 
 interface PostGameStats {
@@ -65,7 +71,9 @@ interface PostGameStats {
 }
 
 interface MatchHistoryEntry {
+  game_id: number;
   champion_id: number;
+  queue_id: number;
   game_mode: string;
   win: boolean;
   kills: number;
@@ -84,6 +92,20 @@ interface LiveGameState {
 interface LiveGamePlayer {
   champion_id: number;
   summoner_name: string;
+}
+
+interface BanSuggestion {
+  champion_id: number;
+  win_rate: number;
+  pick_rate: number;
+  ban_rate: number;
+  score: number;
+}
+
+interface ComfortPick {
+  champion_id: number;
+  games_played: number;
+  meta_win_rate: number;
 }
 
 interface RankedInfo {
@@ -129,12 +151,16 @@ interface AppState {
   counters: Record<string, number>;
   draft: DraftState | null;
   ranked: RankedInfo | null;
+  ban_suggestions: BanSuggestion[];
+  comfort_picks: ComfortPick[];
   match_history: MatchHistoryEntry[];
   live_game: LiveGameState | null;
   post_game: PostGameStats | null;
   game_mode: string;
   recommendations: PickRecommendation[];
+  ban_phase_active: boolean;
   auto_apply: boolean;
+  auto_lock: boolean;
   region: string;
 }
 
@@ -269,8 +295,10 @@ function App() {
     status: "disconnected", summoner_name: null, champion_id: null,
     champion_name: null, assigned_position: null, build: null,
     build_alternatives: null, counters: {},
-    draft: null, ranked: null, match_history: [], live_game: null, post_game: null,
-    game_mode: "classic", recommendations: [], auto_apply: true, region: "euw",
+    draft: null, ranked: null, ban_suggestions: [], comfort_picks: [],
+    match_history: [], live_game: null, post_game: null,
+    game_mode: "classic", recommendations: [], ban_phase_active: false,
+    auto_apply: true, auto_lock: false, region: "euw",
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -355,12 +383,20 @@ function App() {
             onChange={(e) => invoke("set_region", { region: e.target.value })}>
             {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
-          <label className="toggle-label">
-            <input type="checkbox" checked={state.auto_apply}
-              onChange={() => invoke("set_auto_apply", { enabled: !state.auto_apply })} />
-            <span className="toggle-slider" />
-            Auto-apply
-          </label>
+          <div className="toolbar-toggles">
+            <label className="toggle-label">
+              <input type="checkbox" checked={state.auto_apply}
+                onChange={() => invoke("set_auto_apply", { enabled: !state.auto_apply })} />
+              <span className="toggle-slider" />
+              Auto-apply
+            </label>
+            <label className="toggle-label">
+              <input type="checkbox" checked={state.auto_lock}
+                onChange={() => invoke("set_auto_lock", { enabled: !state.auto_lock })} />
+              <span className="toggle-slider" />
+              Auto-lock
+            </label>
+          </div>
         </div>
       )}
 
@@ -537,9 +573,34 @@ function App() {
 
           {/* Right: Recommendations */}
           <div className="cs-right">
+            {/* Ban suggestions */}
+            {!hasChampion && state.ban_phase_active && state.ban_suggestions.length > 0 && (
+              <section className="section-recs" style={{ marginBottom: 14 }}>
+                <h3 className="section-title">Ban Suggestions</h3>
+                <div className="recs-list">
+                  {state.ban_suggestions.map(ban => (
+                    <BanCard key={ban.champion_id} ban={ban} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Comfort picks */}
+            {!hasChampion && state.comfort_picks.length > 0 && (
+              <section className="section-recs" style={{ marginBottom: 14 }}>
+                <h3 className="section-title">Your Champions</h3>
+                <div className="recs-list">
+                  {state.comfort_picks.map(cp => (
+                    <ComfortCard key={cp.champion_id} pick={cp} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Recommended picks */}
             {!hasChampion && state.recommendations.length > 0 && (
               <section className="section-recs">
-                <h3 className="section-title">Recommended Picks</h3>
+                <h3 className="section-title">Meta Picks</h3>
                 <div className="recs-list">
                   {state.recommendations.map(rec => (
                     <RecCard key={rec.champion_id} rec={rec} />
@@ -547,6 +608,7 @@ function App() {
                 </div>
               </section>
             )}
+
             {hasChampion && (
               <section className="section-recs">
                 <h3 className="section-title">Items in Shop</h3>
@@ -561,7 +623,7 @@ function App() {
 
       {/* Post-game summary */}
       {inPostGame && state.post_game && (
-        <PostGameView stats={state.post_game} />
+        <PostGameView stats={state.post_game} showBack={true} />
       )}
 
       {/* Error toast */}
@@ -665,7 +727,7 @@ function ChampionNameLabel({ championId, fallback }: { championId: number; fallb
 function RecCard({ rec }: { rec: PickRecommendation }) {
   const info = useChampionName(rec.champion_id);
   return (
-    <div className="rec-card">
+    <div className="rec-card rec-clickable" onClick={() => invoke("pick_champion", { championId: rec.champion_id })} title="Click to pick">
       <ChampionIcon championId={rec.champion_id} size={40} className="rec-icon" />
       <div className="rec-info">
         <span className="rec-name">{info?.name || `#${rec.champion_id}`}</span>
@@ -712,6 +774,11 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
           <span className="mh-wr">{wr}% WR</span>
         </div>
       </div>
+      <div className="mh-trend">
+        {history.map((m, i) => (
+          <div key={i} className={`mh-trend-dot ${m.win ? "trend-win" : "trend-loss"}`} title={m.win ? "Win" : "Loss"} />
+        ))}
+      </div>
       <div className="mh-list">
         {history.map((m, i) => (
           <MatchHistoryRow key={i} match={m} />
@@ -729,12 +796,14 @@ function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
   const total = m.kills + m.deaths + m.assists || 1;
 
   return (
-    <div className={`mh-row ${m.win ? "mh-row-win" : "mh-row-loss"}`}>
+    <div className={`mh-row ${m.win ? "mh-row-win" : "mh-row-loss"}`}
+      onClick={() => invoke("view_match_details", { gameId: m.game_id })}
+      style={{ cursor: "pointer" }}>
       <div className={`mh-result ${m.win ? "win" : "loss"}`}>{m.win ? "W" : "L"}</div>
       <ChampionIcon championId={m.champion_id} size={36} />
       <div className="mh-info">
         <span className="mh-champ">{champInfo?.name || "..."}</span>
-        <span className="mh-mode">{m.game_mode === "ARAM" ? "ARAM" : "Ranked"}</span>
+        <span className="mh-mode">{queueLabel(m.queue_id, m.game_mode)}</span>
       </div>
       <div className="mh-kda-col">
         <span className="pg-kda">
@@ -756,6 +825,19 @@ function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
       <span className="mh-ago">{ago}</span>
     </div>
   );
+}
+
+function queueLabel(queueId: number, gameMode: string): string {
+  // Common queue IDs
+  if (queueId === 420) return "Ranked Solo";
+  if (queueId === 440) return "Ranked Flex";
+  if (queueId === 450 || queueId === 900) return "ARAM";
+  if (queueId === 400) return "Normal Draft";
+  if (queueId === 430) return "Normal Blind";
+  if (queueId === 490) return "Quickplay";
+  if (gameMode === "ARAM") return "ARAM";
+  if (gameMode === "CLASSIC") return "Normal";
+  return gameMode;
 }
 
 function timeAgo(timestamp: number): string {
@@ -812,12 +894,55 @@ function LiveGameView({ game }: { game: LiveGameState }) {
   );
 }
 
+// --- Ban Card ---
+
+function BanCard({ ban }: { ban: BanSuggestion }) {
+  const info = useChampionName(ban.champion_id);
+  return (
+    <div className="rec-card ban-card rec-clickable" onClick={() => invoke("ban_champion", { championId: ban.champion_id })} title="Click to ban">
+      <ChampionIcon championId={ban.champion_id} size={36} className="rec-icon" />
+      <div className="rec-info">
+        <span className="rec-name">{info?.name || "..."}</span>
+        <div className="rec-stats">
+          <span className="rec-wr">{(ban.win_rate * 100).toFixed(1)}% WR</span>
+          <span className="ban-pr">{(ban.pick_rate * 100).toFixed(1)}% PR</span>
+        </div>
+      </div>
+      <span className="ban-threat">BAN</span>
+    </div>
+  );
+}
+
+// --- Comfort Card ---
+
+function ComfortCard({ pick }: { pick: ComfortPick }) {
+  const info = useChampionName(pick.champion_id);
+  const isMeta = pick.meta_win_rate > 0.51;
+  return (
+    <div className="rec-card comfort-card rec-clickable" onClick={() => invoke("pick_champion", { championId: pick.champion_id })} title="Click to pick">
+      <ChampionIcon championId={pick.champion_id} size={36} className="rec-icon" />
+      <div className="rec-info">
+        <span className="rec-name">{info?.name || "..."}</span>
+        <div className="rec-stats">
+          <span className="rec-wr">{(pick.meta_win_rate * 100).toFixed(1)}% WR</span>
+          <span className="comfort-games">{pick.games_played} games</span>
+          {isMeta && <span className="best-pick-badge">Best Pick</span>}
+        </div>
+      </div>
+      <span className="comfort-badge">MAIN</span>
+    </div>
+  );
+}
+
 // --- Post Game View ---
 
-function PostGameView({ stats }: { stats: PostGameStats }) {
+const POS_ORDER: Record<string, number> = {
+  TOP: 0, JUNGLE: 1, MIDDLE: 2, MID: 2, BOTTOM: 3, ADC: 3, UTILITY: 4, SUPPORT: 4,
+};
+
+function PostGameView({ stats, showBack }: { stats: PostGameStats; showBack?: boolean }) {
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
 
-  // Find max damage across all players for damage bars
   const maxDamage = Math.max(
     ...stats.teams.flatMap(t => t.players.map(p => p.total_damage)),
     1
@@ -825,40 +950,57 @@ function PostGameView({ stats }: { stats: PostGameStats }) {
 
   return (
     <div className="postgame-layout">
-      <h3 className="section-title" style={{ marginBottom: 14 }}>Match Summary</h3>
+      <div className="postgame-title-row">
+        {showBack && (
+          <button className="btn-back" onClick={() => invoke("back_to_lobby")}>&larr; Back</button>
+        )}
+        <h3 className="section-title">Match Summary</h3>
+      </div>
       <div className="postgame-teams">
-        {sorted.map((team, ti) => (
-          <div key={ti} className={`postgame-team ${team.is_winner ? "postgame-win" : "postgame-loss"}`}>
-            <div className="postgame-team-header">
-              <span className={`postgame-result ${team.is_winner ? "win" : "loss"}`}>
-                {team.is_winner ? "Victory" : "Defeat"}
-              </span>
-              <span className="postgame-team-kda">
-                {team.players.reduce((s, p) => s + p.kills, 0)} / {team.players.reduce((s, p) => s + p.deaths, 0)} / {team.players.reduce((s, p) => s + p.assists, 0)}
-              </span>
+        {sorted.map((team, ti) => {
+          const players = [...team.players].sort(
+            (a, b) => (POS_ORDER[a.position] ?? 9) - (POS_ORDER[b.position] ?? 9)
+          );
+          return (
+            <div key={ti} className={`postgame-team ${team.is_winner ? "postgame-win" : "postgame-loss"}`}>
+              <div className="postgame-team-header">
+                <span className={`postgame-result ${team.is_winner ? "win" : "loss"}`}>
+                  {team.is_winner ? "Victory" : "Defeat"}
+                </span>
+                <span className="postgame-team-kda">
+                  {players.reduce((s, p) => s + p.kills, 0)} / {players.reduce((s, p) => s + p.deaths, 0)} / {players.reduce((s, p) => s + p.assists, 0)}
+                </span>
+              </div>
+              {players.map((p, pi) => (
+                <PostGameRow key={pi} player={p} maxDamage={maxDamage} team={team} />
+              ))}
             </div>
-            {team.players.map((p, pi) => (
-              <PostGameRow key={pi} player={p} maxDamage={maxDamage} />
-            ))}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function PostGameRow({ player: p, maxDamage }: { player: PostGamePlayer; maxDamage: number }) {
+function StatCell({ value, avg, format }: { value: number; avg: number; format: string }) {
+  const cls = value > avg * 1.15 ? "pg-above" : value < avg * 0.85 ? "pg-below" : "";
+  const display = format === "k" ? formatNumber(value) : value.toString();
+  return <span className={`pg-stat ${cls}`}>{display}</span>;
+}
+
+function PostGameRow({ player: p, maxDamage, team }: { player: PostGamePlayer; maxDamage: number; team: PostGameTeam }) {
   const champInfo = useChampionName(p.champion_id);
   const kda = p.deaths === 0 ? "Perfect" : ((p.kills + p.assists) / p.deaths).toFixed(1);
   const dmgPct = (p.total_damage / maxDamage) * 100;
 
   return (
-    <div className={`postgame-row ${p.is_local ? "postgame-row-local" : ""}`}>
+    <div className={`postgame-row ${p.is_local ? "postgame-row-local" : ""} ${p.is_mvp ? "postgame-row-mvp" : ""}`}>
       <div className="pg-player">
         <ChampionIcon championId={p.champion_id} size={32} />
         <div className="pg-player-info">
           <span className="pg-player-name">
             {p.summoner_name !== "Unknown" ? p.summoner_name : (champInfo?.name || "Unknown")}
+            {p.is_mvp && <span className="mvp-badge">MVP</span>}
           </span>
           <span className="pg-champ-name">
             {champInfo?.name || ""}
@@ -877,19 +1019,19 @@ function PostGameRow({ player: p, maxDamage }: { player: PostGamePlayer; maxDama
         <span className="pg-kda-ratio">{kda} KDA</span>
       </div>
       <div className="pg-col-dmg">
-        <span className="pg-stat">{formatNumber(p.total_damage)}</span>
+        <StatCell value={p.total_damage} avg={team.avg_damage} format="k" />
         <div className="pg-dmg-bar">
           <div className="pg-dmg-fill" style={{ width: `${dmgPct}%` }} />
         </div>
       </div>
       <div className="pg-col-cs">
-        <span className="pg-stat">{p.cs}</span>
+        <StatCell value={p.cs} avg={team.avg_cs} format="" />
       </div>
       <div className="pg-col-vision">
-        <span className="pg-stat">{p.vision_score}</span>
+        <StatCell value={p.vision_score} avg={team.avg_vision} format="" />
       </div>
       <div className="pg-col-gold">
-        <span className="pg-stat pg-gold">{formatNumber(p.gold_earned)}</span>
+        <StatCell value={p.gold_earned} avg={team.avg_gold} format="k" />
       </div>
       <div className="pg-col-items">
         <div className="pg-items-row">
