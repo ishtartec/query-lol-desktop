@@ -392,6 +392,25 @@ async fn poll_loop(
                         s.counters = all_counters;
                         let _ = app_handle.emit("app-state-changed", s.clone());
                     }
+
+                    // Generate prediction if both teams have picks
+                    if !visible_enemies.is_empty() {
+                        let ally_champs: Vec<(i64, String)> = draft.allies.iter()
+                            .filter(|a| a.champion_id > 0)
+                            .map(|a| (a.champion_id, map_position(&a.position).to_string()))
+                            .collect();
+
+                        if !ally_champs.is_empty() {
+                            match opgg::generate_prediction(&region, &ally_champs, &visible_enemies).await {
+                                Ok(pred) => {
+                                    let mut s = state.lock().await;
+                                    s.prediction = Some(pred);
+                                    let _ = app_handle.emit("app-state-changed", s.clone());
+                                }
+                                Err(e) => log::warn!("Failed to generate prediction: {}", e),
+                            }
+                        }
+                    }
                 }
             }
         } else if phase == "InProgress" || phase == "GameStart" {

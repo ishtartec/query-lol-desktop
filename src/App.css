@@ -424,6 +424,41 @@
   font-variant-numeric: tabular-nums; min-width: 28px; text-align: right;
 }
 
+/* Prediction card */
+.prediction-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 16px;
+}
+.prediction-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.prediction-wr { display: flex; align-items: center; gap: 8px; }
+.pred-team { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pred-ally { color: var(--accent-blue); }
+.pred-enemy { color: var(--accent-red); }
+.pred-vs { font-size: 10px; font-weight: 700; color: var(--text-muted); }
+
+.prediction-bars { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.pred-bar-row { display: flex; align-items: center; gap: 8px; }
+.pred-bar-label {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  width: 32px; flex-shrink: 0;
+}
+.pred-bar {
+  flex: 1; height: 8px; background: var(--bg-primary);
+  border-radius: 4px; overflow: hidden;
+}
+.pred-bar-ally { height: 100%; background: var(--accent-blue); border-radius: 4px; opacity: 0.8; }
+.pred-bar-enemy { height: 100%; background: var(--accent-red); border-radius: 4px; opacity: 0.8; }
+
+.prediction-tip {
+  font-size: 11px; color: var(--text-secondary); font-weight: 500;
+  line-height: 1.4; padding: 8px 10px;
+  background: var(--bg-primary); border-radius: 6px;
+  border-left: 3px solid var(--accent-gold-dim);
+}
+
 /* Ban cards */
 .ban-card { border-color: rgba(232, 64, 87, 0.2); }
 .ban-card:hover { border-color: rgba(232, 64, 87, 0.4); }

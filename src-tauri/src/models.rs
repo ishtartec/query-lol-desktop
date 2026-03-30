@@ -65,6 +65,7 @@ pub struct AppState {
     pub comfort_picks: Vec<ComfortPick>,
     pub match_history: Vec<MatchHistoryEntry>,
     pub live_game: Option<LiveGameState>,
+    pub prediction: Option<GamePrediction>,
     pub post_game: Option<PostGameStats>,
     #[serde(skip)]
     pub viewing_past_match: bool,
@@ -140,6 +141,7 @@ impl Default for AppState {
             ban_phase_active: false,
             comfort_picks: vec![],
             match_history: vec![],
+            prediction: None,
             live_game: None,
             post_game: None,
             viewing_past_match: false,
@@ -213,6 +215,8 @@ pub struct OpggChampionData {
     pub skill_masteries: Vec<OpggSkillMastery>,
     #[serde(default)]
     pub counters: Vec<OpggCounter>,
+    #[serde(default)]
+    pub game_lengths: Vec<OpggGameLength>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,6 +277,27 @@ pub struct OpggCounter {
     pub champion_id: i64,
     pub play: i64,
     pub win: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggGameLength {
+    pub game_length: i64,
+    pub rate: f64,
+    #[serde(default)]
+    pub average: f64,
+}
+
+// --- Game prediction ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GamePrediction {
+    pub ally_avg_wr: f64,
+    pub enemy_avg_wr: f64,
+    pub ally_early_score: f64,
+    pub ally_late_score: f64,
+    pub enemy_early_score: f64,
+    pub enemy_late_score: f64,
+    pub tip: String,
 }
 
 // --- OP.GG tier list ---

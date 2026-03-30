@@ -136,6 +136,117 @@ pub async fn fetch_counters(
     Ok(counters)
 }
 
+/// Fetch game_lengths data for a champion to analyze early/late power.
+pub async fn fetch_game_lengths(
+    region: &str,
+    champion_id: i64,
+    position: &str,
+) -> Result<Vec<OpggGameLength>, String> {
+    let url = format!("{}/{}/champions/ranked/{}/{}", OPGG_API_BASE, region, champion_id, position);
+    let data: OpggResponse = http_client()
+        .get(&url)
+        .header("User-Agent", "QueryLoLDesktop/0.1")
+        .send().await.map_err(|e| format!("HTTP: {}", e))?
+        .json().await.map_err(|e| format!("Parse: {}", e))?;
+    Ok(data.data.game_lengths)
+}
+
+/// Generate game prediction based on both teams' champions.
+pub async fn generate_prediction(
+    region: &str,
+    allies: &[(i64, String)],   // (champion_id, position)
+    enemies: &[(i64, String)],
+) -> Result<GamePrediction, String> {
+    // Fetch game_lengths for all champions in parallel
+    let mut futures = vec![];
+    let all_champs: Vec<(i64, String, bool)> = allies.iter()
+        .map(|(id, pos)| (*id, pos.clone(), true))
+        .chain(enemies.iter().map(|(id, pos)| (*id, pos.clone(), false)))
+        .filter(|(id, _, _)| *id > 0)
+        .collect();
+
+    for (champ_id, pos, _) in &all_champs {
+        let r = region.to_string();
+        let cid = *champ_id;
+        let p = if pos.is_empty() { "mid".to_string() } else { pos.clone() };
+        futures.push(tokio::spawn(async move {
+            fetch_game_lengths(&r, cid, &p).await.unwrap_or_default()
+        }));
+    }
+
+    let mut results = vec![];
+    for fut in futures {
+        results.push(fut.await.unwrap_or_default());
+    }
+
+    let mut ally_wr_sum = 0.0;
+    let mut ally_count = 0;
+    let mut ally_early = 0.0;
+    let mut ally_late = 0.0;
+    let mut enemy_wr_sum = 0.0;
+    let mut enemy_count = 0;
+    let mut enemy_early = 0.0;
+    let mut enemy_late = 0.0;
+
+    for (i, (_, _, is_ally)) in all_champs.iter().enumerate() {
+        let gl = &results[i];
+        let early_wr = gl.iter().find(|g| g.game_length == 0).map(|g| g.rate).unwrap_or(0.5);
+        let late_wr = gl.iter().find(|g| g.game_length >= 35).map(|g| g.rate)
+            .or_else(|| gl.iter().find(|g| g.game_length >= 30).map(|g| g.rate))
+            .unwrap_or(0.5);
+        let avg_wr = gl.iter().map(|g| g.rate).sum::<f64>() / gl.len().max(1) as f64;
+
+        if *is_ally {
+            ally_wr_sum += if avg_wr > 0.0 { avg_wr } else { 0.5 };
+            ally_early += early_wr;
+            ally_late += late_wr;
+            ally_count += 1;
+        } else {
+            enemy_wr_sum += if avg_wr > 0.0 { avg_wr } else { 0.5 };
+            enemy_early += early_wr;
+            enemy_late += late_wr;
+            enemy_count += 1;
+        }
+    }
+
+    let ally_avg_wr = if ally_count > 0 { ally_wr_sum / ally_count as f64 } else { 0.5 };
+    let enemy_avg_wr = if enemy_count > 0 { enemy_wr_sum / enemy_count as f64 } else { 0.5 };
+    let ally_early_score = if ally_count > 0 { ally_early / ally_count as f64 } else { 0.5 };
+    let ally_late_score = if ally_count > 0 { ally_late / ally_count as f64 } else { 0.5 };
+    let enemy_early_score = if enemy_count > 0 { enemy_early / enemy_count as f64 } else { 0.5 };
+    let enemy_late_score = if enemy_count > 0 { enemy_late / enemy_count as f64 } else { 0.5 };
+
+    // Generate strategic tip
+    let ally_scales = ally_late_score > ally_early_score + 0.02;
+    let enemy_scales = enemy_late_score > enemy_early_score + 0.02;
+    let ally_early_advantage = ally_early_score > enemy_early_score + 0.01;
+    let ally_late_advantage = ally_late_score > enemy_late_score + 0.01;
+
+    let tip = if ally_early_advantage && !ally_late_advantage {
+        "Your team is stronger early. Force fights and take early objectives. Close out before 30 min.".to_string()
+    } else if !ally_early_advantage && ally_late_advantage {
+        "Your team outscales. Play safe early, farm up, and focus objectives after 25 min.".to_string()
+    } else if ally_early_advantage && ally_late_advantage {
+        "Your team is favored at all stages. Play aggressive and snowball your lead.".to_string()
+    } else if enemy_scales && !ally_scales {
+        "Enemy team scales better. Prioritize early dragons and rift herald. Force fights before 25 min.".to_string()
+    } else if ally_scales && !enemy_scales {
+        "Your team scales better. Avoid risky early fights. Prioritize farming and late-game objectives.".to_string()
+    } else {
+        "Teams are evenly matched. Focus on vision control and pick opportunities.".to_string()
+    };
+
+    Ok(GamePrediction {
+        ally_avg_wr,
+        enemy_avg_wr,
+        ally_early_score,
+        ally_late_score,
+        enemy_early_score,
+        enemy_late_score,
+        tip,
+    })
+}
+
 /// Fetch tier list for a position.
 pub async fn fetch_tier_list(
     region: &str,

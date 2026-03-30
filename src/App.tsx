@@ -128,6 +128,16 @@ interface LpEntry {
   rank: string;
 }
 
+interface GamePrediction {
+  ally_avg_wr: number;
+  enemy_avg_wr: number;
+  ally_early_score: number;
+  ally_late_score: number;
+  enemy_early_score: number;
+  enemy_late_score: number;
+  tip: string;
+}
+
 interface RankedInfo {
   tier: string;
   rank: string;
@@ -174,6 +184,7 @@ interface AppState {
   lp_history: LpEntry[];
   ban_suggestions: BanSuggestion[];
   comfort_picks: ComfortPick[];
+  prediction: GamePrediction | null;
   match_history: MatchHistoryEntry[];
   live_game: LiveGameState | null;
   post_game: PostGameStats | null;
@@ -367,7 +378,7 @@ function App() {
     status: "disconnected", summoner_name: null, champion_id: null,
     champion_name: null, assigned_position: null, build: null,
     build_alternatives: null, counters: {},
-    draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [],
+    draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", recommendations: [], ban_phase_active: false,
     auto_apply: true, auto_lock: false, auto_accept: false, region: "euw",
@@ -731,6 +742,41 @@ function App() {
                   </div>
                 )}
               </section>
+            )}
+
+            {/* Prediction & Strategy */}
+            {state.prediction && (
+              <div className="prediction-card">
+                <div className="prediction-header">
+                  <h3 className="card-label">Game Analysis</h3>
+                  <div className="prediction-wr">
+                    <span className="pred-team pred-ally">{(state.prediction.ally_avg_wr * 100).toFixed(1)}%</span>
+                    <span className="pred-vs">vs</span>
+                    <span className="pred-team pred-enemy">{(state.prediction.enemy_avg_wr * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
+                <div className="prediction-bars">
+                  <div className="pred-bar-row">
+                    <span className="pred-bar-label">Early</span>
+                    <div className="pred-bar">
+                      <div className="pred-bar-ally" style={{ width: `${state.prediction.ally_early_score * 100}%` }} />
+                    </div>
+                    <div className="pred-bar">
+                      <div className="pred-bar-enemy" style={{ width: `${state.prediction.enemy_early_score * 100}%` }} />
+                    </div>
+                  </div>
+                  <div className="pred-bar-row">
+                    <span className="pred-bar-label">Late</span>
+                    <div className="pred-bar">
+                      <div className="pred-bar-ally" style={{ width: `${state.prediction.ally_late_score * 100}%` }} />
+                    </div>
+                    <div className="pred-bar">
+                      <div className="pred-bar-enemy" style={{ width: `${state.prediction.enemy_late_score * 100}%` }} />
+                    </div>
+                  </div>
+                </div>
+                <p className="prediction-tip">{state.prediction.tip}</p>
+              </div>
             )}
           </div>
 
