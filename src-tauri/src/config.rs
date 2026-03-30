@@ -8,6 +8,8 @@ pub struct UserConfig {
     #[serde(default)]
     pub auto_lock: bool,
     #[serde(default)]
+    pub auto_accept: bool,
+    #[serde(default)]
     pub lp_history: Vec<LpEntry>,
 }
 
@@ -25,6 +27,7 @@ impl Default for UserConfig {
             region: "euw".to_string(),
             auto_apply: true,
             auto_lock: false,
+            auto_accept: false,
             lp_history: vec![],
         }
     }

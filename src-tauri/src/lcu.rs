@@ -310,10 +310,19 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                         .unwrap_or("")
                         .to_uppercase();
 
+                    // Get rank from puuid
+                    let puuid = rp.get("puuid").and_then(|v| v.as_str()).unwrap_or("");
+                    let rank = if !puuid.is_empty() {
+                        get_player_rank(creds, puuid).await
+                    } else {
+                        String::new()
+                    };
+
                     players.push(PostGamePlayer {
                         champion_id: rp.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
                         summoner_name: name.to_string(),
                         position,
+                        rank,
                         is_local: rp.get("isLocalPlayer").and_then(|v| v.as_bool()).unwrap_or(false),
                         kills: stats.get("CHAMPIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0),
                         deaths: stats.get("NUM_DEATHS").and_then(|v| v.as_i64()).unwrap_or(0),
@@ -510,6 +519,24 @@ pub fn extract_champion_from_session(session: &ChampSelectSession) -> (i64, Stri
     (0, position)
 }
 
+/// Accept the ready check (queue pop).
+pub async fn accept_ready_check(creds: &LcuCredentials) -> Result<(), String> {
+    let client = lcu_client();
+    let resp = client
+        .post(lcu_url(creds, "/lol-matchmaking/v1/ready-check/accept"))
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to accept ready check: {}", e))?;
+
+    if resp.status().is_success() {
+        info!("Ready check accepted");
+        Ok(())
+    } else {
+        Err(format!("Accept ready check failed: {}", resp.status()))
+    }
+}
+
 /// Fetch ranked stats for current summoner.
 pub async fn get_ranked_stats(creds: &LcuCredentials) -> Result<RankedInfo, String> {
     let client = lcu_client();
@@ -543,6 +570,69 @@ pub async fn get_ranked_stats(creds: &LcuCredentials) -> Result<RankedInfo, Stri
     }
 
     Err("No ranked data found".to_string())
+}
+
+/// Resolve summoner name by summoner ID.
+pub async fn get_summoner_name(creds: &LcuCredentials, summoner_id: i64) -> String {
+    let client = lcu_client();
+    let url = lcu_url(creds, &format!("/lol-summoner/v1/summoners/{}", summoner_id));
+    let resp = match client
+        .get(&url)
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return String::new(),
+    };
+
+    let raw: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+
+    raw.get("gameName")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .or_else(|| raw.get("displayName").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Fetch ranked tier for a player by puuid. Returns e.g. "GOLD III" or "".
+pub async fn get_player_rank(creds: &LcuCredentials, puuid: &str) -> String {
+    let client = lcu_client();
+    let url = lcu_url(creds, &format!("/lol-ranked/v1/ranked-stats/{}", puuid));
+    let resp = match client
+        .get(&url)
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return String::new(),
+    };
+
+    let raw: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+
+    if let Some(queues) = raw.get("queues").and_then(|q| q.as_array()) {
+        for q in queues {
+            let qt = q.get("queueType").and_then(|v| v.as_str()).unwrap_or("");
+            if qt == "RANKED_SOLO_5x5" {
+                let tier = q.get("tier").and_then(|v| v.as_str()).unwrap_or("");
+                let rank = q.get("division").and_then(|v| v.as_str())
+                    .or_else(|| q.get("rank").and_then(|v| v.as_str()))
+                    .unwrap_or("");
+                if !tier.is_empty() && tier != "NONE" {
+                    return format!("{} {}", tier, rank);
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 /// Fetch match history for current summoner (last 10 games).
@@ -633,17 +723,18 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
         }
     }
 
-    // Build identity map: participantId -> name
-    let mut names: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    // Build identity map: participantId -> (name, puuid)
+    let mut identities_map: std::collections::HashMap<i64, (String, String)> = std::collections::HashMap::new();
     if let Some(identities) = raw.get("participantIdentities").and_then(|p| p.as_array()) {
         for ident in identities {
             let pid = ident.get("participantId").and_then(|v| v.as_i64()).unwrap_or(0);
-            let name = ident.get("player")
-                .and_then(|p| p.get("gameName").and_then(|v| v.as_str())
-                    .or_else(|| p.get("summonerName").and_then(|v| v.as_str())))
+            let player = ident.get("player").unwrap_or(&serde_json::Value::Null);
+            let name = player.get("gameName").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+                .or_else(|| player.get("summonerName").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
                 .unwrap_or("Unknown")
                 .to_string();
-            names.insert(pid, name);
+            let puuid = player.get("puuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            identities_map.insert(pid, (name, puuid));
         }
     }
 
@@ -672,10 +763,22 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                 .unwrap_or("")
                 .to_uppercase();
 
+            let (name, puuid) = identities_map.get(&pid)
+                .cloned()
+                .unwrap_or_else(|| ("Unknown".to_string(), String::new()));
+
+            // Fetch rank for this player
+            let rank = if !puuid.is_empty() {
+                get_player_rank(creds, &puuid).await
+            } else {
+                String::new()
+            };
+
             let mut player = PostGamePlayer {
                 champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
-                summoner_name: names.get(&pid).cloned().unwrap_or_else(|| "Unknown".to_string()),
+                summoner_name: name,
                 position,
+                rank,
                 is_local: false,
                 kills, deaths, assists, total_damage, gold_earned, cs, vision_score,
                 mvp_score: 0.0,
@@ -683,12 +786,13 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                 items,
             };
 
-            player.mvp_score = kills as f64 * 3.0
-                + assists as f64 * 1.5
-                - deaths as f64 * 2.0
-                + total_damage as f64 / 1000.0 * 0.5
-                + cs as f64 * 0.5
-                + vision_score as f64 * 0.3;
+            player.mvp_score = kills as f64 * 4.0
+                + assists as f64 * 2.0
+                - deaths as f64 * 3.0
+                + total_damage as f64 / 1000.0 * 1.0
+                + cs as f64 * 0.1
+                + vision_score as f64 * 0.2
+                + (kills + assists) as f64 / (deaths.max(1)) as f64 * 5.0;
 
             team_map.entry(team_id).or_default().push(player);
         }
@@ -778,47 +882,107 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
     let mut allies = vec![];
     let mut enemies = vec![];
 
-    // Parse teamOne and teamTwo, then figure out which is ours
-    let mut team_one = vec![];
-    let mut team_two = vec![];
-    let mut my_team_is_one = true;
+    // Parse players with summoner IDs and puuids
+    struct RawPlayer {
+        player: LiveGamePlayer,
+        summoner_id: i64,
+        puuid: String,
+    }
 
-    fn parse_players(arr: &[serde_json::Value]) -> Vec<(LiveGamePlayer, i64)> {
+    fn parse_players_raw(arr: &[serde_json::Value]) -> Vec<RawPlayer> {
         arr.iter().map(|p| {
             let sid = p.get("summonerId").and_then(|v| v.as_i64()).unwrap_or(0);
-            let player = LiveGamePlayer {
-                champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
-                summoner_name: p.get("riotIdGameName")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .or_else(|| p.get("summonerName").and_then(|v| v.as_str()))
-                    .unwrap_or("Unknown")
-                    .to_string(),
-            };
-            (player, sid)
+            let puuid = p.get("puuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+            let name = p.get("riotIdGameName")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| p.get("summonerName").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+                .or_else(|| p.get("gameName").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+                .or_else(|| p.get("summonerInternalName").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+                .unwrap_or("")
+                .to_string();
+
+            RawPlayer {
+                player: LiveGamePlayer {
+                    champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
+                    summoner_name: name,
+                    rank: String::new(),
+                },
+                summoner_id: sid,
+                puuid,
+            }
         }).collect()
     }
 
+    let mut team_one_raw = vec![];
+    let mut team_two_raw = vec![];
+    let mut my_team_is_one = true;
+
     if let Some(arr) = raw.get("gameData").and_then(|g| g.get("teamOne")).and_then(|t| t.as_array()) {
-        let parsed = parse_players(arr);
-        // Check if our summoner is in this team
+        team_one_raw = parse_players_raw(arr);
         if let Some(sid) = my_summoner_id {
-            if parsed.iter().any(|(_, id)| *id == sid) {
+            if team_one_raw.iter().any(|r| r.summoner_id == sid) {
                 my_team_is_one = true;
             }
         }
-        team_one = parsed.into_iter().map(|(p, _)| p).collect();
     }
 
     if let Some(arr) = raw.get("gameData").and_then(|g| g.get("teamTwo")).and_then(|t| t.as_array()) {
-        let parsed = parse_players(arr);
+        team_two_raw = parse_players_raw(arr);
         if let Some(sid) = my_summoner_id {
-            if parsed.iter().any(|(_, id)| *id == sid) {
+            if team_two_raw.iter().any(|r| r.summoner_id == sid) {
                 my_team_is_one = false;
             }
         }
-        team_two = parsed.into_iter().map(|(p, _)| p).collect();
     }
+
+    // Fetch ranks for all players in parallel
+    let mut all_raw: Vec<RawPlayer> = team_one_raw.into_iter().chain(team_two_raw.into_iter()).collect();
+
+    // Fetch ranks and resolve names in parallel
+    let mut futures = vec![];
+    for raw in &all_raw {
+        let puuid = raw.puuid.clone();
+        let sid = raw.summoner_id;
+        let needs_name = raw.player.summoner_name.is_empty();
+        let creds = creds.clone();
+        futures.push(tokio::spawn(async move {
+            let rank = if !puuid.is_empty() {
+                get_player_rank(&creds, &puuid).await
+            } else {
+                String::new()
+            };
+            let name = if needs_name && sid > 0 {
+                get_summoner_name(&creds, sid).await
+            } else {
+                String::new()
+            };
+            (rank, name)
+        }));
+    }
+
+    for (i, fut) in futures.into_iter().enumerate() {
+        if let Ok((rank, name)) = fut.await {
+            all_raw[i].player.rank = rank;
+            if !name.is_empty() {
+                all_raw[i].player.summoner_name = name;
+            }
+        }
+    }
+
+    // Re-split: first N are team one, rest are team two
+    let team_one_count = raw.get("gameData")
+        .and_then(|g| g.get("teamOne"))
+        .and_then(|t| t.as_array())
+        .map(|a| a.len())
+        .unwrap_or(5);
+
+    let (t1, t2): (Vec<_>, Vec<_>) = all_raw.into_iter().enumerate()
+        .partition(|(i, _)| *i < team_one_count);
+
+    let team_one: Vec<LiveGamePlayer> = t1.into_iter().map(|(_, r)| r.player).collect();
+    let team_two: Vec<LiveGamePlayer> = t2.into_iter().map(|(_, r)| r.player).collect();
 
     if my_team_is_one {
         allies = team_one;
@@ -828,5 +992,6 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
         enemies = team_one;
     }
 
+    info!("Live game: {} allies, {} enemies with ranks", allies.len(), enemies.len());
     Ok(LiveGameState { queue_name, allies, enemies })
 }

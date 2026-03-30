@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <mask id="q">
+      <rect width="1024" height="1024" fill="white"/>
+      <circle cx="480" cy="440" r="155" fill="black"/>
+    </mask>
+  </defs>
+  <!-- Q ring with cutout -->
+  <circle cx="480" cy="440" r="260" fill="#1a1a1a" mask="url(#q)"/>
+  <!-- Q tail -->
+  <rect x="560" y="580" width="200" height="90" rx="10" transform="rotate(42, 560, 580)" fill="#1a1a1a"/>
+</svg>

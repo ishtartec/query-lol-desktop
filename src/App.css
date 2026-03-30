@@ -34,10 +34,9 @@
 /* === Header === */
 .header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 0; padding-left: 70px; /* space for macOS traffic lights */
+  padding: 10px 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 14px; flex-shrink: 0;
-  -webkit-app-region: drag;
 }
 .header-left { display: flex; align-items: center; gap: 10px; }
 .logo {
@@ -71,13 +70,75 @@
 .rank-grandmaster { color: #ef4444; background: rgba(239,68,68,0.12); }
 .rank-challenger { color: #fbbf24; background: rgba(251,191,36,0.15); }
 
-/* === Connect === */
+.rank-emblem {
+  display: inline-block; vertical-align: middle;
+  margin-right: 3px; margin-top: -1px;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.3));
+}
+
+/* === Connect / Landing === */
 .section-connect { flex: 1; display: flex; align-items: center; justify-content: center; }
-.connect-card { text-align: center; padding: 40px; }
-.connect-icon { color: var(--accent-gold); margin-bottom: 20px; opacity: 0.8; }
-.connect-card h2 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.connect-card { text-align: center; padding: 40px; max-width: 440px; }
+
+.hero-logo {
+  width: 80px; height: 80px; border-radius: 20px;
+  background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-dim));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 900; font-size: 36px; color: #0a0e13;
+  margin: 0 auto 20px;
+  box-shadow: 0 0 40px rgba(200, 155, 60, 0.2), 0 0 80px rgba(200, 155, 60, 0.08);
+}
+
+.hero-title {
+  font-size: 28px; font-weight: 800; color: var(--text-primary);
+  margin-bottom: 6px; letter-spacing: -0.5px;
+}
+
+.hero-subtitle {
+  font-size: 13px; color: var(--text-secondary); margin-bottom: 28px;
+  font-weight: 500;
+}
+
+.scanning-indicator {
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; margin-bottom: 20px;
+}
+
+.scanning-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent-gold);
+  animation: scanPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes scanPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.scanning-text {
+  font-size: 12px; color: var(--text-muted); font-weight: 500;
+}
+
+.connect-controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 28px; }
+
+.hero-features {
+  display: flex; flex-direction: column; gap: 10px;
+  text-align: left;
+}
+
+.hero-feature {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px; color: var(--text-secondary); font-weight: 500;
+  padding: 8px 14px; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+
+.hero-feature-icon {
+  width: 20px; height: 20px; flex-shrink: 0;
+  color: var(--accent-gold);
+}
+
 .hint { font-size: 12px; color: var(--text-muted); margin-bottom: 24px; }
-.connect-controls { display: flex; gap: 10px; justify-content: center; }
 
 .select {
   background: var(--bg-card); color: var(--text-primary);
@@ -142,16 +203,67 @@
 }
 .waiting-text { font-size: 13px; color: var(--text-muted); }
 
-/* === Champ Select Layout (landscape, 3 columns) === */
+/* === Champ Select Layout === */
 .champ-select-layout {
   display: flex;
-  gap: 18px;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 10px;
+}
+
+/* Recommendations bar (top) */
+.cs-recs-bar {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 14px;
+  flex-shrink: 0;
+}
+.cs-recs-label {
+  font-size: 10px; font-weight: 700; color: var(--accent-gold);
+  text-transform: uppercase; letter-spacing: 0.8px;
+  flex-shrink: 0;
+}
+.cs-recs-scroll {
+  display: flex; gap: 6px; overflow-x: auto; flex: 1;
+}
+.cs-recs-scroll::-webkit-scrollbar { height: 0; }
+.cs-rec-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: var(--bg-primary);
+  border: 1px solid var(--border); border-radius: 8px;
+  cursor: pointer; transition: all 0.15s;
+  flex-shrink: 0;
+}
+.cs-rec-chip:hover { border-color: var(--accent-gold-dim); background: var(--bg-card-hover); }
+.cs-rec-chip:active { transform: scale(0.97); }
+.cs-rec-chip-info { display: flex; flex-direction: column; }
+.cs-rec-chip-info .draft-champ-name { font-size: 11px; }
+.cs-rec-chip-score {
+  font-size: 14px; font-weight: 800; color: var(--accent-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Main 3-column area */
+.cs-main {
+  display: flex;
+  gap: 16px;
   flex: 1;
   min-height: 0;
 }
 
+/* Matchup analysis */
+.matchup-list { display: flex; flex-direction: column; gap: 4px; }
+.matchup-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; background: var(--bg-primary);
+  border-radius: 6px; font-size: 12px;
+}
+.matchup-row .draft-champ-name { flex: 1; font-size: 11px; }
+.matchup-wr { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 .cs-left {
-  width: 280px;
+  width: 220px;
   flex-shrink: 0;
   overflow-y: auto;
 }
@@ -166,10 +278,51 @@
 }
 
 .cs-right {
-  width: 300px;
+  width: 220px;
   flex-shrink: 0;
   overflow-y: auto;
 }
+
+/* Team panels (Itero style) */
+.cs-team { }
+.cs-team-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; margin-bottom: 8px; padding-left: 4px;
+}
+.cs-team-ally { color: var(--accent-blue); }
+.cs-team-enemy { color: var(--accent-red); }
+
+.cs-player {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; margin-bottom: 3px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 8px; transition: background 0.1s;
+}
+.cs-player:hover { background: var(--bg-card-hover); }
+.cs-player-local { border-color: var(--accent-gold-dim); background: var(--bg-card-hover); }
+
+.cs-player-info { flex: 1; min-width: 0; }
+.cs-player-info .draft-champ-name {
+  font-size: 12px; display: block; line-height: 1.2;
+}
+.cs-player-pos {
+  font-size: 9px; font-weight: 700; color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+.cs-player-empty {
+  font-size: 11px; color: var(--text-muted); padding: 10px 8px;
+  font-style: italic;
+}
+
+.cs-bans {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);
+}
+.cs-bans-label {
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  color: var(--text-muted); letter-spacing: 0.5px; flex-shrink: 0;
+}
+.cs-bans-list { display: flex; gap: 3px; flex-wrap: wrap; }
 
 .cs-empty {
   display: flex; flex-direction: column;
@@ -301,10 +454,18 @@
 
 .champion-card {
   display: flex; align-items: center; gap: 14px;
-  padding: 12px 14px; background: var(--bg-card);
+  padding: 16px 18px; background: var(--bg-card);
   border: 1px solid var(--border); border-radius: 10px;
   margin-bottom: 10px;
+  background-size: cover; background-position: center 20%;
+  position: relative; overflow: hidden;
 }
+.champion-card::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(10, 14, 19, 0.92) 0%, rgba(10, 14, 19, 0.75) 50%, rgba(10, 14, 19, 0.6) 100%);
+  z-index: 0;
+}
+.champion-card > * { position: relative; z-index: 1; }
 .champion-avatar {
   width: 50px; height: 50px; border-radius: 8px;
   overflow: hidden; border: 2px solid var(--accent-gold-dim); flex-shrink: 0;
@@ -593,6 +754,10 @@
   display: block; line-height: 1.2;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.lg-player-sub {
+  font-size: 10px; color: var(--text-secondary); line-height: 1.2;
+}
+.lg-rank { font-weight: 600; }
 
 /* === Post-Game === */
 .postgame-layout {
@@ -653,6 +818,7 @@
 .pg-champ-name {
   font-size: 10px; color: var(--text-secondary); line-height: 1.2;
 }
+.pg-rank { font-weight: 600; }
 
 .pg-col-kda {
   width: 90px; flex-shrink: 0;

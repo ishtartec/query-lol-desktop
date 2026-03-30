@@ -44,6 +44,7 @@ interface PostGamePlayer {
   champion_id: number;
   summoner_name: string;
   position: string;
+  rank: string;
   is_local: boolean;
   kills: number;
   deaths: number;
@@ -92,6 +93,7 @@ interface LiveGameState {
 interface LiveGamePlayer {
   champion_id: number;
   summoner_name: string;
+  rank: string;
 }
 
 interface BanSuggestion {
@@ -169,6 +171,7 @@ interface AppState {
   ban_phase_active: boolean;
   auto_apply: boolean;
   auto_lock: boolean;
+  auto_accept: boolean;
   region: string;
 }
 
@@ -230,6 +233,7 @@ interface RuneData { id: number; name: string; icon: string; }
 let championCache: Record<string, { key: string; name: string }> | null = null;
 let runeCache: Map<number, RuneData> | null = null;
 let runeStyleCache: Map<number, { name: string; icon: string }> | null = null;
+let itemCache: Record<string, string> | null = null; // itemId -> name
 
 async function loadChampionData() {
   if (championCache) return championCache;
@@ -263,6 +267,32 @@ async function loadRuneData() {
   } catch {}
 }
 
+async function loadItemData() {
+  if (itemCache) return itemCache;
+  try {
+    const resp = await fetch(`${DDRAGON}/${DDRAGON_VERSION}/data/en_US/item.json`);
+    const json = await resp.json();
+    const byId: Record<string, string> = {};
+    for (const [id, item] of Object.entries(json.data) as any[]) {
+      byId[id] = item.name;
+    }
+    itemCache = byId;
+    return byId;
+  } catch { return {}; }
+}
+
+function getItemName(id: number): string {
+  return itemCache?.[id.toString()] || `Item ${id}`;
+}
+
+function splashUrl(championKey: string): string {
+  return `${DDRAGON}/img/champion/splash/${championKey}_0.jpg`;
+}
+
+function rankEmblemUrl(tier: string): string {
+  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${tier.toLowerCase()}.png`;
+}
+
 function runeIconUrl(iconPath: string): string { return `${DDRAGON}/img/${iconPath}`; }
 function championIconUrl(key: string): string { return `${DDRAGON}/${DDRAGON_VERSION}/img/champion/${key}.png`; }
 function spellIconUrl(id: number): string { const k = SPELL_KEYS[id]; return k ? `${DDRAGON}/${DDRAGON_VERSION}/img/spell/${k}.png` : ""; }
@@ -281,6 +311,21 @@ function useChampionName(id: number | null): { key: string; name: string } | nul
 }
 
 // --- Components ---
+
+function RankEmblem({ rank, size = 20 }: { rank: string; size?: number }) {
+  if (!rank) return null;
+  const tier = rank.split(' ')[0]?.toLowerCase();
+  if (!tier || tier === 'unranked' || tier === 'none') return null;
+  return (
+    <img
+      src={rankEmblemUrl(tier)}
+      alt={rank}
+      title={rank}
+      className="rank-emblem"
+      style={{ width: size, height: size }}
+    />
+  );
+}
 
 function ChampionIcon({ championId, size = 36, className = "" }: { championId: number; size?: number; className?: string }) {
   const info = useChampionName(championId);
@@ -306,7 +351,7 @@ function App() {
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [],
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", recommendations: [], ban_phase_active: false,
-    auto_apply: true, auto_lock: false, region: "euw",
+    auto_apply: true, auto_lock: false, auto_accept: false, region: "euw",
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -319,6 +364,7 @@ function App() {
     fetchLatestVersion().then(() => {
       loadChampionData();
       loadRuneData().then(() => setRunesLoaded(true));
+      loadItemData();
     });
     const unlisten = listen<AppState>("app-state-changed", (e) => setState(e.payload));
     return () => { unlisten.then(fn => fn()); };
@@ -356,6 +402,7 @@ function App() {
           )}
           {isConnected && state.ranked && state.ranked.tier !== "UNRANKED" && (
             <span className={`ranked-badge rank-${state.ranked.tier.toLowerCase()}`}>
+              <RankEmblem rank={state.ranked.tier} size={18} />
               {state.ranked.tier} {state.ranked.rank} &middot; {state.ranked.lp} LP
             </span>
           )}
@@ -366,20 +413,42 @@ function App() {
       {!isConnected && (
         <section className="section-connect">
           <div className="connect-card">
-            <div className="connect-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+            <div className="hero-logo">Q</div>
+            <h1 className="hero-title">QueryLoL</h1>
+            <p className="hero-subtitle">Auto-builds &middot; Counters &middot; Pick recommendations</p>
+
+            <div className="scanning-indicator">
+              <div className="scanning-dot" />
+              <span className="scanning-text">Scanning for League Client</span>
             </div>
-            <h2>Waiting for League Client</h2>
-            <p className="hint">Launch the League of Legends client to get started</p>
+
             <div className="connect-controls">
               <select className="select" value={state.region}
                 onChange={(e) => invoke("set_region", { region: e.target.value })}>
                 {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
-            <div className="pulse-ring" style={{ marginTop: 20 }} />
+
+            <div className="hero-features">
+              <div className="hero-feature">
+                <svg className="hero-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span>Optimal runes, spells &amp; items — auto-applied</span>
+              </div>
+              <div className="hero-feature">
+                <svg className="hero-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                <span>Counter-based pick &amp; ban suggestions</span>
+              </div>
+              <div className="hero-feature">
+                <svg className="hero-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <span>Post-game analysis with MVP &amp; stats</span>
+              </div>
+            </div>
           </div>
         </section>
       )}
@@ -403,6 +472,12 @@ function App() {
                 onChange={() => invoke("set_auto_lock", { enabled: !state.auto_lock })} />
               <span className="toggle-slider" />
               Auto-lock
+            </label>
+            <label className="toggle-label">
+              <input type="checkbox" checked={state.auto_accept}
+                onChange={() => invoke("set_auto_accept", { enabled: !state.auto_accept })} />
+              <span className="toggle-slider" />
+              Auto-accept
             </label>
           </div>
         </div>
@@ -430,27 +505,72 @@ function App() {
         <LiveGameView game={state.live_game} />
       )}
 
-      {/* Champ select: 3-column landscape layout */}
+      {/* Champ select */}
       {inChampSelect && (
         <div className="champ-select-layout">
-          {/* Left: Draft */}
-          <div className="cs-left">
-            {state.draft && <DraftView draft={state.draft} counters={state.counters} myChampionId={state.champion_id} />}
-          </div>
-
-          {/* Center: Build */}
-          <div className="cs-center">
-
-            {!hasChampion && (
-              <div className="cs-empty">
-                <div className="pulse-ring pulse-ring-sm" />
-                <p className="waiting-text">Pick a champion...</p>
+          {/* Top: Draft Recommendations carousel */}
+          {!hasChampion && state.recommendations.length > 0 && (
+            <div className="cs-recs-bar">
+              <span className="cs-recs-label">Recommended</span>
+              <div className="cs-recs-scroll">
+                {state.recommendations.map(rec => (
+                  <div key={rec.champion_id} className="cs-rec-chip rec-clickable"
+                    onClick={() => invoke("pick_champion", { championId: rec.champion_id })}>
+                    <ChampionIcon championId={rec.champion_id} size={32} />
+                    <div className="cs-rec-chip-info">
+                      <ChampionNameLabel championId={rec.champion_id} fallback="..." />
+                      <span className="cs-rec-chip-score">{(rec.score * 100).toFixed(0)}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
+          )}
+
+          <div className="cs-main">
+            {/* Left: Allies */}
+            <div className="cs-left">
+              {state.draft && (
+                <div className="cs-team">
+                  <h4 className="cs-team-label cs-team-ally">Your Team</h4>
+                  {state.draft.allies.map((p, i) => (
+                    <div key={i} className={`cs-player ${p.is_local ? "cs-player-local" : ""}`}>
+                      <ChampionIcon championId={p.champion_id} size={36} />
+                      <div className="cs-player-info">
+                        <ChampionNameLabel championId={p.champion_id} fallback={p.is_local ? "You" : "..."} />
+                        {p.position && <span className="cs-player-pos">{POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
+                      </div>
+                    </div>
+                  ))}
+                  {state.draft.bans.length > 0 && (
+                    <div className="cs-bans">
+                      <span className="cs-bans-label">Bans</span>
+                      <div className="cs-bans-list">
+                        {state.draft.bans.map((id, i) => (
+                          <ChampionIcon key={i} championId={id} size={20} className="ban-icon" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Center: Build */}
+            <div className="cs-center">
+
+              {!hasChampion && (
+                <div className="cs-empty">
+                  <div className="pulse-ring pulse-ring-sm" />
+                  <p className="waiting-text">Pick a champion...</p>
+                </div>
+              )}
 
             {hasChampion && championInfo && (
               <section className="section-build">
-                <div className="champion-card">
+                <div className="champion-card" style={{
+                  backgroundImage: `url(${splashUrl(championInfo.key)})`,
+                }}>
                   <div className="champion-avatar">
                     <img src={championIconUrl(championInfo.key)} alt={championInfo.name} />
                   </div>
@@ -545,7 +665,7 @@ function App() {
                               <span className="items-label">Start</span>
                               <div className="items-row">
                                 {state.build!.starter_items.map(id => (
-                                  <div key={id} className="item-slot"><img src={itemIconUrl(id)} alt="" /></div>
+                                  <div key={id} className="item-slot" title={getItemName(id)}><img src={itemIconUrl(id)} alt="" /></div>
                                 ))}
                               </div>
                             </div>
@@ -555,7 +675,7 @@ function App() {
                               <span className="items-label">Boots</span>
                               <div className="items-row">
                                 {state.build!.boots.map(id => (
-                                  <div key={id} className="item-slot"><img src={itemIconUrl(id)} alt="" /></div>
+                                  <div key={id} className="item-slot" title={getItemName(id)}><img src={itemIconUrl(id)} alt="" /></div>
                                 ))}
                               </div>
                             </div>
@@ -566,7 +686,7 @@ function App() {
                               <div className="items-row">
                                 {state.build!.core_items.map((id, i) => (
                                   <div key={id} className="items-row">
-                                    <div className="item-slot"><img src={itemIconUrl(id)} alt="" /></div>
+                                    <div className="item-slot" title={getItemName(id)}><img src={itemIconUrl(id)} alt="" /></div>
                                     {i < state.build!.core_items.length - 1 && <span className="item-arrow">&rarr;</span>}
                                   </div>
                                 ))}
@@ -582,53 +702,44 @@ function App() {
             )}
           </div>
 
-          {/* Right: Recommendations */}
+          {/* Right: Enemies */}
           <div className="cs-right">
-            {/* Ban suggestions */}
-            {!hasChampion && state.ban_phase_active && state.ban_suggestions.length > 0 && (
-              <section className="section-recs" style={{ marginBottom: 14 }}>
-                <h3 className="section-title">Ban Suggestions</h3>
-                <div className="recs-list">
-                  {state.ban_suggestions.map(ban => (
-                    <BanCard key={ban.champion_id} ban={ban} />
-                  ))}
-                </div>
-              </section>
-            )}
+            {state.draft && (
+              <div className="cs-team">
+                <h4 className="cs-team-label cs-team-enemy">Enemy Team</h4>
+                {state.draft.enemies.length > 0 ? state.draft.enemies.map((p, i) => {
+                  const wr = hasChampion && p.champion_id > 0 ? state.counters[p.champion_id.toString()] : undefined;
+                  return (
+                    <div key={i} className="cs-player">
+                      <ChampionIcon championId={p.champion_id} size={36} />
+                      <div className="cs-player-info">
+                        <ChampionNameLabel championId={p.champion_id} fallback="..." />
+                        {p.position && <span className="cs-player-pos">{POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
+                      </div>
+                      {wr !== undefined && (
+                        <span className={`matchup-badge ${wr > 0.5 ? "matchup-good" : "matchup-bad"}`}>
+                          {(wr * 100).toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  );
+                }) : (
+                  <div className="cs-player-empty">Waiting for picks...</div>
+                )}
 
-            {/* Comfort picks */}
-            {!hasChampion && state.comfort_picks.length > 0 && (
-              <section className="section-recs" style={{ marginBottom: 14 }}>
-                <h3 className="section-title">Your Champions</h3>
-                <div className="recs-list">
-                  {state.comfort_picks.map(cp => (
-                    <ComfortCard key={cp.champion_id} pick={cp} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Recommended picks */}
-            {!hasChampion && state.recommendations.length > 0 && (
-              <section className="section-recs">
-                <h3 className="section-title">Meta Picks</h3>
-                <div className="recs-list">
-                  {state.recommendations.map(rec => (
-                    <RecCard key={rec.champion_id} rec={rec} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {hasChampion && (
-              <section className="section-recs">
-                <h3 className="section-title">Items in Shop</h3>
-                <p className="waiting-text" style={{ fontSize: 11 }}>
-                  Items pushed to the LoL client shop as "QueryLoL Recommended"
-                </p>
-              </section>
+                {/* Ban suggestions under enemies */}
+                {!hasChampion && state.ban_phase_active && state.ban_suggestions.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <h4 className="cs-team-label" style={{ color: "var(--accent-red)", marginBottom: 6 }}>Ban These</h4>
+                    {state.ban_suggestions.map(ban => (
+                      <BanCard key={ban.champion_id} ban={ban} />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
+          </div> {/* close cs-main */}
         </div>
       )}
 
@@ -648,85 +759,7 @@ function App() {
   );
 }
 
-// --- Draft View ---
-
-function normalizePosition(pos: string): string {
-  const map: Record<string, string> = { middle: "mid", bottom: "adc", utility: "support" };
-  return map[pos] || pos;
-}
-
-function DraftView({ draft, counters, myChampionId }: {
-  draft: DraftState;
-  counters: Record<string, number>;
-  myChampionId: number | null;
-}) {
-  const myPos = draft.allies.find(a => a.is_local)?.position || "";
-  const laneOpponentId = draft.enemies.find(
-    e => e.champion_id > 0 && normalizePosition(e.position) === normalizePosition(myPos)
-  )?.champion_id;
-
-  const hasCounters = myChampionId && myChampionId > 0 && Object.keys(counters).length > 0;
-
-  return (
-    <div className="draft-panel">
-      <div className="draft-teams">
-        <div className="draft-team draft-team-ally">
-          <h4 className="draft-team-label">Your Team</h4>
-          <div className="draft-slots">
-            {draft.allies.map((p, i) => (
-              <div key={i} className={`draft-slot ${p.is_local ? "draft-slot-local" : ""}`}>
-                <ChampionIcon championId={p.champion_id} size={32} />
-                <div className="draft-slot-info">
-                  <ChampionNameLabel championId={p.champion_id} fallback={p.is_local ? "You" : "..."} />
-                  {p.position && <span className="draft-pos">{POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="draft-vs">VS</div>
-
-        <div className="draft-team draft-team-enemy">
-          <h4 className="draft-team-label">Enemy Team</h4>
-          <div className="draft-slots">
-            {draft.enemies.length > 0 ? draft.enemies.map((p, i) => {
-              const wr = hasCounters && p.champion_id > 0 ? counters[p.champion_id.toString()] : undefined;
-              const isLaneOpponent = p.champion_id === laneOpponentId && laneOpponentId > 0;
-              return (
-                <div key={i} className={`draft-slot ${isLaneOpponent ? "draft-slot-lane" : ""}`}>
-                  <ChampionIcon championId={p.champion_id} size={32} />
-                  <div className="draft-slot-info">
-                    <ChampionNameLabel championId={p.champion_id} fallback="..." />
-                    {p.position && <span className="draft-pos">{POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
-                  </div>
-                  {wr !== undefined && (
-                    <span className={`matchup-badge ${wr > 0.5 ? "matchup-good" : "matchup-bad"}`}>
-                      {(wr * 100).toFixed(1)}%
-                    </span>
-                  )}
-                </div>
-              );
-            }) : (
-              <div className="draft-empty">No enemy picks visible</div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {draft.bans.length > 0 && (
-        <div className="draft-bans">
-          <span className="draft-bans-label">Bans</span>
-          <div className="draft-bans-list">
-            {draft.bans.map((id, i) => (
-              <ChampionIcon key={i} championId={id} size={22} className="ban-icon" />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// --- Components ---
 
 function ChampionNameLabel({ championId, fallback }: { championId: number; fallback: string }) {
   const info = useChampionName(championId);
@@ -735,24 +768,6 @@ function ChampionNameLabel({ championId, fallback }: { championId: number; fallb
 
 // --- Recommendation Card ---
 
-function RecCard({ rec }: { rec: PickRecommendation }) {
-  const info = useChampionName(rec.champion_id);
-  return (
-    <div className="rec-card rec-clickable" onClick={() => invoke("pick_champion", { championId: rec.champion_id })} title="Click to pick">
-      <ChampionIcon championId={rec.champion_id} size={40} className="rec-icon" />
-      <div className="rec-info">
-        <span className="rec-name">{info?.name || `#${rec.champion_id}`}</span>
-        <div className="rec-stats">
-          <span className="rec-wr">{(rec.win_rate * 100).toFixed(1)}% WR</span>
-          {rec.counters_count > 0 && (
-            <span className="rec-counter">Counters {rec.counters_count}</span>
-          )}
-        </div>
-      </div>
-      <div className="rec-score">{(rec.score * 100).toFixed(0)}</div>
-    </div>
-  );
-}
 
 // --- LP Chart ---
 
@@ -937,7 +952,13 @@ function LiveGameView({ game }: { game: LiveGameState }) {
                 <ChampionIcon championId={p.champion_id} size={36} />
                 <div className="lg-player-info">
                   <span className="lg-player-name">{p.summoner_name}</span>
-                  <ChampionNameLabel championId={p.champion_id} fallback="" />
+                  <span className="lg-player-sub">
+                    <ChampionNameLabel championId={p.champion_id} fallback="" />
+                    {p.rank && <>
+                      <RankEmblem rank={p.rank} size={14} />
+                      <span className={`lg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span>
+                    </>}
+                  </span>
                 </div>
               </div>
             ))}
@@ -952,7 +973,13 @@ function LiveGameView({ game }: { game: LiveGameState }) {
                 <ChampionIcon championId={p.champion_id} size={36} />
                 <div className="lg-player-info">
                   <span className="lg-player-name">{p.summoner_name}</span>
-                  <ChampionNameLabel championId={p.champion_id} fallback="" />
+                  <span className="lg-player-sub">
+                    <ChampionNameLabel championId={p.champion_id} fallback="" />
+                    {p.rank && <>
+                      <RankEmblem rank={p.rank} size={14} />
+                      <span className={`lg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span>
+                    </>}
+                  </span>
                 </div>
               </div>
             ))}
@@ -984,24 +1011,6 @@ function BanCard({ ban }: { ban: BanSuggestion }) {
 
 // --- Comfort Card ---
 
-function ComfortCard({ pick }: { pick: ComfortPick }) {
-  const info = useChampionName(pick.champion_id);
-  const isMeta = pick.meta_win_rate > 0.51;
-  return (
-    <div className="rec-card comfort-card rec-clickable" onClick={() => invoke("pick_champion", { championId: pick.champion_id })} title="Click to pick">
-      <ChampionIcon championId={pick.champion_id} size={36} className="rec-icon" />
-      <div className="rec-info">
-        <span className="rec-name">{info?.name || "..."}</span>
-        <div className="rec-stats">
-          <span className="rec-wr">{(pick.meta_win_rate * 100).toFixed(1)}% WR</span>
-          <span className="comfort-games">{pick.games_played} games</span>
-          {isMeta && <span className="best-pick-badge">Best Pick</span>}
-        </div>
-      </div>
-      <span className="comfort-badge">MAIN</span>
-    </div>
-  );
-}
 
 // --- Post Game View ---
 
@@ -1074,6 +1083,7 @@ function PostGameRow({ player: p, maxDamage, team }: { player: PostGamePlayer; m
           <span className="pg-champ-name">
             {champInfo?.name || ""}
             {p.position && <> &middot; {POSITION_LABELS[p.position.toLowerCase()] || p.position}</>}
+            {p.rank && <> &middot; <RankEmblem rank={p.rank} size={12} /> <span className={`pg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span></>}
           </span>
         </div>
       </div>
@@ -1105,7 +1115,7 @@ function PostGameRow({ player: p, maxDamage, team }: { player: PostGamePlayer; m
       <div className="pg-col-items">
         <div className="pg-items-row">
           {p.items.map((id, ii) => (
-            <div key={ii} className="pg-item">
+            <div key={ii} className="pg-item" title={getItemName(id)}>
               <img src={itemIconUrl(id)} alt="" />
             </div>
           ))}

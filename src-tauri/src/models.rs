@@ -70,6 +70,7 @@ pub struct AppState {
     pub game_mode: String,
     pub auto_apply: bool,
     pub auto_lock: bool,
+    pub auto_accept: bool,
     pub region: String,
 }
 
@@ -95,6 +96,7 @@ pub struct PostGamePlayer {
     pub champion_id: i64,
     pub summoner_name: String,
     pub position: String,
+    pub rank: String,
     pub is_local: bool,
     pub kills: i64,
     pub deaths: i64,
@@ -134,6 +136,7 @@ impl Default for AppState {
             game_mode: "classic".to_string(),
             auto_apply: true,
             auto_lock: false,
+            auto_accept: false,
             region: "euw".to_string(),
         }
     }
@@ -440,4 +443,5 @@ pub struct LiveGameState {
 pub struct LiveGamePlayer {
     pub champion_id: i64,
     pub summoner_name: String,
+    pub rank: String, // e.g. "GOLD III" or ""
 }

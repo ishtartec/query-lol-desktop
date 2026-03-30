@@ -15,6 +15,7 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
         region: s.region.clone(),
         auto_apply: s.auto_apply,
         auto_lock: s.auto_lock,
+        auto_accept: s.auto_accept,
         lp_history: s.lp_history.clone(),
     });
 }
@@ -23,7 +24,7 @@ fn notify(title: &str, body: &str) {
     let _ = std::process::Command::new("osascript")
         .arg("-e")
         .arg(format!(
-            "display notification \"{}\" with title \"{}\"",
+            "display notification \"{}\" with title \"{}\" sound name \"Glass\"",
             body.replace('"', "\\\""),
             title.replace('"', "\\\"")
         ))
@@ -151,6 +152,21 @@ async fn poll_loop(
                 break;
             }
         };
+
+        if phase == "ReadyCheck" {
+            let auto_accept = state.lock().await.auto_accept;
+            if auto_accept {
+                // Accept once, then wait for phase to change
+                match lcu::accept_ready_check(&creds).await {
+                    Ok(()) => {
+                        // Wait for phase to transition, don't retry
+                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    }
+                    Err(_) => {} // Already accepted or expired, ignore
+                }
+            }
+            continue;
+        }
 
         if phase == "ChampSelect" {
             // Detect game mode + fetch ban suggestions + comfort picks on first tick
@@ -580,6 +596,19 @@ async fn set_auto_lock(
 }
 
 #[tauri::command]
+async fn set_auto_accept(
+    enabled: bool,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut s = state.lock().await;
+    s.auto_accept = enabled;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    save_config(&app_handle, &s);
+    Ok(())
+}
+
+#[tauri::command]
 async fn pick_champion(
     champion_id: i64,
     state: tauri::State<'_, SharedState>,
@@ -587,6 +616,18 @@ async fn pick_champion(
     let creds = lcu::read_lockfile().ok_or("League client not found")?;
     let session = lcu::get_champ_select_session(&creds).await?;
     let auto_lock = state.lock().await.auto_lock;
+
+    // Log all actions for debugging
+    for (gi, group) in session.actions.iter().enumerate() {
+        for action in group {
+            if action.actor_cell_id == session.local_player_cell_id {
+                log::info!(
+                    "My action[{}]: id={} type={} champ={} completed={} inProgress={}",
+                    gi, action.id, action.action_type, action.champion_id, action.completed, action.is_in_progress
+                );
+            }
+        }
+    }
 
     let action_id = lcu::find_my_action(&session, "pick")
         .ok_or("No active pick action — it's not your turn to pick")?;
@@ -602,6 +643,17 @@ async fn ban_champion(
     let creds = lcu::read_lockfile().ok_or("League client not found")?;
     let session = lcu::get_champ_select_session(&creds).await?;
     let auto_lock = state.lock().await.auto_lock;
+
+    for (gi, group) in session.actions.iter().enumerate() {
+        for action in group {
+            if action.actor_cell_id == session.local_player_cell_id {
+                log::info!(
+                    "My ban action[{}]: id={} type={} champ={} completed={} inProgress={}",
+                    gi, action.id, action.action_type, action.champion_id, action.completed, action.is_in_progress
+                );
+            }
+        }
+    }
 
     let action_id = lcu::find_my_action(&session, "ban")
         .ok_or("No active ban action — it's not your turn to ban")?;
@@ -655,6 +707,7 @@ pub fn run() {
             apply_build_now,
             select_build_option,
             set_auto_lock,
+            set_auto_accept,
             pick_champion,
             ban_champion,
             view_match_details,
@@ -669,6 +722,7 @@ pub fn run() {
                 s.region = cfg.region;
                 s.auto_apply = cfg.auto_apply;
                 s.auto_lock = cfg.auto_lock;
+                s.auto_accept = cfg.auto_accept;
                 s.lp_history = cfg.lp_history;
             }
 
