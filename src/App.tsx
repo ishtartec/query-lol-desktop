@@ -46,6 +46,7 @@ interface PostGamePlayer {
   summoner_name: string;
   position: string;
   rank: string;
+  puuid: string;
   is_local: boolean;
   kills: number;
   deaths: number;
@@ -103,6 +104,7 @@ interface LiveGamePlayer {
   champion_id: number;
   summoner_name: string;
   rank: string;
+  puuid: string;
 }
 
 interface BanSuggestion {
@@ -372,6 +374,7 @@ function App() {
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [playerProfile, setPlayerProfile] = useState<{ name: string; rank: string; matches: MatchHistoryEntry[] } | null>(null);
   const errorTimeout = useRef<number | null>(null);
 
   const championInfo = useChampionName(state.champion_id);
@@ -391,6 +394,14 @@ function App() {
     setError(msg);
     if (errorTimeout.current) clearTimeout(errorTimeout.current);
     errorTimeout.current = window.setTimeout(() => setError(null), 5000);
+  }
+
+  async function viewPlayer(puuid: string) {
+    if (!puuid) return;
+    try {
+      const profile = await invoke<{ name: string; rank: string; matches: MatchHistoryEntry[] }>("view_player_profile", { puuid });
+      setPlayerProfile(profile);
+    } catch (e: any) { showError(String(e)); }
   }
 
   async function handleApply() {
@@ -519,7 +530,7 @@ function App() {
 
       {/* Live Game */}
       {inGame && state.live_game && (
-        <LiveGameView game={state.live_game} />
+        <LiveGameView game={state.live_game} onViewPlayer={viewPlayer} />
       )}
 
       {/* Champ select */}
@@ -773,7 +784,32 @@ function App() {
 
       {/* Post-game summary */}
       {inPostGame && state.post_game && (
-        <PostGameView stats={state.post_game} showBack={true} />
+        <PostGameView stats={state.post_game} showBack={true} onViewPlayer={viewPlayer} />
+      )}
+
+      {/* Player Profile Overlay */}
+      {playerProfile && (
+        <div className="profile-overlay">
+          <div className="profile-panel">
+            <div className="profile-header">
+              <div className="profile-info">
+                <h2 className="profile-name">{playerProfile.name || "Unknown"}</h2>
+                {playerProfile.rank && (
+                  <span className={`ranked-badge rank-${playerProfile.rank.split(' ')[0]?.toLowerCase()}`}>
+                    <RankEmblem rank={playerProfile.rank} size={16} />
+                    {playerProfile.rank}
+                  </span>
+                )}
+              </div>
+              <button className="btn-back" onClick={() => setPlayerProfile(null)}>Close</button>
+            </div>
+            {playerProfile.matches.length > 0 ? (
+              <MatchHistoryView history={playerProfile.matches} />
+            ) : (
+              <p className="waiting-text">No match history available</p>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Error toast */}
@@ -970,7 +1006,7 @@ function timeAgo(timestamp: number): string {
 
 // --- Live Game View ---
 
-function LiveGameView({ game }: { game: LiveGameState }) {
+function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlayer?: (puuid: string) => void }) {
   return (
     <div className="lg-layout">
       <div className="lg-header">
@@ -982,7 +1018,7 @@ function LiveGameView({ game }: { game: LiveGameState }) {
           <h4 className="draft-team-label" style={{ color: "var(--accent-blue)" }}>Your Team</h4>
           <div className="lg-players">
             {game.allies.map((p, i) => (
-              <div key={i} className="lg-player">
+              <div key={i} className="lg-player" onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
                 <ChampionIcon championId={p.champion_id} size={36} />
                 <div className="lg-player-info">
                   <span className="lg-player-name">{p.summoner_name}</span>
@@ -1003,7 +1039,7 @@ function LiveGameView({ game }: { game: LiveGameState }) {
           <h4 className="draft-team-label" style={{ color: "var(--accent-red)" }}>Enemy Team</h4>
           <div className="lg-players">
             {game.enemies.map((p, i) => (
-              <div key={i} className="lg-player">
+              <div key={i} className="lg-player" onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
                 <ChampionIcon championId={p.champion_id} size={36} />
                 <div className="lg-player-info">
                   <span className="lg-player-name">{p.summoner_name}</span>
@@ -1105,7 +1141,7 @@ const POS_ORDER: Record<string, number> = {
   TOP: 0, JUNGLE: 1, MIDDLE: 2, MID: 2, BOTTOM: 3, ADC: 3, UTILITY: 4, SUPPORT: 4,
 };
 
-function PostGameView({ stats, showBack }: { stats: PostGameStats; showBack?: boolean }) {
+function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void }) {
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
 
   const maxDamage = Math.max(
@@ -1136,8 +1172,19 @@ function PostGameView({ stats, showBack }: { stats: PostGameStats; showBack?: bo
                   {players.reduce((s, p) => s + p.kills, 0)} / {players.reduce((s, p) => s + p.deaths, 0)} / {players.reduce((s, p) => s + p.assists, 0)}
                 </span>
               </div>
+              <div className="pg-col-headers">
+                <span className="pg-col-h pg-h-player">Player</span>
+                <span className="pg-col-h pg-h-kda">KDA</span>
+                <span className="pg-col-h pg-h-dmg">Damage</span>
+                <span className="pg-col-h pg-h-pct">DMG%</span>
+                <span className="pg-col-h pg-h-pct">KP</span>
+                <span className="pg-col-h pg-h-cs">CS</span>
+                <span className="pg-col-h pg-h-vis">Vision</span>
+                <span className="pg-col-h pg-h-gold">Gold</span>
+                <span className="pg-col-h pg-h-items">Items</span>
+              </div>
               {players.map((p, pi) => (
-                <PostGameRow key={pi} player={p} maxDamage={maxDamage} team={team} />
+                <PostGameRow key={pi} player={p} maxDamage={maxDamage} team={team} onViewPlayer={onViewPlayer} />
               ))}
             </div>
           );
@@ -1153,7 +1200,7 @@ function StatCell({ value, avg, format }: { value: number; avg: number; format: 
   return <span className={`pg-stat ${cls}`}>{display}</span>;
 }
 
-function PostGameRow({ player: p, maxDamage, team }: { player: PostGamePlayer; maxDamage: number; team: PostGameTeam }) {
+function PostGameRow({ player: p, maxDamage, team, onViewPlayer }: { player: PostGamePlayer; maxDamage: number; team: PostGameTeam; onViewPlayer?: (puuid: string) => void }) {
   const champInfo = useChampionName(p.champion_id);
   const kda = p.deaths === 0 ? "Perfect" : ((p.kills + p.assists) / p.deaths).toFixed(1);
   const dmgPct = (p.total_damage / maxDamage) * 100;
@@ -1163,7 +1210,7 @@ function PostGameRow({ player: p, maxDamage, team }: { player: PostGamePlayer; m
       <div className="pg-player">
         <ChampionIcon championId={p.champion_id} size={32} />
         <div className="pg-player-info">
-          <span className="pg-player-name">
+          <span className={`pg-player-name ${onViewPlayer ? "pg-player-link" : ""}`} onClick={(e) => { if (onViewPlayer && p.puuid) { e.stopPropagation(); onViewPlayer(p.puuid); } }}>
             {p.summoner_name !== "Unknown" ? p.summoner_name : (champInfo?.name || "Unknown")}
             {p.is_mvp && <span className="mvp-badge">MVP</span>}
           </span>

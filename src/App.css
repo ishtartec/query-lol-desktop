@@ -617,6 +617,34 @@
 }
 .toast-close:hover { opacity: 1; }
 
+/* Player Profile Overlay */
+.profile-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.profile-panel {
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px;
+  width: 90%; max-width: 800px; max-height: 80vh;
+  overflow-y: auto;
+}
+.profile-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.profile-info { display: flex; align-items: center; gap: 12px; }
+.profile-name { font-size: 18px; font-weight: 700; }
+
+.pg-player-link { cursor: pointer; }
+.pg-player-link:hover { color: var(--accent-gold); text-decoration: underline; }
+
 /* === Lobby / Match History === */
 .section-lobby { flex: 1; overflow-y: auto; }
 
@@ -819,6 +847,23 @@
 .postgame-team-kda {
   font-size: 11px; font-weight: 600; color: var(--text-muted);
 }
+
+.pg-col-headers {
+  display: flex; align-items: center; padding: 3px 16px; gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.pg-col-h {
+  font-size: 9px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.pg-h-player { width: 200px; flex-shrink: 0; }
+.pg-h-kda { width: 90px; text-align: center; flex-shrink: 0; }
+.pg-h-dmg { width: 80px; text-align: right; flex-shrink: 0; }
+.pg-h-pct { width: 40px; text-align: center; flex-shrink: 0; }
+.pg-h-cs { width: 40px; text-align: right; flex-shrink: 0; }
+.pg-h-vis { width: 35px; text-align: right; flex-shrink: 0; }
+.pg-h-gold { width: 55px; text-align: right; flex-shrink: 0; }
+.pg-h-items { flex: 1; text-align: right; }
 
 .postgame-row {
   display: flex; align-items: center; padding: 6px 16px; gap: 12px;

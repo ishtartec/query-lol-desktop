@@ -98,6 +98,7 @@ pub struct PostGamePlayer {
     pub summoner_name: String,
     pub position: String,
     pub rank: String,
+    pub puuid: String,
     pub is_local: bool,
     pub kills: i64,
     pub deaths: i64,
@@ -452,5 +453,6 @@ pub struct LiveGameState {
 pub struct LiveGamePlayer {
     pub champion_id: i64,
     pub summoner_name: String,
-    pub rank: String, // e.g. "GOLD III" or ""
+    pub rank: String,
+    pub puuid: String,
 }

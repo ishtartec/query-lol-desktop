@@ -663,6 +663,22 @@ async fn ban_champion(
     lcu::select_champion(&creds, action_id, champion_id, auto_lock).await
 }
 
+#[derive(serde::Serialize)]
+struct PlayerProfile {
+    name: String,
+    rank: String,
+    matches: Vec<models::MatchHistoryEntry>,
+}
+
+#[tauri::command]
+async fn view_player_profile(puuid: String) -> Result<PlayerProfile, String> {
+    let creds = lcu::read_lockfile().ok_or("League client not found")?;
+    let name = lcu::get_summoner_name_by_puuid(&creds, &puuid).await;
+    let rank = lcu::get_player_rank(&creds, &puuid).await;
+    let matches = lcu::get_player_match_history(&creds, &puuid).await.unwrap_or_default();
+    Ok(PlayerProfile { name, rank, matches })
+}
+
 #[tauri::command]
 async fn view_match_details(
     game_id: i64,
@@ -712,6 +728,7 @@ pub fn run() {
             set_auto_accept,
             pick_champion,
             ban_champion,
+            view_player_profile,
             view_match_details,
             back_to_lobby,
         ])

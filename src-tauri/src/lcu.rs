@@ -310,10 +310,9 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                         .unwrap_or("")
                         .to_uppercase();
 
-                    // Get rank from puuid
-                    let puuid = rp.get("puuid").and_then(|v| v.as_str()).unwrap_or("");
-                    let rank = if !puuid.is_empty() {
-                        get_player_rank(creds, puuid).await
+                    let puuid_str = rp.get("puuid").and_then(|v| v.as_str()).unwrap_or("");
+                    let rank = if !puuid_str.is_empty() {
+                        get_player_rank(creds, puuid_str).await
                     } else {
                         String::new()
                     };
@@ -323,6 +322,7 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                         summoner_name: name.to_string(),
                         position,
                         rank,
+                        puuid: puuid_str.to_string(),
                         is_local: rp.get("isLocalPlayer").and_then(|v| v.as_bool()).unwrap_or(false),
                         kills: stats.get("CHAMPIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0),
                         deaths: stats.get("NUM_DEATHS").and_then(|v| v.as_i64()).unwrap_or(0),
@@ -624,6 +624,23 @@ pub async fn get_summoner_name(creds: &LcuCredentials, summoner_id: i64) -> Stri
         .to_string()
 }
 
+/// Resolve summoner name by puuid.
+pub async fn get_summoner_name_by_puuid(creds: &LcuCredentials, puuid: &str) -> String {
+    let client = lcu_client();
+    let url = lcu_url(creds, &format!("/lol-summoner/v2/summoners/puuid/{}", puuid));
+    let resp = match client.get(&url).header("Authorization", auth_header(&creds.password)).send().await {
+        Ok(r) => r,
+        Err(_) => return String::new(),
+    };
+    let raw: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+    raw.get("gameName").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+        .or_else(|| raw.get("displayName").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+        .unwrap_or("Unknown").to_string()
+}
+
 /// Fetch ranked tier for a player by puuid. Returns e.g. "GOLD III" or "".
 pub async fn get_player_rank(creds: &LcuCredentials, puuid: &str) -> String {
     let client = lcu_client();
@@ -658,6 +675,55 @@ pub async fn get_player_rank(creds: &LcuCredentials, puuid: &str) -> String {
         }
     }
     String::new()
+}
+
+/// Fetch match history for any player by puuid.
+pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Result<Vec<MatchHistoryEntry>, String> {
+    let client = lcu_client();
+    let url = lcu_url(creds, &format!("/lol-match-history/v1/products/lol/{}/matches", puuid));
+    let resp = client
+        .get(&url)
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get player history: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Player history returned: {}", resp.status()));
+    }
+
+    let raw: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Failed to parse player history: {}", e))?;
+
+    let mut entries = vec![];
+    if let Some(games) = raw.get("games").and_then(|g| g.get("games")).and_then(|g| g.as_array()) {
+        for game in games.iter().take(10) {
+            let game_mode = game.get("gameMode").and_then(|v| v.as_str()).unwrap_or("CLASSIC").to_string();
+            let queue_id = game.get("queueId").and_then(|v| v.as_i64()).unwrap_or(0);
+            let duration = game.get("gameDuration").and_then(|v| v.as_i64()).unwrap_or(0);
+            let timestamp = game.get("gameCreation").and_then(|v| v.as_i64()).unwrap_or(0);
+
+            if let Some(participants) = game.get("participants").and_then(|p| p.as_array()) {
+                if let Some(me) = participants.first() {
+                    let stats = me.get("stats").unwrap_or(&serde_json::Value::Null);
+                    let game_id = game.get("gameId").and_then(|v| v.as_i64()).unwrap_or(0);
+                    entries.push(MatchHistoryEntry {
+                        game_id,
+                        champion_id: me.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
+                        queue_id,
+                        game_mode,
+                        win: stats.get("win").and_then(|v| v.as_bool()).unwrap_or(false),
+                        kills: stats.get("kills").and_then(|v| v.as_i64()).unwrap_or(0),
+                        deaths: stats.get("deaths").and_then(|v| v.as_i64()).unwrap_or(0),
+                        assists: stats.get("assists").and_then(|v| v.as_i64()).unwrap_or(0),
+                        duration_secs: duration,
+                        timestamp,
+                    });
+                }
+            }
+        }
+    }
+    Ok(entries)
 }
 
 /// Fetch match history for current summoner (last 10 games).
@@ -804,6 +870,7 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                 summoner_name: name,
                 position,
                 rank,
+                puuid: puuid.clone(),
                 is_local: false,
                 kills, deaths, assists, total_damage, gold_earned, cs, vision_score,
                 wards_placed: stats.get("wardsPlaced").and_then(|v| v.as_i64()).unwrap_or(0),
@@ -949,6 +1016,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
                     champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
                     summoner_name: name,
                     rank: String::new(),
+                    puuid: puuid.clone(),
                 },
                 summoner_id: sid,
                 puuid,
