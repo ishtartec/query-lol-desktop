@@ -519,6 +519,7 @@ function App() {
         <section className="section-lobby">
           {state.match_history.length > 0 ? (
             <>
+              <LobbyHero history={state.match_history} />
               {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
               <MatchHistoryView history={state.match_history} />
             </>
@@ -908,7 +909,15 @@ function LpChart({ history }: { history: LpEntry[] }) {
 
 function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
   const [champFilter, setChampFilter] = useState<number | null>(null);
-  const filtered = champFilter ? history.filter(m => m.champion_id === champFilter) : history;
+  const [modeFilter, setModeFilter] = useState<string>("all");
+  const [showAll, setShowAll] = useState(false);
+
+  let filtered = history;
+  if (modeFilter === "ranked") filtered = filtered.filter(m => m.queue_id === 420 || m.queue_id === 440);
+  else if (modeFilter === "normal") filtered = filtered.filter(m => m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490);
+  else if (modeFilter === "aram") filtered = filtered.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM");
+  if (champFilter) filtered = filtered.filter(m => m.champion_id === champFilter);
+  const visible = showAll ? filtered : filtered.slice(0, 10);
 
   const wins = filtered.filter(h => h.win).length;
   const losses = filtered.length - wins;
@@ -938,18 +947,45 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
           <span className="mh-wr">{wr}% WR</span>
         </div>
       </div>
+      {/* Mode filter tabs */}
+      <div className="mh-mode-tabs">
+        {["all", "ranked", "normal", "aram"].map(mode => (
+          <button key={mode} className={`mh-mode-tab ${modeFilter === mode ? "mh-mode-active" : ""}`}
+            onClick={() => { setModeFilter(mode); setShowAll(false); }}>
+            {mode === "all" ? "All" : mode === "ranked" ? "Ranked" : mode === "normal" ? "Normal" : "ARAM"}
+            {mode !== "all" && (
+              <span className="mh-mode-count">
+                {mode === "ranked" ? history.filter(m => m.queue_id === 420 || m.queue_id === 440).length
+                  : mode === "normal" ? history.filter(m => m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490).length
+                  : history.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM").length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* Champion Stats */}
-      <ChampionStatsBar history={history} filter={champFilter} onFilter={setChampFilter} />
+      <ChampionStatsBar history={filtered} filter={champFilter} onFilter={setChampFilter} />
 
       <div className="mh-trend">
-        {filtered.map((m, i) => (
+        {filtered.slice(0, 15).map((m, i) => (
           <div key={i} className={`mh-trend-dot ${m.win ? "trend-win" : "trend-loss"}`} title={m.win ? "Win" : "Loss"} />
         ))}
       </div>
       <div className="mh-list">
-        {filtered.map((m, i) => (
+        {visible.map((m, i) => (
           <MatchHistoryRow key={i} match={m} />
         ))}
+        {!showAll && filtered.length > 10 && (
+          <button className="btn-show-more" onClick={() => setShowAll(true)}>
+            Show {filtered.length - 10} more matches
+          </button>
+        )}
+        {showAll && filtered.length > 10 && (
+          <button className="btn-show-more" onClick={() => setShowAll(false)}>
+            Show less
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1095,6 +1131,34 @@ function BanCard({ ban }: { ban: BanSuggestion }) {
 // --- Comfort Card ---
 
 
+// --- Lobby Hero (splash art of most played champion) ---
+
+function LobbyHero({ history }: { history: MatchHistoryEntry[] }) {
+  // Find most played champion
+  const counts: Record<number, number> = {};
+  for (const m of history) {
+    counts[m.champion_id] = (counts[m.champion_id] || 0) + 1;
+  }
+  const topChampId = Object.entries(counts)
+    .sort(([, a], [, b]) => b - a)[0]?.[0];
+
+  const champInfo = useChampionName(topChampId ? Number(topChampId) : null);
+
+  if (!champInfo) return null;
+
+  return (
+    <div className="lobby-hero" style={{
+      backgroundImage: `url(${splashUrl(champInfo.key)})`,
+    }}>
+      <div className="lobby-hero-overlay">
+        <span className="lobby-hero-text">Most Played</span>
+        <h2 className="lobby-hero-name">{champInfo.name}</h2>
+        <span className="lobby-hero-games">{counts[Number(topChampId!)]} games</span>
+      </div>
+    </div>
+  );
+}
+
 // --- Champion Stats Bar ---
 
 function ChampionStatsBar({ history, filter, onFilter }: {
@@ -1118,7 +1182,13 @@ function ChampionStatsBar({ history, filter, onFilter }: {
 
   const sorted = Object.entries(stats)
     .map(([id, s]) => ({ id: Number(id), ...s }))
-    .sort((a, b) => b.games - a.games);
+    .sort((a, b) => {
+      // Score: prioritize games played but boost high WR
+      const scoreA = a.games * (a.wins / a.games);
+      const scoreB = b.games * (b.wins / b.games);
+      return scoreB - scoreA;
+    })
+    .slice(0, 5);
 
   if (sorted.length <= 1) return null;
 

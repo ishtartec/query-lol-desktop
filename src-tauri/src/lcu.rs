@@ -697,7 +697,7 @@ pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Re
 
     let mut entries = vec![];
     if let Some(games) = raw.get("games").and_then(|g| g.get("games")).and_then(|g| g.as_array()) {
-        for game in games.iter().take(10) {
+        for game in games {
             let game_mode = game.get("gameMode").and_then(|v| v.as_str()).unwrap_or("CLASSIC").to_string();
             let queue_id = game.get("queueId").and_then(|v| v.as_i64()).unwrap_or(0);
             let duration = game.get("gameDuration").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -726,11 +726,11 @@ pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Re
     Ok(entries)
 }
 
-/// Fetch match history for current summoner (last 10 games).
+/// Fetch match history for current summoner.
 pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistoryEntry>, String> {
     let client = lcu_client();
     let resp = client
-        .get(lcu_url(creds, "/lol-match-history/v1/products/lol/current-summoner/matches"))
+        .get(lcu_url(creds, "/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=0&endIndex=50"))
         .header("Authorization", auth_header(&creds.password))
         .send()
         .await
@@ -745,7 +745,7 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
 
     let mut entries = vec![];
     if let Some(games) = raw.get("games").and_then(|g| g.get("games")).and_then(|g| g.as_array()) {
-        for game in games.iter().take(10) {
+        for game in games {
             let game_mode = game.get("gameMode").and_then(|v| v.as_str()).unwrap_or("CLASSIC").to_string();
             let queue_id = game.get("queueId").and_then(|v| v.as_i64()).unwrap_or(0);
             let duration = game.get("gameDuration").and_then(|v| v.as_i64()).unwrap_or(0);
