@@ -332,11 +332,27 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                         cs: stats.get("MINIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0)
                             + stats.get("NEUTRAL_MINIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0),
                         vision_score: stats.get("VISION_SCORE").and_then(|v| v.as_i64()).unwrap_or(0),
+                        wards_placed: stats.get("WARD_PLACED").and_then(|v| v.as_i64()).unwrap_or(0),
+                        wards_killed: stats.get("WARD_KILLED").and_then(|v| v.as_i64()).unwrap_or(0),
+                        damage_share: 0.0,
+                        kill_participation: 0.0,
+                        double_kills: stats.get("DOUBLE_KILLS").and_then(|v| v.as_i64()).unwrap_or(0),
+                        triple_kills: stats.get("TRIPLE_KILLS").and_then(|v| v.as_i64()).unwrap_or(0),
+                        quadra_kills: stats.get("QUADRA_KILLS").and_then(|v| v.as_i64()).unwrap_or(0),
+                        penta_kills: stats.get("PENTA_KILLS").and_then(|v| v.as_i64()).unwrap_or(0),
                         mvp_score: 0.0,
                         is_mvp: false,
                         items,
                     });
                 }
+            }
+
+            // Calculate damage share and kill participation
+            let team_total_damage = players.iter().map(|p| p.total_damage).sum::<i64>().max(1);
+            let team_total_kills = players.iter().map(|p| p.kills).sum::<i64>().max(1);
+            for p in &mut players {
+                p.damage_share = p.total_damage as f64 / team_total_damage as f64;
+                p.kill_participation = (p.kills + p.assists) as f64 / team_total_kills as f64;
             }
 
             // Calculate MVP scores
@@ -443,7 +459,11 @@ pub fn extract_draft_state(session: &ChampSelectSession) -> DraftState {
 
     // Build a map of cell_id -> champion_id from actions (pre-lock picks)
     let mut action_picks: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
-    let mut bans: Vec<i64> = vec![];
+    let mut ally_bans: Vec<i64> = vec![];
+    let mut enemy_bans: Vec<i64> = vec![];
+
+    // Collect ally cell IDs for ban attribution
+    let ally_cells: std::collections::HashSet<i64> = session.my_team.iter().map(|p| p.cell_id).collect();
 
     for action_group in &session.actions {
         for action in action_group {
@@ -451,7 +471,11 @@ pub fn extract_draft_state(session: &ChampSelectSession) -> DraftState {
                 action_picks.insert(action.actor_cell_id, action.champion_id);
             }
             if action.action_type == "ban" && action.champion_id > 0 && action.completed {
-                bans.push(action.champion_id);
+                if ally_cells.contains(&action.actor_cell_id) {
+                    ally_bans.push(action.champion_id);
+                } else {
+                    enemy_bans.push(action.champion_id);
+                }
             }
         }
     }
@@ -482,9 +506,10 @@ pub fn extract_draft_state(session: &ChampSelectSession) -> DraftState {
         }
     }).collect();
 
-    bans.dedup();
+    ally_bans.dedup();
+    enemy_bans.dedup();
 
-    DraftState { allies, enemies, bans }
+    DraftState { allies, enemies, ally_bans, enemy_bans }
 }
 
 /// Extract champion ID from session, checking both myTeam and actions.
@@ -781,6 +806,14 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                 rank,
                 is_local: false,
                 kills, deaths, assists, total_damage, gold_earned, cs, vision_score,
+                wards_placed: stats.get("wardsPlaced").and_then(|v| v.as_i64()).unwrap_or(0),
+                wards_killed: stats.get("wardsKilled").and_then(|v| v.as_i64()).unwrap_or(0),
+                damage_share: 0.0,
+                kill_participation: 0.0,
+                double_kills: stats.get("doubleKills").and_then(|v| v.as_i64()).unwrap_or(0),
+                triple_kills: stats.get("tripleKills").and_then(|v| v.as_i64()).unwrap_or(0),
+                quadra_kills: stats.get("quadraKills").and_then(|v| v.as_i64()).unwrap_or(0),
+                penta_kills: stats.get("pentaKills").and_then(|v| v.as_i64()).unwrap_or(0),
                 mvp_score: 0.0,
                 is_mvp: false,
                 items,
@@ -800,6 +833,14 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
 
     let mut teams = vec![];
     for (team_id, mut players) in team_map {
+        // Calculate damage share and kill participation
+        let team_dmg = players.iter().map(|p| p.total_damage).sum::<i64>().max(1);
+        let team_kills = players.iter().map(|p| p.kills).sum::<i64>().max(1);
+        for p in &mut players {
+            p.damage_share = p.total_damage as f64 / team_dmg as f64;
+            p.kill_participation = (p.kills + p.assists) as f64 / team_kills as f64;
+        }
+
         // Mark MVP
         if let Some(max_score) = players.iter().map(|p| p.mvp_score).reduce(f64::max) {
             if let Some(mvp) = players.iter_mut().find(|p| (p.mvp_score - max_score).abs() < 0.01) {

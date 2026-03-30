@@ -248,7 +248,8 @@ async fn poll_loop(
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 for a in &draft.allies { a.champion_id.hash(&mut hasher); }
                 for e in &draft.enemies { e.champion_id.hash(&mut hasher); }
-                for b in &draft.bans { b.hash(&mut hasher); }
+                for b in &draft.ally_bans { b.hash(&mut hasher); }
+                for b in &draft.enemy_bans { b.hash(&mut hasher); }
                 hasher.finish()
             };
 
@@ -351,8 +352,9 @@ async fn poll_loop(
                         .filter(|&id| id > 0)
                         .collect();
 
+                    let all_bans: Vec<i64> = draft.ally_bans.iter().chain(draft.enemy_bans.iter()).copied().collect();
                     match opgg::recommend_picks(
-                        &region, opgg_pos, &enemies_with_pos, &draft.bans, &ally_ids
+                        &region, opgg_pos, &enemies_with_pos, &all_bans, &ally_ids
                     ).await {
                         Ok(recs) => {
                             let mut s = state.lock().await;

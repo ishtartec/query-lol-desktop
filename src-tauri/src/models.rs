@@ -31,7 +31,8 @@ pub struct DraftPlayer {
 pub struct DraftState {
     pub allies: Vec<DraftPlayer>,
     pub enemies: Vec<DraftPlayer>,
-    pub bans: Vec<i64>,
+    pub ally_bans: Vec<i64>,
+    pub enemy_bans: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +106,14 @@ pub struct PostGamePlayer {
     pub gold_earned: i64,
     pub cs: i64,
     pub vision_score: i64,
+    pub wards_placed: i64,
+    pub wards_killed: i64,
+    pub damage_share: f64,
+    pub kill_participation: f64,
+    pub double_kills: i64,
+    pub triple_kills: i64,
+    pub quadra_kills: i64,
+    pub penta_kills: i64,
     pub mvp_score: f64,
     pub is_mvp: bool,
     pub items: Vec<i64>,

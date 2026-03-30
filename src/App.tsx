@@ -29,7 +29,8 @@ interface DraftPlayer {
 interface DraftState {
   allies: DraftPlayer[];
   enemies: DraftPlayer[];
-  bans: number[];
+  ally_bans: number[];
+  enemy_bans: number[];
 }
 
 interface PickRecommendation {
@@ -53,6 +54,14 @@ interface PostGamePlayer {
   gold_earned: number;
   cs: number;
   vision_score: number;
+  wards_placed: number;
+  wards_killed: number;
+  damage_share: number;
+  kill_participation: number;
+  double_kills: number;
+  triple_kills: number;
+  quadra_kills: number;
+  penta_kills: number;
   mvp_score: number;
   is_mvp: boolean;
   items: number[];
@@ -220,11 +229,19 @@ const SKILL_COLORS: Record<string, string> = {
   Q: "#4fc3f7", W: "#81c784", E: "#ffb74d", R: "#ef5350",
 };
 
-const STAT_SHARDS: Record<number, string> = {
-  5001: "Health Scaling", 5002: "Armor", 5003: "Magic Resist",
-  5005: "Attack Speed", 5007: "Ability Haste", 5008: "Adaptive Force",
-  5010: "Move Speed", 5011: "Health", 5013: "Tenacity",
+const STAT_SHARDS: Record<number, { name: string; icon: string }> = {
+  5001: { name: "Health Scaling", icon: "statmodshealthscalingicon.png" },
+  5002: { name: "Armor", icon: "statmodsarmoricon.png" },
+  5003: { name: "Magic Resist", icon: "statmodsmagicresicon.png" },
+  5005: { name: "Attack Speed", icon: "statmodsattackspeedicon.png" },
+  5007: { name: "Ability Haste", icon: "statmodscdrscalingicon.png" },
+  5008: { name: "Adaptive Force", icon: "statmodsadaptiveforceicon.png" },
+  5010: { name: "Move Speed", icon: "statmodsmovementspeedicon.png" },
+  5011: { name: "Health", icon: "statmodshealthplusicon.png" },
+  5013: { name: "Tenacity", icon: "statmodstenacityicon.png" },
 };
+
+const SHARD_ICON_BASE = "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/";
 
 // --- Data Dragon cache ---
 
@@ -542,11 +559,11 @@ function App() {
                       </div>
                     </div>
                   ))}
-                  {state.draft.bans.length > 0 && (
+                  {state.draft.ally_bans.length > 0 && (
                     <div className="cs-bans">
                       <span className="cs-bans-label">Bans</span>
                       <div className="cs-bans-list">
-                        {state.draft.bans.map((id, i) => (
+                        {state.draft.ally_bans.map((id, i) => (
                           <ChampionIcon key={i} championId={id} size={20} className="ban-icon" />
                         ))}
                       </div>
@@ -727,6 +744,17 @@ function App() {
                   <div className="cs-player-empty">Waiting for picks...</div>
                 )}
 
+                {state.draft.enemy_bans.length > 0 && (
+                  <div className="cs-bans">
+                    <span className="cs-bans-label">Bans</span>
+                    <div className="cs-bans-list">
+                      {state.draft.enemy_bans.map((id, i) => (
+                        <ChampionIcon key={i} championId={id} size={20} className="ban-icon" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Ban suggestions under enemies */}
                 {!hasChampion && state.ban_phase_active && state.ban_suggestions.length > 0 && (
                   <div style={{ marginTop: 12 }}>
@@ -830,14 +858,17 @@ function LpChart({ history }: { history: LpEntry[] }) {
 // --- Match History View ---
 
 function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
-  const wins = history.filter(h => h.win).length;
-  const losses = history.length - wins;
-  const wr = history.length > 0 ? ((wins / history.length) * 100).toFixed(0) : "0";
+  const [champFilter, setChampFilter] = useState<number | null>(null);
+  const filtered = champFilter ? history.filter(m => m.champion_id === champFilter) : history;
+
+  const wins = filtered.filter(h => h.win).length;
+  const losses = filtered.length - wins;
+  const wr = filtered.length > 0 ? ((wins / filtered.length) * 100).toFixed(0) : "0";
 
   // Calculate current streak
   let streakCount = 0;
-  let streakWin = history.length > 0 ? history[0].win : true;
-  for (const m of history) {
+  let streakWin = filtered.length > 0 ? filtered[0].win : true;
+  for (const m of filtered) {
     if (m.win === streakWin) streakCount++;
     else break;
   }
@@ -858,13 +889,16 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
           <span className="mh-wr">{wr}% WR</span>
         </div>
       </div>
+      {/* Champion Stats */}
+      <ChampionStatsBar history={history} filter={champFilter} onFilter={setChampFilter} />
+
       <div className="mh-trend">
-        {history.map((m, i) => (
+        {filtered.map((m, i) => (
           <div key={i} className={`mh-trend-dot ${m.win ? "trend-win" : "trend-loss"}`} title={m.win ? "Win" : "Loss"} />
         ))}
       </div>
       <div className="mh-list">
-        {history.map((m, i) => (
+        {filtered.map((m, i) => (
           <MatchHistoryRow key={i} match={m} />
         ))}
       </div>
@@ -1012,6 +1046,59 @@ function BanCard({ ban }: { ban: BanSuggestion }) {
 // --- Comfort Card ---
 
 
+// --- Champion Stats Bar ---
+
+function ChampionStatsBar({ history, filter, onFilter }: {
+  history: MatchHistoryEntry[];
+  filter: number | null;
+  onFilter: (id: number | null) => void;
+}) {
+  // Group by champion
+  const stats: Record<number, { games: number; wins: number; kills: number; deaths: number; assists: number }> = {};
+  for (const m of history) {
+    if (!stats[m.champion_id]) {
+      stats[m.champion_id] = { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0 };
+    }
+    const s = stats[m.champion_id];
+    s.games++;
+    if (m.win) s.wins++;
+    s.kills += m.kills;
+    s.deaths += m.deaths;
+    s.assists += m.assists;
+  }
+
+  const sorted = Object.entries(stats)
+    .map(([id, s]) => ({ id: Number(id), ...s }))
+    .sort((a, b) => b.games - a.games);
+
+  if (sorted.length <= 1) return null;
+
+  return (
+    <div className="champ-stats-bar">
+      {filter && (
+        <button className="cs-filter-clear" onClick={() => onFilter(null)}>All</button>
+      )}
+      {sorted.map(s => {
+        const wr = ((s.wins / s.games) * 100).toFixed(0);
+        const isActive = filter === s.id;
+        return (
+          <div
+            key={s.id}
+            className={`champ-stat-chip ${isActive ? "champ-stat-active" : ""}`}
+            onClick={() => onFilter(isActive ? null : s.id)}
+          >
+            <ChampionIcon championId={s.id} size={24} />
+            <div className="champ-stat-info">
+              <span className="champ-stat-games">{s.games}g</span>
+              <span className={`champ-stat-wr ${Number(wr) >= 50 ? "pg-above" : "pg-below"}`}>{wr}%</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // --- Post Game View ---
 
 const POS_ORDER: Record<string, number> = {
@@ -1103,15 +1190,30 @@ function PostGameRow({ player: p, maxDamage, team }: { player: PostGamePlayer; m
           <div className="pg-dmg-fill" style={{ width: `${dmgPct}%` }} />
         </div>
       </div>
+      <div className="pg-col-pct" title="Damage Share">
+        <span className={`pg-pct ${p.damage_share > 0.30 ? "pg-above" : p.damage_share < 0.10 ? "pg-below" : ""}`}>
+          {(p.damage_share * 100).toFixed(0)}%
+        </span>
+      </div>
+      <div className="pg-col-pct" title="Kill Participation">
+        <span className={`pg-pct ${p.kill_participation > 0.70 ? "pg-above" : p.kill_participation < 0.30 ? "pg-below" : ""}`}>
+          {(p.kill_participation * 100).toFixed(0)}%
+        </span>
+      </div>
       <div className="pg-col-cs">
         <StatCell value={p.cs} avg={team.avg_cs} format="" />
       </div>
-      <div className="pg-col-vision">
+      <div className="pg-col-vision" title={`Placed: ${p.wards_placed} | Killed: ${p.wards_killed}`}>
         <StatCell value={p.vision_score} avg={team.avg_vision} format="" />
       </div>
       <div className="pg-col-gold">
         <StatCell value={p.gold_earned} avg={team.avg_gold} format="k" />
       </div>
+      {(p.penta_kills > 0 || p.quadra_kills > 0 || p.triple_kills > 0) && (
+        <span className={`multikill-badge ${p.penta_kills > 0 ? "mk-penta" : p.quadra_kills > 0 ? "mk-quadra" : "mk-triple"}`}>
+          {p.penta_kills > 0 ? "PENTA" : p.quadra_kills > 0 ? "QUADRA" : "TRIPLE"}
+        </span>
+      )}
       <div className="pg-col-items">
         <div className="pg-items-row">
           {p.items.map((id, ii) => (
@@ -1226,9 +1328,15 @@ function RuneDisplay({ runes }: { runes: RuneBuild }) {
           <div className="rune-tree">
             <div className="rune-tree-header"><span>Shards</span></div>
             <div className="rune-slots rune-slots-shards">
-              {statShards.map((id, i) => (
-                <div key={`${id}-${i}`} className="shard-chip">{STAT_SHARDS[id] || id}</div>
-              ))}
+              {statShards.map((id, i) => {
+                const shard = STAT_SHARDS[id];
+                return (
+                  <div key={`${id}-${i}`} className="shard-chip" title={shard?.name || `${id}`}>
+                    {shard && <img src={`${SHARD_ICON_BASE}${shard.icon}`} alt={shard.name} className="shard-icon" />}
+                    <span>{shard?.name || id}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </>
