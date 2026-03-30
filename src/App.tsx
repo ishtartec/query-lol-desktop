@@ -375,6 +375,7 @@ function App() {
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [playerProfile, setPlayerProfile] = useState<{ name: string; rank: string; matches: MatchHistoryEntry[] } | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const errorTimeout = useRef<number | null>(null);
 
   const championInfo = useChampionName(state.champion_id);
@@ -397,11 +398,13 @@ function App() {
   }
 
   async function viewPlayer(puuid: string) {
-    if (!puuid) return;
+    if (!puuid || profileLoading) return;
+    setProfileLoading(true);
     try {
       const profile = await invoke<{ name: string; rank: string; matches: MatchHistoryEntry[] }>("view_player_profile", { puuid });
       setPlayerProfile(profile);
     } catch (e: any) { showError(String(e)); }
+    setProfileLoading(false);
   }
 
   async function handleApply() {
@@ -785,6 +788,16 @@ function App() {
       {/* Post-game summary */}
       {inPostGame && state.post_game && (
         <PostGameView stats={state.post_game} showBack={true} onViewPlayer={viewPlayer} />
+      )}
+
+      {/* Loading overlay */}
+      {profileLoading && !playerProfile && (
+        <div className="profile-overlay">
+          <div className="profile-panel" style={{ textAlign: "center", padding: 48 }}>
+            <div className="spinner" style={{ margin: "0 auto 12px" }} />
+            <p className="waiting-text">Loading player profile...</p>
+          </div>
+        </div>
       )}
 
       {/* Player Profile Overlay */}

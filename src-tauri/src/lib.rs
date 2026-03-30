@@ -673,10 +673,22 @@ struct PlayerProfile {
 #[tauri::command]
 async fn view_player_profile(puuid: String) -> Result<PlayerProfile, String> {
     let creds = lcu::read_lockfile().ok_or("League client not found")?;
-    let name = lcu::get_summoner_name_by_puuid(&creds, &puuid).await;
-    let rank = lcu::get_player_rank(&creds, &puuid).await;
-    let matches = lcu::get_player_match_history(&creds, &puuid).await.unwrap_or_default();
-    Ok(PlayerProfile { name, rank, matches })
+    let c1 = creds.clone();
+    let c2 = creds.clone();
+    let p1 = puuid.clone();
+    let p2 = puuid.clone();
+
+    let (name, rank, matches) = tokio::join!(
+        lcu::get_summoner_name_by_puuid(&c1, &p1),
+        lcu::get_player_rank(&c2, &p2),
+        lcu::get_player_match_history(&creds, &puuid),
+    );
+
+    Ok(PlayerProfile {
+        name,
+        rank,
+        matches: matches.unwrap_or_default(),
+    })
 }
 
 #[tauri::command]
