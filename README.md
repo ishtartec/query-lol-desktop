@@ -127,7 +127,7 @@ query-lol-desktop/
 
 ### Download
 
-Pre-built binaries for **Windows** and **macOS** are available from [GitHub Actions](../../actions) artifacts on every push to `main`.
+Pre-built binaries for **Windows** (.exe) and **macOS** (.dmg) are available from the [Releases](../../releases/latest) page.
 
 ### Development
 
