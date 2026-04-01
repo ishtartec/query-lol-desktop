@@ -45,7 +45,12 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 ### Live Game
 - **Team compositions** — blue vs red side with champion icons and summoner names
 - **Player ranks** — rank emblems and tier text for every player in the match
+- **Ranked stats** — W/L record, win rate, and current win/loss streak for all players
+- **Champion proficiency** — games played, win rate, and KDA on the picked champion (or "1st time" flag)
 - **Smurf detection** — automatic analysis of enemy accounts using account level, win rate, games played, KDA, and champion diversity to flag likely smurfs with a 0-100 confidence score
+- **Real-time scoreboard** — live KDA, CS, level, and current items for all players (via Live Client Data API)
+- **Gold tracker** — team gold bar with visual diff and numerical advantage/disadvantage
+- **Objective feed** — dragons, baron, herald, turrets, inhibitors, and multikills with timestamps
 - **Player profiles** — click any player to view their match history in an overlay
 
 ### Post-Game Analysis
@@ -71,6 +76,10 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 - Auto-accept toggle
 - All settings persisted across sessions
 
+### Auto-Update
+- Checks for new versions on startup via GitHub Releases
+- One-click update & restart from an in-app banner
+
 ---
 
 ## Tech Stack
@@ -86,6 +95,7 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 
 ### Data Sources
 - **Riot LCU** — local League client API for game state, summoner info, applying builds, match history
+- **Riot Live Client Data** — real-time in-game stats (port 2999): KDA, CS, gold, items, events
 - **OP.GG API** — champion builds, counters, win rates, ban suggestions, pick recommendations, game predictions
 - **Data Dragon** (Riot CDN) — champion data, item/rune/spell icons and metadata
 - **CommunityDragon** — rank emblems, stat shard icons, rune icons
@@ -155,7 +165,8 @@ pnpm tauri build
 3. **Build fetching** — when you pick a champion in champ select, it fetches the optimal build from OP.GG for your champion + position + region.
 4. **Auto-apply** — writes runes, summoner spells, and item sets directly to the League client via LCU endpoints.
 5. **Draft analysis** — as enemies are revealed, it calculates matchup win rates, generates pick/ban recommendations, and produces a game prediction with early/late phase analysis.
-6. **State sync** — the backend emits `app-state-changed` events to the React frontend, which re-renders reactively.
+6. **Live game data** — during a match, polls the Live Client Data API (port 2999) every second for real-time KDA, CS, gold, items, and game events.
+7. **State sync** — the backend emits `app-state-changed` events to the React frontend, which re-renders reactively.
 
 ---
 
