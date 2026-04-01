@@ -643,6 +643,12 @@ pub async fn get_summoner_name_by_puuid(creds: &LcuCredentials, puuid: &str) -> 
 
 /// Fetch ranked tier for a player by puuid. Returns e.g. "GOLD III" or "".
 pub async fn get_player_rank(creds: &LcuCredentials, puuid: &str) -> String {
+    let (rank, _, _) = get_player_ranked_stats(creds, puuid).await;
+    rank
+}
+
+/// Fetch ranked stats: (rank string, wins, losses).
+pub async fn get_player_ranked_stats(creds: &LcuCredentials, puuid: &str) -> (String, i64, i64) {
     let client = lcu_client();
     let url = lcu_url(creds, &format!("/lol-ranked/v1/ranked-stats/{}", puuid));
     let resp = match client
@@ -652,12 +658,12 @@ pub async fn get_player_rank(creds: &LcuCredentials, puuid: &str) -> String {
         .await
     {
         Ok(r) => r,
-        Err(_) => return String::new(),
+        Err(_) => return (String::new(), 0, 0),
     };
 
     let raw: serde_json::Value = match resp.json().await {
         Ok(v) => v,
-        Err(_) => return String::new(),
+        Err(_) => return (String::new(), 0, 0),
     };
 
     if let Some(queues) = raw.get("queues").and_then(|q| q.as_array()) {
@@ -665,16 +671,149 @@ pub async fn get_player_rank(creds: &LcuCredentials, puuid: &str) -> String {
             let qt = q.get("queueType").and_then(|v| v.as_str()).unwrap_or("");
             if qt == "RANKED_SOLO_5x5" {
                 let tier = q.get("tier").and_then(|v| v.as_str()).unwrap_or("");
-                let rank = q.get("division").and_then(|v| v.as_str())
+                let division = q.get("division").and_then(|v| v.as_str())
                     .or_else(|| q.get("rank").and_then(|v| v.as_str()))
                     .unwrap_or("");
-                if !tier.is_empty() && tier != "NONE" {
-                    return format!("{} {}", tier, rank);
-                }
+                let wins = q.get("wins").and_then(|v| v.as_i64()).unwrap_or(0);
+                let losses = q.get("losses").and_then(|v| v.as_i64()).unwrap_or(0);
+                let rank = if !tier.is_empty() && tier != "NONE" {
+                    format!("{} {}", tier, division)
+                } else {
+                    String::new()
+                };
+                return (rank, wins, losses);
             }
         }
     }
-    String::new()
+    (String::new(), 0, 0)
+}
+
+/// Fetch account level by puuid.
+pub async fn get_account_level(creds: &LcuCredentials, puuid: &str) -> i64 {
+    let client = lcu_client();
+    let url = lcu_url(creds, &format!("/lol-summoner/v2/summoners/puuid/{}", puuid));
+    let resp = match client.get(&url).header("Authorization", auth_header(&creds.password)).send().await {
+        Ok(r) => r,
+        Err(_) => return 0,
+    };
+    let raw: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return 0,
+    };
+    raw.get("summonerLevel").and_then(|v| v.as_i64()).unwrap_or(0)
+}
+
+/// Calculate smurf score (0-100) from account signals.
+pub fn analyze_smurf(
+    account_level: i64,
+    _rank: &str,
+    wins: i64,
+    losses: i64,
+    matches: &[MatchHistoryEntry],
+) -> SmurfAnalysis {
+    let games_played = wins + losses;
+    let win_rate = if games_played > 0 {
+        wins as f64 / games_played as f64
+    } else {
+        0.0
+    };
+
+    let (avg_kda, unique_champions) = if !matches.is_empty() {
+        let mut total_k = 0i64;
+        let mut total_d = 0i64;
+        let mut total_a = 0i64;
+        let mut champs = std::collections::HashSet::new();
+        for m in matches {
+            total_k += m.kills;
+            total_d += m.deaths;
+            total_a += m.assists;
+            champs.insert(m.champion_id);
+        }
+        let kda = if total_d == 0 {
+            (total_k + total_a) as f64
+        } else {
+            (total_k + total_a) as f64 / total_d as f64
+        };
+        (kda, champs.len() as i64)
+    } else {
+        (0.0, 0)
+    };
+
+    let mut score: f64 = 0.0;
+
+    // Factor 1: Low account level (max 25)
+    score += if account_level < 35 {
+        25.0
+    } else if account_level < 50 {
+        20.0
+    } else if account_level < 80 {
+        12.0
+    } else if account_level < 120 {
+        5.0
+    } else {
+        0.0
+    };
+
+    // Factor 2: High win rate (max 30)
+    if games_played >= 10 {
+        score += if win_rate > 0.70 {
+            30.0
+        } else if win_rate > 0.62 {
+            22.0
+        } else if win_rate > 0.55 {
+            10.0
+        } else {
+            0.0
+        };
+    }
+
+    // Factor 3: Few ranked games (max 15)
+    if games_played > 0 {
+        score += if games_played < 30 {
+            15.0
+        } else if games_played < 60 {
+            8.0
+        } else if games_played < 100 {
+            3.0
+        } else {
+            0.0
+        };
+    }
+
+    // Factor 4: High KDA (max 20)
+    score += if avg_kda > 5.0 {
+        20.0
+    } else if avg_kda > 3.5 {
+        15.0
+    } else if avg_kda > 2.5 {
+        8.0
+    } else {
+        0.0
+    };
+
+    // Factor 5: Low champion diversity (max 10)
+    let match_count = matches.len() as i64;
+    if match_count >= 5 {
+        let ratio = unique_champions as f64 / match_count as f64;
+        score += if ratio < 0.15 {
+            10.0
+        } else if ratio < 0.25 {
+            7.0
+        } else if ratio < 0.35 {
+            3.0
+        } else {
+            0.0
+        };
+    }
+
+    SmurfAnalysis {
+        score: (score as u8).min(100),
+        account_level,
+        games_played,
+        win_rate,
+        avg_kda,
+        unique_champions,
+    }
 }
 
 /// Fetch match history for any player by puuid.
@@ -995,6 +1134,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
         player: LiveGamePlayer,
         summoner_id: i64,
         puuid: String,
+        is_enemy: bool,
     }
 
     fn parse_players_raw(arr: &[serde_json::Value]) -> Vec<RawPlayer> {
@@ -1017,9 +1157,11 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
                     summoner_name: name,
                     rank: String::new(),
                     puuid: puuid.clone(),
+                    smurf: None,
                 },
                 summoner_id: sid,
                 puuid,
+                is_enemy: false,
             }
         }).collect()
     }
@@ -1046,34 +1188,51 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
         }
     }
 
-    // Fetch ranks for all players in parallel
+    // Mark enemy teams before merging
+    for r in &mut team_one_raw {
+        r.is_enemy = !my_team_is_one;
+    }
+    for r in &mut team_two_raw {
+        r.is_enemy = my_team_is_one;
+    }
+
+    // Fetch ranks, smurf analysis, and resolve names in parallel
     let mut all_raw: Vec<RawPlayer> = team_one_raw.into_iter().chain(team_two_raw.into_iter()).collect();
 
-    // Fetch ranks and resolve names in parallel
     let mut futures = vec![];
     for raw in &all_raw {
         let puuid = raw.puuid.clone();
         let sid = raw.summoner_id;
         let needs_name = raw.player.summoner_name.is_empty();
+        let is_enemy = raw.is_enemy;
         let creds = creds.clone();
         futures.push(tokio::spawn(async move {
-            let rank = if !puuid.is_empty() {
-                get_player_rank(&creds, &puuid).await
+            let (rank, wins, losses) = if !puuid.is_empty() {
+                get_player_ranked_stats(&creds, &puuid).await
             } else {
-                String::new()
+                (String::new(), 0, 0)
             };
             let name = if needs_name && sid > 0 {
                 get_summoner_name(&creds, sid).await
             } else {
                 String::new()
             };
-            (rank, name)
+            // Smurf detection for enemies only
+            let smurf = if is_enemy && !puuid.is_empty() {
+                let level = get_account_level(&creds, &puuid).await;
+                let matches = get_player_match_history(&creds, &puuid).await.unwrap_or_default();
+                Some(analyze_smurf(level, &rank, wins, losses, &matches))
+            } else {
+                None
+            };
+            (rank, name, smurf)
         }));
     }
 
     for (i, fut) in futures.into_iter().enumerate() {
-        if let Ok((rank, name)) = fut.await {
+        if let Ok((rank, name, smurf)) = fut.await {
             all_raw[i].player.rank = rank;
+            all_raw[i].player.smurf = smurf;
             if !name.is_empty() {
                 all_raw[i].player.summoner_name = name;
             }

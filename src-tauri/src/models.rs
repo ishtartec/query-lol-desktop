@@ -480,4 +480,15 @@ pub struct LiveGamePlayer {
     pub summoner_name: String,
     pub rank: String,
     pub puuid: String,
+    pub smurf: Option<SmurfAnalysis>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmurfAnalysis {
+    pub score: u8,
+    pub account_level: i64,
+    pub games_played: i64,
+    pub win_rate: f64,
+    pub avg_kda: f64,
+    pub unique_champions: i64,
 }

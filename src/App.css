@@ -332,7 +332,7 @@
 
 /* === Section titles === */
 .section-title {
-  font-size: 10px; font-weight: 700; color: var(--text-muted);
+  font-size: 11px; font-weight: 700; color: var(--text-secondary);
   text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;
 }
 
@@ -694,7 +694,7 @@
 .mh-wl { font-size: 13px; font-weight: 700; }
 .mh-wins { color: var(--accent-green); }
 .mh-losses { color: var(--accent-red); }
-.mh-wr { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.mh-wr { font-size: 13px; font-weight: 700; color: var(--text-primary); }
 
 .mh-streak {
   font-size: 11px; font-weight: 700; padding: 2px 8px;
@@ -705,38 +705,23 @@
 
 /* LP Chart */
 .lp-chart-container {
-  background: var(--bg-card); border: 1px solid var(--border);
+  background: transparent; border: 1.5px solid rgba(30, 42, 56, 0.9);
   border-radius: 10px; padding: 12px 16px; margin-bottom: 12px;
 }
 .lp-chart-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 6px;
 }
-.lp-diff { font-size: 13px; font-weight: 700; }
+.lp-diff { font-size: 14px; font-weight: 800; }
 .lp-chart-svg { width: 100%; height: 80px; display: block; }
 
-/* Lobby Hero */
-.lobby-hero {
-  height: 120px; border-radius: 12px; overflow: hidden;
-  background-size: cover; background-position: center 30%;
-  margin-bottom: 12px; position: relative;
-}
-.lobby-hero-overlay {
-  position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(10,14,19,0.9) 0%, rgba(10,14,19,0.5) 50%, rgba(10,14,19,0.2) 100%);
-  display: flex; flex-direction: column; justify-content: center;
-  padding: 0 24px;
-}
-.lobby-hero-text {
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 1px; color: var(--accent-gold); opacity: 0.8;
-}
-.lobby-hero-name {
-  font-size: 24px; font-weight: 800; color: var(--text-primary);
-  line-height: 1.1; margin: 2px 0;
-}
-.lobby-hero-games {
-  font-size: 12px; color: var(--text-secondary); font-weight: 500;
+/* Lobby Background */
+.lobby-bg {
+  position: fixed; inset: 0; z-index: -1;
+  background-size: cover; background-position: center 20%;
+  opacity: 0.18;
+  filter: blur(1px);
+  pointer-events: none;
 }
 
 /* Mode filter tabs */
@@ -904,6 +889,27 @@
   font-size: 10px; color: var(--text-secondary); line-height: 1.2;
 }
 .lg-rank { font-weight: 600; }
+
+.smurf-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 6px;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+.smurf-medium {
+  background: rgba(255, 165, 0, 0.2);
+  color: #ffa500;
+  border: 1px solid rgba(255, 165, 0, 0.3);
+}
+.smurf-high {
+  background: rgba(255, 60, 60, 0.2);
+  color: #ff4444;
+  border: 1px solid rgba(255, 60, 60, 0.3);
+}
 
 /* === Post-Game === */
 .postgame-layout {

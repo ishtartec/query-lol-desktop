@@ -100,11 +100,21 @@ interface LiveGameState {
   enemies: LiveGamePlayer[];
 }
 
+interface SmurfAnalysis {
+  score: number;
+  account_level: number;
+  games_played: number;
+  win_rate: number;
+  avg_kda: number;
+  unique_champions: number;
+}
+
 interface LiveGamePlayer {
   champion_id: number;
   summoner_name: string;
   rank: string;
   puuid: string;
+  smurf: SmurfAnalysis | null;
 }
 
 interface BanSuggestion {
@@ -530,7 +540,7 @@ function App() {
         <section className="section-lobby">
           {state.match_history.length > 0 ? (
             <>
-              <LobbyHero history={state.match_history} />
+              <LobbyBackground history={state.match_history} />
               {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
               <MatchHistoryView history={state.match_history} />
             </>
@@ -590,7 +600,7 @@ function App() {
                       <span className="cs-bans-label">Bans</span>
                       <div className="cs-bans-list">
                         {state.draft.ally_bans.map((id, i) => (
-                          <ChampionIcon key={i} championId={id} size={20} className="ban-icon" />
+                          <ChampionIcon key={i} championId={id} size={28} className="ban-icon" />
                         ))}
                       </div>
                     </div>
@@ -744,8 +754,8 @@ function App() {
               </section>
             )}
 
-            {/* Prediction & Strategy */}
-            {state.prediction && (
+            {/* Prediction & Strategy (not ARAM) */}
+            {state.prediction && state.game_mode !== "aram" && (
               <div className="prediction-card">
                 <div className="prediction-header">
                   <h3 className="card-label">Game Analysis</h3>
@@ -810,7 +820,7 @@ function App() {
                     <span className="cs-bans-label">Bans</span>
                     <div className="cs-bans-list">
                       {state.draft.enemy_bans.map((id, i) => (
-                        <ChampionIcon key={i} championId={id} size={20} className="ban-icon" />
+                        <ChampionIcon key={i} championId={id} size={28} className="ban-icon" />
                       ))}
                     </div>
                   </div>
@@ -929,7 +939,7 @@ function LpChart({ history }: { history: LpEntry[] }) {
       <svg viewBox={`0 0 ${width} ${height}`} className="lp-chart-svg">
         {/* Grid line at current LP */}
         <line x1={pad.left} y1={points[points.length-1].y} x2={width - pad.right} y2={points[points.length-1].y}
-          stroke="var(--border)" strokeWidth="1" strokeDasharray="4 2" />
+          stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="4 2" opacity="0.6" />
 
         {/* Line */}
         <path d={linePath} fill="none" stroke="var(--accent-gold)" strokeWidth="2" strokeLinejoin="round" />
@@ -1137,7 +1147,17 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
               <div key={i} className="lg-player" onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
                 <ChampionIcon championId={p.champion_id} size={36} />
                 <div className="lg-player-info">
-                  <span className="lg-player-name">{p.summoner_name}</span>
+                  <span className="lg-player-name">
+                    {p.summoner_name}
+                    {p.smurf && p.smurf.score >= 50 && (
+                      <span
+                        className={`smurf-badge ${p.smurf.score >= 75 ? "smurf-high" : "smurf-medium"}`}
+                        title={`Smurf Score: ${p.smurf.score}/100\nLevel: ${p.smurf.account_level}\nWin Rate: ${(p.smurf.win_rate * 100).toFixed(0)}%\nGames: ${p.smurf.games_played}\nKDA: ${p.smurf.avg_kda.toFixed(1)}\nChampions: ${p.smurf.unique_champions}`}
+                      >
+                        SMURF
+                      </span>
+                    )}
+                  </span>
                   <span className="lg-player-sub">
                     <ChampionNameLabel championId={p.champion_id} fallback="" />
                     {p.rank && <>
@@ -1179,8 +1199,7 @@ function BanCard({ ban }: { ban: BanSuggestion }) {
 
 // --- Lobby Hero (splash art of most played champion) ---
 
-function LobbyHero({ history }: { history: MatchHistoryEntry[] }) {
-  // Find most played champion
+function LobbyBackground({ history }: { history: MatchHistoryEntry[] }) {
   const counts: Record<number, number> = {};
   for (const m of history) {
     counts[m.champion_id] = (counts[m.champion_id] || 0) + 1;
@@ -1193,15 +1212,9 @@ function LobbyHero({ history }: { history: MatchHistoryEntry[] }) {
   if (!champInfo) return null;
 
   return (
-    <div className="lobby-hero" style={{
+    <div className="lobby-bg" style={{
       backgroundImage: `url(${splashUrl(champInfo.key)})`,
-    }}>
-      <div className="lobby-hero-overlay">
-        <span className="lobby-hero-text">Most Played</span>
-        <h2 className="lobby-hero-name">{champInfo.name}</h2>
-        <span className="lobby-hero-games">{counts[Number(topChampId!)]} games</span>
-      </div>
-    </div>
+    }} />
   );
 }
 
