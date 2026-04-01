@@ -472,6 +472,7 @@ pub struct LiveGameState {
     pub queue_name: String,
     pub allies: Vec<LiveGamePlayer>,
     pub enemies: Vec<LiveGamePlayer>,
+    pub live_data: Option<LiveGameData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -481,6 +482,46 @@ pub struct LiveGamePlayer {
     pub rank: String,
     pub puuid: String,
     pub smurf: Option<SmurfAnalysis>,
+    // Ranked stats
+    pub ranked_wins: i64,
+    pub ranked_losses: i64,
+    pub ranked_win_rate: f64,
+    // Recent form
+    pub streak: i32,          // positive = win streak, negative = loss streak
+    // Stats on current champion
+    pub champ_games: i32,
+    pub champ_wins: i32,
+    pub champ_kda: f64,
+    // Live in-game stats (updated during game)
+    pub live: Option<LivePlayerStats>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LivePlayerStats {
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub cs: i64,
+    pub level: i64,
+    pub current_gold: f64,
+    pub items: Vec<i64>,
+    pub spell1_id: i64,
+    pub spell2_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiveGameData {
+    pub game_time: f64,
+    pub ally_gold: f64,
+    pub enemy_gold: f64,
+    pub events: Vec<GameEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameEvent {
+    pub event_type: String,  // DragonKill, BaronKill, TurretKilled, ChampionKill, etc.
+    pub time: f64,
+    pub label: String,       // human-readable description
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

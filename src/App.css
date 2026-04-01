@@ -31,6 +31,23 @@
   overflow: hidden;
 }
 
+.update-banner {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 6px 16px; background: rgba(200, 155, 60, 0.15);
+  border-bottom: 1px solid var(--accent-gold);
+  margin: 0 -24px; padding-left: 24px; padding-right: 24px;
+}
+.update-banner span {
+  font-size: 12px; font-weight: 600; color: var(--accent-gold);
+}
+.update-btn {
+  font-size: 11px; font-weight: 700; padding: 3px 10px;
+  background: var(--accent-gold); color: var(--bg-primary);
+  border: none; border-radius: 4px; cursor: pointer;
+}
+.update-btn:hover { filter: brightness(1.15); }
+.update-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* === Header === */
 .header {
   display: flex; align-items: center; justify-content: space-between;
@@ -887,8 +904,134 @@
 }
 .lg-player-sub {
   font-size: 10px; color: var(--text-secondary); line-height: 1.2;
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 }
 .lg-rank { font-weight: 600; }
+.lg-ranked-wl { color: var(--text-muted); }
+.lg-wr { font-weight: 600; }
+.lg-wr-good { color: var(--accent-green); }
+.lg-wr-bad { color: var(--accent-red); }
+
+.lg-player-stats {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  flex-shrink: 0;
+}
+.lg-champ-stats {
+  display: flex; flex-direction: column; align-items: flex-end;
+}
+.lg-champ-wr {
+  font-size: 13px; font-weight: 700; color: var(--text-primary);
+}
+.lg-champ-detail {
+  font-size: 9px; color: var(--text-secondary); white-space: nowrap;
+}
+.lg-first-time {
+  color: var(--accent-gold); font-weight: 600; font-size: 10px;
+}
+.lg-streak {
+  font-size: 9px; font-weight: 700; padding: 1px 5px;
+  border-radius: 3px; letter-spacing: 0.3px;
+}
+.lg-streak-win {
+  color: var(--accent-green);
+  background: rgba(31, 173, 79, 0.15);
+}
+.lg-streak-loss {
+  color: var(--accent-red);
+  background: rgba(232, 64, 87, 0.15);
+}
+
+/* Live game champion column */
+.lg-champ-col {
+  position: relative; flex-shrink: 0;
+}
+.lg-level {
+  position: absolute; bottom: -2px; right: -4px;
+  font-size: 9px; font-weight: 700; color: var(--text-primary);
+  background: var(--bg-primary); border: 1px solid var(--border);
+  border-radius: 4px; padding: 0 3px; line-height: 1.4;
+}
+
+/* Live in-game stats */
+.lg-player-live {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 2px; flex-shrink: 0;
+}
+.lg-live-kda {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.5px;
+}
+.lg-live-k { color: var(--accent-green); }
+.lg-live-d { color: var(--accent-red); }
+.lg-live-a { color: var(--text-secondary); }
+.lg-live-cs {
+  font-size: 9px; color: var(--text-secondary); font-weight: 600;
+}
+.lg-live-items {
+  display: flex; gap: 1px;
+}
+.lg-item-icon {
+  width: 18px; height: 18px; border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+/* Gold bar */
+.lg-gold-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px; padding: 6px 12px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.lg-gold-ally, .lg-gold-enemy {
+  font-size: 12px; font-weight: 700; min-width: 55px;
+}
+.lg-gold-ally { color: var(--accent-blue); text-align: right; }
+.lg-gold-enemy { color: var(--accent-red); }
+.lg-gold-track {
+  flex: 1; height: 6px; background: var(--accent-red);
+  border-radius: 3px; overflow: hidden; opacity: 0.6;
+}
+.lg-gold-fill {
+  height: 100%; background: var(--accent-blue);
+  border-radius: 3px; transition: width 0.5s ease;
+}
+.lg-gold-diff {
+  font-size: 11px; font-weight: 700; min-width: 50px; text-align: right;
+}
+
+/* Game timer */
+.lg-header-right {
+  display: flex; align-items: center; gap: 8px;
+}
+.lg-timer {
+  font-size: 14px; font-weight: 700; color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Events feed */
+.lg-events {
+  margin-top: 12px; padding: 8px 12px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.lg-events-title {
+  font-size: 11px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;
+}
+.lg-event {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 0; font-size: 11px;
+}
+.lg-event-time {
+  color: var(--text-muted); font-weight: 600; min-width: 35px;
+  font-variant-numeric: tabular-nums;
+}
+.lg-event-label { color: var(--text-secondary); }
+.lg-event-dragonkill .lg-event-label { color: #c084fc; }
+.lg-event-baronkill .lg-event-label { color: #fbbf24; }
+.lg-event-heraldkill .lg-event-label { color: #60a5fa; }
+.lg-event-turretkilled .lg-event-label { color: var(--text-secondary); }
+.lg-event-multikill .lg-event-label { color: var(--accent-red); font-weight: 600; }
+.lg-event-ace .lg-event-label { color: var(--accent-gold); font-weight: 700; }
 
 .smurf-badge {
   display: inline-block;

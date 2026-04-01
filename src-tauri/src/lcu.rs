@@ -1158,6 +1158,14 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
                     rank: String::new(),
                     puuid: puuid.clone(),
                     smurf: None,
+                    ranked_wins: 0,
+                    ranked_losses: 0,
+                    ranked_win_rate: 0.0,
+                    streak: 0,
+                    champ_games: 0,
+                    champ_wins: 0,
+                    champ_kda: 0.0,
+                    live: None,
                 },
                 summoner_id: sid,
                 puuid,
@@ -1199,10 +1207,23 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
     // Fetch ranks, smurf analysis, and resolve names in parallel
     let mut all_raw: Vec<RawPlayer> = team_one_raw.into_iter().chain(team_two_raw.into_iter()).collect();
 
+    struct PlayerFetchResult {
+        rank: String,
+        wins: i64,
+        losses: i64,
+        name: String,
+        smurf: Option<SmurfAnalysis>,
+        streak: i32,
+        champ_games: i32,
+        champ_wins: i32,
+        champ_kda: f64,
+    }
+
     let mut futures = vec![];
     for raw in &all_raw {
         let puuid = raw.puuid.clone();
         let sid = raw.summoner_id;
+        let champion_id = raw.player.champion_id;
         let needs_name = raw.player.summoner_name.is_empty();
         let is_enemy = raw.is_enemy;
         let creds = creds.clone();
@@ -1217,24 +1238,71 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
             } else {
                 String::new()
             };
+
+            // Fetch match history for all players (used for stats + smurf)
+            let matches = if !puuid.is_empty() {
+                get_player_match_history(&creds, &puuid).await.unwrap_or_default()
+            } else {
+                vec![]
+            };
+
+            // Streak: count consecutive wins or losses from most recent
+            let streak = {
+                let mut s: i32 = 0;
+                for m in &matches {
+                    if s == 0 {
+                        s = if m.win { 1 } else { -1 };
+                    } else if (s > 0 && m.win) || (s < 0 && !m.win) {
+                        s += if m.win { 1 } else { -1 };
+                    } else {
+                        break;
+                    }
+                }
+                s
+            };
+
+            // Stats on current champion
+            let champ_matches: Vec<&MatchHistoryEntry> = matches.iter()
+                .filter(|m| m.champion_id == champion_id)
+                .collect();
+            let champ_games = champ_matches.len() as i32;
+            let champ_wins = champ_matches.iter().filter(|m| m.win).count() as i32;
+            let champ_kda = if !champ_matches.is_empty() {
+                let k: i64 = champ_matches.iter().map(|m| m.kills).sum();
+                let d: i64 = champ_matches.iter().map(|m| m.deaths).sum();
+                let a: i64 = champ_matches.iter().map(|m| m.assists).sum();
+                if d == 0 { (k + a) as f64 } else { (k + a) as f64 / d as f64 }
+            } else {
+                0.0
+            };
+
             // Smurf detection for enemies only
             let smurf = if is_enemy && !puuid.is_empty() {
                 let level = get_account_level(&creds, &puuid).await;
-                let matches = get_player_match_history(&creds, &puuid).await.unwrap_or_default();
                 Some(analyze_smurf(level, &rank, wins, losses, &matches))
             } else {
                 None
             };
-            (rank, name, smurf)
+
+            PlayerFetchResult { rank, wins, losses, name, smurf, streak, champ_games, champ_wins, champ_kda }
         }));
     }
 
     for (i, fut) in futures.into_iter().enumerate() {
-        if let Ok((rank, name, smurf)) = fut.await {
-            all_raw[i].player.rank = rank;
-            all_raw[i].player.smurf = smurf;
-            if !name.is_empty() {
-                all_raw[i].player.summoner_name = name;
+        if let Ok(r) = fut.await {
+            let p = &mut all_raw[i].player;
+            p.rank = r.rank;
+            p.smurf = r.smurf;
+            p.ranked_wins = r.wins;
+            p.ranked_losses = r.losses;
+            let total = r.wins + r.losses;
+            p.ranked_win_rate = if total > 0 { r.wins as f64 / total as f64 } else { 0.0 };
+            p.streak = r.streak;
+            p.champ_games = r.champ_games;
+            p.champ_wins = r.champ_wins;
+            p.champ_kda = r.champ_kda;
+            if !r.name.is_empty() {
+                p.summoner_name = r.name;
             }
         }
     }
@@ -1261,5 +1329,190 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
     }
 
     info!("Live game: {} allies, {} enemies with ranks", allies.len(), enemies.len());
-    Ok(LiveGameState { queue_name, allies, enemies })
+    Ok(LiveGameState { queue_name, allies, enemies, live_data: None })
+}
+
+// ============================================================
+// Live Client Data API (https://127.0.0.1:2999) — real-time in-game data
+// ============================================================
+
+fn live_client_url(path: &str) -> String {
+    format!("https://127.0.0.1:2999{}", path)
+}
+
+/// Fetch all live game data and update the LiveGameState with real-time stats.
+pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) -> Result<(), String> {
+    let client = lcu_client(); // reuse — accepts self-signed certs
+
+    let resp = client.get(live_client_url("/liveclientdata/allgamedata"))
+        .send().await
+        .map_err(|e| format!("Live client API unreachable: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Live client API returned {}", resp.status()));
+    }
+
+    let raw: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Failed to parse live client data: {}", e))?;
+
+    let game_time = raw.get("gameData")
+        .and_then(|g| g.get("gameTime"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+
+    // Parse player list
+    let players = raw.get("allPlayers").and_then(|p| p.as_array());
+
+    // Build a lookup: summoner name -> live stats
+    let mut player_stats: std::collections::HashMap<String, LivePlayerStats> = std::collections::HashMap::new();
+    let mut player_teams: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    if let Some(players) = players {
+        for p in players {
+            let name = p.get("riotIdGameName")
+                .or_else(|| p.get("summonerName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let team = p.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+            let scores = p.get("scores").unwrap_or(&serde_json::Value::Null);
+            let kills = scores.get("kills").and_then(|v| v.as_i64()).unwrap_or(0);
+            let deaths = scores.get("deaths").and_then(|v| v.as_i64()).unwrap_or(0);
+            let assists = scores.get("assists").and_then(|v| v.as_i64()).unwrap_or(0);
+            let cs = scores.get("creepScore").and_then(|v| v.as_i64()).unwrap_or(0);
+
+            let level = p.get("level").and_then(|v| v.as_i64()).unwrap_or(1);
+            let current_gold = p.get("currentGold").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+            let items: Vec<i64> = p.get("items")
+                .and_then(|i| i.as_array())
+                .map(|arr| arr.iter()
+                    .filter_map(|item| item.get("itemID").and_then(|v| v.as_i64()))
+                    .collect())
+                .unwrap_or_default();
+
+            let spell1 = p.get("summonerSpells")
+                .and_then(|s| s.get("summonerSpellOne"))
+                .and_then(|s| s.get("rawDisplayName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let spell2 = p.get("summonerSpells")
+                .and_then(|s| s.get("summonerSpellTwo"))
+                .and_then(|s| s.get("rawDisplayName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            player_stats.insert(name.clone(), LivePlayerStats {
+                kills, deaths, assists, cs, level, current_gold, items,
+                spell1_id: spell_name_to_id(spell1),
+                spell2_id: spell_name_to_id(spell2),
+            });
+            player_teams.insert(name, team);
+        }
+    }
+
+    // Figure out which team is "my team"
+    let my_team = player_teams.get(my_name).cloned().unwrap_or_default();
+
+    // Calculate gold totals per team
+    let mut ally_gold: f64 = 0.0;
+    let mut enemy_gold: f64 = 0.0;
+    for (name, stats) in &player_stats {
+        let team = player_teams.get(name).map(|s| s.as_str()).unwrap_or("");
+        if team == my_team {
+            ally_gold += stats.current_gold;
+            // also add gold from items (current_gold is unspent gold)
+        } else {
+            enemy_gold += stats.current_gold;
+        }
+    }
+
+    // Match live stats to existing players by summoner name
+    for player in live_state.allies.iter_mut().chain(live_state.enemies.iter_mut()) {
+        if let Some(stats) = player_stats.remove(&player.summoner_name) {
+            player.live = Some(stats);
+        }
+    }
+
+    // Parse game events (objectives)
+    let mut events = vec![];
+    if let Some(ev_data) = raw.get("events").and_then(|e| e.get("Events")).and_then(|e| e.as_array()) {
+        for ev in ev_data {
+            let event_name = ev.get("EventName").and_then(|v| v.as_str()).unwrap_or("");
+            let time = ev.get("EventTime").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+            let (event_type, label) = match event_name {
+                "DragonKill" => {
+                    let dragon = ev.get("DragonType").and_then(|v| v.as_str()).unwrap_or("Dragon");
+                    let killer = ev.get("KillerName").and_then(|v| v.as_str()).unwrap_or("");
+                    let team = player_teams.get(killer).map(|t| if *t == my_team { "Ally" } else { "Enemy" }).unwrap_or("?");
+                    ("DragonKill".to_string(), format!("{} {} killed", team, dragon))
+                }
+                "BaronKill" => {
+                    let killer = ev.get("KillerName").and_then(|v| v.as_str()).unwrap_or("");
+                    let team = player_teams.get(killer).map(|t| if *t == my_team { "Ally" } else { "Enemy" }).unwrap_or("?");
+                    ("BaronKill".to_string(), format!("{} Baron killed", team))
+                }
+                "HeraldKill" | "RiftHeraldKill" => {
+                    let killer = ev.get("KillerName").and_then(|v| v.as_str()).unwrap_or("");
+                    let team = player_teams.get(killer).map(|t| if *t == my_team { "Ally" } else { "Enemy" }).unwrap_or("?");
+                    ("HeraldKill".to_string(), format!("{} Herald killed", team))
+                }
+                "TurretKilled" => {
+                    let killer = ev.get("KillerName").and_then(|v| v.as_str()).unwrap_or("");
+                    let team = player_teams.get(killer).map(|t| if *t == my_team { "Ally" } else { "Enemy" }).unwrap_or("?");
+                    ("TurretKilled".to_string(), format!("{} turret destroyed", team))
+                }
+                "InhibKilled" => {
+                    let killer = ev.get("KillerName").and_then(|v| v.as_str()).unwrap_or("");
+                    let team = player_teams.get(killer).map(|t| if *t == my_team { "Ally" } else { "Enemy" }).unwrap_or("?");
+                    ("InhibKilled".to_string(), format!("{} inhibitor destroyed", team))
+                }
+                "Multikill" => {
+                    let killer = ev.get("KillerName").and_then(|v| v.as_str()).unwrap_or("?");
+                    let count = ev.get("KillStreak").and_then(|v| v.as_i64()).unwrap_or(2);
+                    let kind = match count {
+                        3 => "Triple Kill",
+                        4 => "Quadra Kill",
+                        5 => "Penta Kill",
+                        _ => "Multi Kill",
+                    };
+                    ("Multikill".to_string(), format!("{} — {}", killer, kind))
+                }
+                "Ace" => {
+                    let team_str = ev.get("AcingTeam").and_then(|v| v.as_str()).unwrap_or("?");
+                    ("Ace".to_string(), format!("{} aced!", team_str))
+                }
+                _ => continue, // skip GameStart, MinionsSpawning, etc.
+            };
+
+            events.push(GameEvent { event_type, time, label });
+        }
+    }
+
+    live_state.live_data = Some(LiveGameData {
+        game_time,
+        ally_gold,
+        enemy_gold,
+        events,
+    });
+
+    Ok(())
+}
+
+fn spell_name_to_id(name: &str) -> i64 {
+    match name {
+        s if s.contains("Flash") => 4,
+        s if s.contains("Ignite") => 14,
+        s if s.contains("Teleport") => 12,
+        s if s.contains("Exhaust") => 3,
+        s if s.contains("Heal") => 7,
+        s if s.contains("Barrier") => 21,
+        s if s.contains("Cleanse") => 1,
+        s if s.contains("Ghost") => 6,
+        s if s.contains("Smite") => 11,
+        s if s.contains("Mark") => 32, // ARAM snowball
+        _ => 0,
+    }
 }

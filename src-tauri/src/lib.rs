@@ -414,9 +414,9 @@ async fn poll_loop(
                 }
             }
         } else if phase == "InProgress" || phase == "GameStart" {
-            let (already_in_game, sid) = {
+            let (already_in_game, sid, my_name) = {
                 let s = state.lock().await;
-                (s.status == ConnectionStatus::InGame, s.summoner_id)
+                (s.status == ConnectionStatus::InGame, s.summoner_id, s.summoner_name.clone().unwrap_or_default())
             };
             if !already_in_game {
                 // Fetch live game info once on transition
@@ -437,6 +437,14 @@ async fn poll_loop(
                         log::info!("Live game info loaded");
                     }
                     Err(e) => log::warn!("Failed to fetch live game: {}", e),
+                }
+            } else {
+                // Poll live client data API for real-time stats
+                let mut s = state.lock().await;
+                if let Some(ref mut live) = s.live_game {
+                    if lcu::poll_live_game_data(live, &my_name).await.is_ok() {
+                        let _ = app_handle.emit("app-state-changed", s.clone());
+                    }
                 }
             }
         } else if phase == "WaitingForStats" || phase == "EndOfGame" {
@@ -748,6 +756,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             get_state,

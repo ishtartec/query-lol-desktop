@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 
 // --- Types ---
@@ -94,10 +96,36 @@ interface MatchHistoryEntry {
   timestamp: number;
 }
 
+interface LivePlayerStats {
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  level: number;
+  current_gold: number;
+  items: number[];
+  spell1_id: number;
+  spell2_id: number;
+}
+
+interface LiveGameData {
+  game_time: number;
+  ally_gold: number;
+  enemy_gold: number;
+  events: GameEvent[];
+}
+
+interface GameEvent {
+  event_type: string;
+  time: number;
+  label: string;
+}
+
 interface LiveGameState {
   queue_name: string;
   allies: LiveGamePlayer[];
   enemies: LiveGamePlayer[];
+  live_data: LiveGameData | null;
 }
 
 interface SmurfAnalysis {
@@ -115,6 +143,14 @@ interface LiveGamePlayer {
   rank: string;
   puuid: string;
   smurf: SmurfAnalysis | null;
+  ranked_wins: number;
+  ranked_losses: number;
+  ranked_win_rate: number;
+  streak: number;
+  champ_games: number;
+  champ_wins: number;
+  champ_kda: number;
+  live: LivePlayerStats | null;
 }
 
 interface BanSuggestion {
@@ -234,13 +270,14 @@ const REGIONS = [
 
 const SPELL_NAMES: Record<number, string> = {
   1: "Cleanse", 3: "Exhaust", 4: "Flash", 6: "Ghost", 7: "Heal",
-  11: "Smite", 12: "Teleport", 14: "Ignite", 21: "Barrier",
+  11: "Smite", 12: "Teleport", 14: "Ignite", 21: "Barrier", 32: "Mark",
 };
 
 const SPELL_KEYS: Record<number, string> = {
   1: "SummonerBoost", 3: "SummonerExhaust", 4: "SummonerFlash",
   6: "SummonerHaste", 7: "SummonerHeal", 11: "SummonerSmite",
   12: "SummonerTeleport", 14: "SummonerDot", 21: "SummonerBarrier",
+  32: "SummonerSnowball",
 };
 
 const POSITION_LABELS: Record<string, string> = {
@@ -397,6 +434,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [playerProfile, setPlayerProfile] = useState<{ name: string; rank: string; matches: MatchHistoryEntry[] } | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; update: Awaited<ReturnType<typeof check>> } | null>(null);
+  const [updating, setUpdating] = useState(false);
   const errorTimeout = useRef<number | null>(null);
 
   const championInfo = useChampionName(state.champion_id);
@@ -409,6 +448,10 @@ function App() {
       loadItemData();
     });
     const unlisten = listen<AppState>("app-state-changed", (e) => setState(e.payload));
+    // Check for updates
+    check().then(update => {
+      if (update) setUpdateAvailable({ version: update.version, update });
+    }).catch(() => {});
     return () => { unlisten.then(fn => fn()); };
   }, []);
 
@@ -432,6 +475,18 @@ function App() {
     try { await invoke("apply_build_now"); } catch (e: any) { showError(String(e)); }
   }
 
+  async function handleUpdate() {
+    if (!updateAvailable?.update) return;
+    setUpdating(true);
+    try {
+      await updateAvailable.update.downloadAndInstall();
+      await relaunch();
+    } catch (e: any) {
+      showError(`Update failed: ${String(e)}`);
+      setUpdating(false);
+    }
+  }
+
   const isConnected = state.status !== "disconnected";
   const inChampSelect = state.status === "champ_select";
   const inGame = state.status === "in_game";
@@ -441,6 +496,14 @@ function App() {
 
   return (
     <main className="app">
+      {updateAvailable && (
+        <div className="update-banner">
+          <span>v{updateAvailable.version} available</span>
+          <button onClick={handleUpdate} disabled={updating} className="update-btn">
+            {updating ? "Updating..." : "Update & Restart"}
+          </button>
+        </div>
+      )}
       {/* Header */}
       <header className="header">
         <div className="header-left">
@@ -1111,31 +1174,119 @@ function timeAgo(timestamp: number): string {
 
 // --- Live Game View ---
 
+function formatGameTime(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function LiveGamePlayerCard({ p, onViewPlayer }: { p: LiveGamePlayer; onViewPlayer?: (puuid: string) => void }) {
+  const totalGames = p.ranked_wins + p.ranked_losses;
+  const champWr = p.champ_games > 0 ? (p.champ_wins / p.champ_games * 100) : 0;
+  const live = p.live;
+  return (
+    <div className="lg-player" onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
+      <div className="lg-champ-col">
+        <ChampionIcon championId={p.champion_id} size={40} />
+        {live && <span className="lg-level">{live.level}</span>}
+      </div>
+      <div className="lg-player-info">
+        <span className="lg-player-name">
+          {p.summoner_name}
+          {p.smurf && p.smurf.score >= 50 && (
+            <span
+              className={`smurf-badge ${p.smurf.score >= 75 ? "smurf-high" : "smurf-medium"}`}
+              title={`Smurf Score: ${p.smurf.score}/100\nLevel: ${p.smurf.account_level}\nWin Rate: ${(p.smurf.win_rate * 100).toFixed(0)}%\nGames: ${p.smurf.games_played}\nKDA: ${p.smurf.avg_kda.toFixed(1)}\nChampions: ${p.smurf.unique_champions}`}
+            >
+              SMURF
+            </span>
+          )}
+        </span>
+        <span className="lg-player-sub">
+          {p.rank && <>
+            <RankEmblem rank={p.rank} size={14} />
+            <span className={`lg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span>
+          </>}
+          {totalGames > 0 && <span className="lg-ranked-wl">{p.ranked_wins}W {p.ranked_losses}L</span>}
+          {totalGames > 0 && (
+            <span className={`lg-wr ${p.ranked_win_rate >= 0.52 ? "lg-wr-good" : p.ranked_win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
+              {(p.ranked_win_rate * 100).toFixed(0)}%
+            </span>
+          )}
+        </span>
+      </div>
+      {live ? (
+        <div className="lg-player-live">
+          <span className="lg-live-kda">
+            <span className="lg-live-k">{live.kills}</span>/<span className="lg-live-d">{live.deaths}</span>/<span className="lg-live-a">{live.assists}</span>
+          </span>
+          <span className="lg-live-cs">{live.cs} CS</span>
+          <div className="lg-live-items">
+            {live.items.filter(id => id > 0).map((id, j) => (
+              <img key={j} src={itemIconUrl(id)} alt="" className="lg-item-icon" />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="lg-player-stats">
+          {p.champ_games > 0 ? (
+            <div className="lg-champ-stats">
+              <span className={`lg-champ-wr ${champWr >= 55 ? "lg-wr-good" : champWr < 45 ? "lg-wr-bad" : ""}`}>
+                {champWr.toFixed(0)}%
+              </span>
+              <span className="lg-champ-detail">{p.champ_games}G {p.champ_kda.toFixed(1)} KDA</span>
+            </div>
+          ) : (
+            <div className="lg-champ-stats">
+              <span className="lg-champ-detail lg-first-time">1st time</span>
+            </div>
+          )}
+          {p.streak !== 0 && (
+            <span className={`lg-streak ${p.streak > 0 ? "lg-streak-win" : "lg-streak-loss"}`}>
+              {p.streak > 0 ? `${p.streak}W` : `${Math.abs(p.streak)}L`}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlayer?: (puuid: string) => void }) {
+  const ld = game.live_data;
+  const goldDiff = ld ? ld.ally_gold - ld.enemy_gold : 0;
+  // Get recent objective events (last 5)
+  const recentEvents = ld?.events.slice(-5).reverse() ?? [];
+
   return (
     <div className="lg-layout">
       <div className="lg-header">
         <h3 className="section-title">In Game</h3>
-        <span className="lg-queue">{game.queue_name}</span>
+        <div className="lg-header-right">
+          {ld && <span className="lg-timer">{formatGameTime(ld.game_time)}</span>}
+          <span className="lg-queue">{game.queue_name}</span>
+        </div>
       </div>
+
+      {ld && (
+        <div className="lg-gold-bar">
+          <span className="lg-gold-ally">{Math.round(ld.ally_gold).toLocaleString()}g</span>
+          <div className="lg-gold-track">
+            <div className="lg-gold-fill" style={{ width: `${ld.ally_gold / (ld.ally_gold + ld.enemy_gold + 1) * 100}%` }} />
+          </div>
+          <span className="lg-gold-enemy">{Math.round(ld.enemy_gold).toLocaleString()}g</span>
+          <span className={`lg-gold-diff ${goldDiff > 0 ? "lg-wr-good" : goldDiff < 0 ? "lg-wr-bad" : ""}`}>
+            {goldDiff > 0 ? "+" : ""}{Math.round(goldDiff).toLocaleString()}
+          </span>
+        </div>
+      )}
+
       <div className="lg-teams">
         <div className="lg-team">
           <h4 className="draft-team-label" style={{ color: "var(--accent-blue)" }}>Your Team</h4>
           <div className="lg-players">
             {game.allies.map((p, i) => (
-              <div key={i} className="lg-player" onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
-                <ChampionIcon championId={p.champion_id} size={36} />
-                <div className="lg-player-info">
-                  <span className="lg-player-name">{p.summoner_name}</span>
-                  <span className="lg-player-sub">
-                    <ChampionNameLabel championId={p.champion_id} fallback="" />
-                    {p.rank && <>
-                      <RankEmblem rank={p.rank} size={14} />
-                      <span className={`lg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span>
-                    </>}
-                  </span>
-                </div>
-              </div>
+              <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} />
             ))}
           </div>
         </div>
@@ -1144,33 +1295,23 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
           <h4 className="draft-team-label" style={{ color: "var(--accent-red)" }}>Enemy Team</h4>
           <div className="lg-players">
             {game.enemies.map((p, i) => (
-              <div key={i} className="lg-player" onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
-                <ChampionIcon championId={p.champion_id} size={36} />
-                <div className="lg-player-info">
-                  <span className="lg-player-name">
-                    {p.summoner_name}
-                    {p.smurf && p.smurf.score >= 50 && (
-                      <span
-                        className={`smurf-badge ${p.smurf.score >= 75 ? "smurf-high" : "smurf-medium"}`}
-                        title={`Smurf Score: ${p.smurf.score}/100\nLevel: ${p.smurf.account_level}\nWin Rate: ${(p.smurf.win_rate * 100).toFixed(0)}%\nGames: ${p.smurf.games_played}\nKDA: ${p.smurf.avg_kda.toFixed(1)}\nChampions: ${p.smurf.unique_champions}`}
-                      >
-                        SMURF
-                      </span>
-                    )}
-                  </span>
-                  <span className="lg-player-sub">
-                    <ChampionNameLabel championId={p.champion_id} fallback="" />
-                    {p.rank && <>
-                      <RankEmblem rank={p.rank} size={14} />
-                      <span className={`lg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span>
-                    </>}
-                  </span>
-                </div>
-              </div>
+              <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} />
             ))}
           </div>
         </div>
       </div>
+
+      {recentEvents.length > 0 && (
+        <div className="lg-events">
+          <h4 className="lg-events-title">Objectives</h4>
+          {recentEvents.map((ev, i) => (
+            <div key={i} className={`lg-event lg-event-${ev.event_type.toLowerCase()}`}>
+              <span className="lg-event-time">{formatGameTime(ev.time)}</span>
+              <span className="lg-event-label">{ev.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
