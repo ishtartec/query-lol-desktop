@@ -81,6 +81,7 @@ interface PostGameTeam {
 
 interface PostGameStats {
   teams: PostGameTeam[];
+  game_duration_secs: number;
 }
 
 interface MatchHistoryEntry {
@@ -126,6 +127,7 @@ interface LiveGameState {
   allies: LiveGamePlayer[];
   enemies: LiveGamePlayer[];
   live_data: LiveGameData | null;
+  recommended_build: ChampionBuild | null;
 }
 
 interface SmurfAnalysis {
@@ -142,6 +144,7 @@ interface LiveGamePlayer {
   summoner_name: string;
   rank: string;
   puuid: string;
+  position: string;
   smurf: SmurfAnalysis | null;
   ranked_wins: number;
   ranked_losses: number;
@@ -280,6 +283,11 @@ const SPELL_KEYS: Record<number, string> = {
   32: "SummonerSnowball",
 };
 
+const SPELL_COOLDOWNS: Record<number, number> = {
+  1: 210, 3: 210, 4: 300, 6: 210, 7: 240,
+  12: 360, 14: 180, 21: 180, 32: 80,
+};
+
 const POSITION_LABELS: Record<string, string> = {
   top: "TOP", jungle: "JNG", middle: "MID", mid: "MID",
   bottom: "ADC", adc: "ADC", utility: "SUP", support: "SUP",
@@ -305,12 +313,13 @@ const SHARD_ICON_BASE = "https://raw.communitydragon.org/latest/plugins/rcp-be-l
 
 // --- Data Dragon cache ---
 
-interface RuneData { id: number; name: string; icon: string; }
+interface RuneData { id: number; name: string; icon: string; shortDesc: string; }
+interface ItemData { name: string; description: string; plaintext: string; gold: number; }
 
 let championCache: Record<string, { key: string; name: string }> | null = null;
 let runeCache: Map<number, RuneData> | null = null;
 let runeStyleCache: Map<number, { name: string; icon: string }> | null = null;
-let itemCache: Record<string, string> | null = null; // itemId -> name
+let itemCache: Record<string, ItemData> | null = null;
 
 async function loadChampionData() {
   if (championCache) return championCache;
@@ -337,7 +346,7 @@ async function loadRuneData() {
       runeStyleCache.set(style.id, { name: style.name, icon: style.icon });
       for (const slot of style.slots) {
         for (const rune of slot.runes) {
-          runeCache.set(rune.id, { id: rune.id, name: rune.name, icon: rune.icon });
+          runeCache.set(rune.id, { id: rune.id, name: rune.name, icon: rune.icon, shortDesc: rune.shortDesc || "" });
         }
       }
     }
@@ -349,9 +358,9 @@ async function loadItemData() {
   try {
     const resp = await fetch(`${DDRAGON}/${DDRAGON_VERSION}/data/en_US/item.json`);
     const json = await resp.json();
-    const byId: Record<string, string> = {};
+    const byId: Record<string, ItemData> = {};
     for (const [id, item] of Object.entries(json.data) as any[]) {
-      byId[id] = item.name;
+      byId[id] = { name: item.name, description: item.description || "", plaintext: item.plaintext || "", gold: item.gold?.total || 0 };
     }
     itemCache = byId;
     return byId;
@@ -359,7 +368,15 @@ async function loadItemData() {
 }
 
 function getItemName(id: number): string {
-  return itemCache?.[id.toString()] || `Item ${id}`;
+  return itemCache?.[id.toString()]?.name || `Item ${id}`;
+}
+
+function getItemData(id: number): ItemData | null {
+  return itemCache?.[id.toString()] || null;
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
 }
 
 function splashUrl(championKey: string): string {
@@ -385,6 +402,65 @@ function useChampionName(id: number | null): { key: string; name: string } | nul
     }
   }, [id]);
   return info;
+}
+
+// --- Tooltip Components ---
+
+function Tooltip({ children, content }: { children: React.ReactNode; content: React.ReactNode }) {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const ref = useRef<HTMLDivElement>(null);
+
+  function handleEnter(e: React.MouseEvent) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setPos({ x: rect.left + rect.width / 2, y: rect.top });
+    setShow(true);
+  }
+
+  return (
+    <div className="tt-wrap" ref={ref} onMouseEnter={handleEnter} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && (
+        <div className="tt-box" style={{ left: pos.x, top: pos.y }}>
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemIcon({ id, size = 32, className }: { id: number; size?: number; className?: string }) {
+  const item = getItemData(id);
+  const img = <img src={itemIconUrl(id)} alt={item?.name || ""} style={{ width: size, height: size }} className={className} />;
+  if (!item) return img;
+  return (
+    <Tooltip content={
+      <div className="tt-item">
+        <span className="tt-name">{item.name}</span>
+        {item.gold > 0 && <span className="tt-gold">{item.gold}g</span>}
+        {item.plaintext && <p className="tt-desc">{item.plaintext}</p>}
+        {!item.plaintext && item.description && <p className="tt-desc">{stripHtml(item.description)}</p>}
+      </div>
+    }>
+      {img}
+    </Tooltip>
+  );
+}
+
+function RuneIcon({ id, size = 28 }: { id: number; size?: number }) {
+  const rune = runeCache?.get(id);
+  if (!rune) return <span className="rune-id">{id}</span>;
+  const img = <img src={runeIconUrl(rune.icon)} alt={rune.name} style={{ width: size, height: size }} />;
+  return (
+    <Tooltip content={
+      <div className="tt-item">
+        <span className="tt-name">{rune.name}</span>
+        {rune.shortDesc && <p className="tt-desc">{stripHtml(rune.shortDesc)}</p>}
+      </div>
+    }>
+      {img}
+    </Tooltip>
+  );
 }
 
 // --- Components ---
@@ -781,7 +857,7 @@ function App() {
                               <span className="items-label">Start</span>
                               <div className="items-row">
                                 {state.build!.starter_items.map(id => (
-                                  <div key={id} className="item-slot" title={getItemName(id)}><img src={itemIconUrl(id)} alt="" /></div>
+                                  <div key={id} className="item-slot"><ItemIcon id={id} size={32} /></div>
                                 ))}
                               </div>
                             </div>
@@ -791,7 +867,7 @@ function App() {
                               <span className="items-label">Boots</span>
                               <div className="items-row">
                                 {state.build!.boots.map(id => (
-                                  <div key={id} className="item-slot" title={getItemName(id)}><img src={itemIconUrl(id)} alt="" /></div>
+                                  <div key={id} className="item-slot"><ItemIcon id={id} size={32} /></div>
                                 ))}
                               </div>
                             </div>
@@ -1180,7 +1256,48 @@ function formatGameTime(secs: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function LiveGamePlayerCard({ p, onViewPlayer }: { p: LiveGamePlayer; onViewPlayer?: (puuid: string) => void }) {
+interface SpellCdProps {
+  gameTime: number;
+  spellTimers: Map<string, number>; // key: "name_spellId" -> game_time when used
+  onSpellClick?: (playerName: string, spellId: number) => void;
+}
+
+function SpellCdIcon({ spellId, playerName, gameTime, spellTimers, onSpellClick }: { spellId: number; playerName: string } & SpellCdProps) {
+  const key = `${playerName}_${spellId}`;
+  const usedAt = spellTimers.get(key);
+  const cd = SPELL_COOLDOWNS[spellId] || 300;
+  const remaining = usedAt != null ? Math.max(0, cd - (gameTime - usedAt)) : 0;
+  const onCd = remaining > 0;
+  const pct = onCd ? remaining / cd : 0;
+  const spellKey = SPELL_KEYS[spellId];
+  const spellName = SPELL_NAMES[spellId] || "Spell";
+
+  function handleClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (onCd) {
+      // Click again to cancel timer
+      spellTimers.delete(key);
+    } else {
+      onSpellClick?.(playerName, spellId);
+    }
+  }
+
+  return (
+    <div className={`spell-cd-wrap ${onCd ? "spell-on-cd" : ""}`} onClick={handleClick} title={onCd ? `${spellName}: ${Math.ceil(remaining)}s` : `Click when ${spellName} is used`}>
+      {spellKey && <img src={spellIconUrl(spellId)} alt={spellName} className="spell-cd-img" />}
+      {onCd && (
+        <>
+          <svg className="spell-cd-ring" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="var(--accent-red)" strokeWidth="2" strokeDasharray={`${pct * 62.83} 62.83`} strokeLinecap="round" transform="rotate(-90 12 12)" opacity="0.8" />
+          </svg>
+          <span className="spell-cd-text">{Math.ceil(remaining)}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGamePlayer; onViewPlayer?: (puuid: string) => void; isEnemy?: boolean; spellCd?: SpellCdProps }) {
   const totalGames = p.ranked_wins + p.ranked_losses;
   const champWr = p.champ_games > 0 ? (p.champ_wins / p.champ_games * 100) : 0;
   const live = p.live;
@@ -1215,6 +1332,12 @@ function LiveGamePlayerCard({ p, onViewPlayer }: { p: LiveGamePlayer; onViewPlay
           )}
         </span>
       </div>
+      {isEnemy && live && spellCd && (
+        <div className="lg-spells">
+          <SpellCdIcon spellId={live.spell1_id} playerName={p.summoner_name} {...spellCd} />
+          <SpellCdIcon spellId={live.spell2_id} playerName={p.summoner_name} {...spellCd} />
+        </div>
+      )}
       {live ? (
         <div className="lg-player-live">
           <span className="lg-live-kda">
@@ -1223,7 +1346,7 @@ function LiveGamePlayerCard({ p, onViewPlayer }: { p: LiveGamePlayer; onViewPlay
           <span className="lg-live-cs">{live.cs} CS</span>
           <div className="lg-live-items">
             {live.items.filter(id => id > 0).map((id, j) => (
-              <img key={j} src={itemIconUrl(id)} alt="" className="lg-item-icon" />
+              <ItemIcon key={j} id={id} size={18} className="lg-item-icon" />
             ))}
           </div>
         </div>
@@ -1252,11 +1375,138 @@ function LiveGamePlayerCard({ p, onViewPlayer }: { p: LiveGamePlayer; onViewPlay
   );
 }
 
+function playerTotalGold(p: LiveGamePlayer): number {
+  if (!p.live) return 0;
+  let gold = p.live.current_gold;
+  for (const id of p.live.items) {
+    const item = getItemData(id);
+    if (item) gold += item.gold;
+  }
+  return gold;
+}
+
+function normPos(pos: string): string {
+  const u = pos.toUpperCase();
+  if (u === "MID" || u === "MIDDLE") return "MID";
+  if (u === "ADC" || u === "BOTTOM") return "BOT";
+  if (u === "UTILITY" || u === "SUPPORT") return "SUP";
+  if (u === "JUNGLE") return "JNG";
+  if (u === "TOP") return "TOP";
+  return u;
+}
+
+function LaneMatchups({ allies, enemies }: { allies: LiveGamePlayer[]; enemies: LiveGamePlayer[] }) {
+  // Pair by normalized position
+  const pairs: { pos: string; ally: LiveGamePlayer; enemy: LiveGamePlayer; diff: number }[] = [];
+  const usedEnemies = new Set<number>();
+
+  for (const ally of allies) {
+    if (!ally.position || !ally.live) continue;
+    const allyPos = normPos(ally.position);
+    const enemyIdx = enemies.findIndex((e, i) => !usedEnemies.has(i) && e.position && normPos(e.position) === allyPos && e.live);
+    if (enemyIdx >= 0) {
+      usedEnemies.add(enemyIdx);
+      const enemy = enemies[enemyIdx];
+      const diff = playerTotalGold(ally) - playerTotalGold(enemy);
+      pairs.push({ pos: allyPos, ally, enemy, diff });
+    }
+  }
+
+  // Sort by position order
+  const posOrder = ["TOP", "JNG", "MID", "BOT", "SUP"];
+  pairs.sort((a, b) => posOrder.indexOf(a.pos) - posOrder.indexOf(b.pos));
+
+  if (pairs.length === 0) return null;
+
+  return (
+    <div className="lane-matchups">
+      {pairs.map((m, i) => (
+        <div key={i} className="lane-row">
+          <ChampionIcon championId={m.ally.champion_id} size={20} />
+          <span className="lane-pos">{m.pos}</span>
+          <span className={`lane-diff ${m.diff > 300 ? "lg-wr-good" : m.diff < -300 ? "lg-wr-bad" : ""}`}>
+            {m.diff > 0 ? "+" : ""}{Math.round(m.diff).toLocaleString()}g
+          </span>
+          <ChampionIcon championId={m.enemy.champion_id} size={20} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlayer?: (puuid: string) => void }) {
   const ld = game.live_data;
   const goldDiff = ld ? ld.ally_gold - ld.enemy_gold : 0;
-  // Get recent objective events (last 5)
   const recentEvents = ld?.events.slice(-5).reverse() ?? [];
+
+  // Spell cooldown tracking (persists across re-renders)
+  const spellTimers = useRef<Map<string, number>>(new Map()).current;
+  const gameTime = ld?.game_time ?? 0;
+
+  function handleSpellClick(playerName: string, spellId: number) {
+    spellTimers.set(`${playerName}_${spellId}`, gameTime);
+  }
+
+  const spellCd: SpellCdProps = { gameTime, spellTimers, onSpellClick: handleSpellClick };
+
+  // Power spike alerts
+  const prevEnemyItems = useRef<Map<string, Set<number>>>(new Map());
+  const [alerts, setAlerts] = useState<{ id: string; text: string; type: "info" | "warning"; time: number }[]>([]);
+
+  // Find local player
+  const localPlayer = game.allies.find(p => p.live != null) ?? game.allies[0];
+  const localLive = localPlayer?.live;
+  const build = game.recommended_build;
+
+  // Compute gold-to-next-item for local player
+  const goldToItem: { name: string; gold: number; itemId: number } | null = (() => {
+    if (!localLive || !build) return null;
+    const ownedIds = new Set(localLive.items);
+    const coreIds = [...build.core_items, ...build.boots];
+    for (const id of coreIds) {
+      if (!ownedIds.has(id)) {
+        const item = getItemData(id);
+        if (item && item.gold > 0) {
+          const remaining = item.gold - localLive.current_gold;
+          if (remaining > 0 && remaining < 1500) {
+            return { name: item.name, gold: Math.round(remaining), itemId: id };
+          }
+        }
+      }
+    }
+    return null;
+  })();
+
+  // Detect enemy item completions
+  useEffect(() => {
+    if (!ld) return;
+    const newAlerts: typeof alerts = [];
+    for (const enemy of game.enemies) {
+      if (!enemy.live) continue;
+      const key = enemy.summoner_name;
+      const prev = prevEnemyItems.current.get(key) || new Set();
+      const current = new Set(enemy.live.items);
+      for (const id of current) {
+        if (!prev.has(id)) {
+          const item = getItemData(id);
+          if (item && item.gold >= 2500) {
+            newAlerts.push({
+              id: `${key}_${id}_${gameTime}`,
+              text: `${enemy.summoner_name} completed ${item.name}`,
+              type: "warning",
+              time: gameTime,
+            });
+          }
+        }
+      }
+      prevEnemyItems.current.set(key, current);
+    }
+    if (newAlerts.length > 0) {
+      setAlerts(prev => [...newAlerts, ...prev].slice(0, 5));
+    }
+    // Auto-dismiss alerts older than 15 seconds
+    setAlerts(prev => prev.filter(a => gameTime - a.time < 15));
+  }, [gameTime, game.enemies, ld]);
 
   return (
     <div className="lg-layout">
@@ -1281,6 +1531,23 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
         </div>
       )}
 
+      {ld && <LaneMatchups allies={game.allies} enemies={game.enemies} />}
+
+      {(goldToItem || alerts.length > 0) && (
+        <div className="lg-alerts">
+          {goldToItem && (
+            <div className="lg-alert lg-alert-info">
+              <span className="lg-alert-gold">{goldToItem.gold}g</span> to <span className="lg-alert-item">{goldToItem.name}</span>
+            </div>
+          )}
+          {alerts.map(a => (
+            <div key={a.id} className={`lg-alert lg-alert-${a.type}`}>
+              {a.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="lg-teams">
         <div className="lg-team">
           <h4 className="draft-team-label" style={{ color: "var(--accent-blue)" }}>Your Team</h4>
@@ -1295,7 +1562,7 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
           <h4 className="draft-team-label" style={{ color: "var(--accent-red)" }}>Enemy Team</h4>
           <div className="lg-players">
             {game.enemies.map((p, i) => (
-              <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} />
+              <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} isEnemy spellCd={spellCd} />
             ))}
           </div>
         </div>
@@ -1424,6 +1691,61 @@ const POS_ORDER: Record<string, number> = {
   TOP: 0, JUNGLE: 1, MIDDLE: 2, MID: 2, BOTTOM: 3, ADC: 3, UTILITY: 4, SUPPORT: 4,
 };
 
+// --- Elo Benchmarks (per tier, averaged across roles) ---
+// Source: community analytics averages for ranked solo queue
+const ELO_BENCHMARKS: Record<string, { cs_min: number; vision_min: number; kda: number; dmg_share: number; kp: number; gold_min: number }> = {
+  IRON:         { cs_min: 4.0, vision_min: 0.30, kda: 1.6, dmg_share: 0.20, kp: 0.45, gold_min: 280 },
+  BRONZE:       { cs_min: 4.5, vision_min: 0.35, kda: 1.9, dmg_share: 0.20, kp: 0.48, gold_min: 300 },
+  SILVER:       { cs_min: 5.0, vision_min: 0.40, kda: 2.2, dmg_share: 0.20, kp: 0.50, gold_min: 320 },
+  GOLD:         { cs_min: 5.5, vision_min: 0.48, kda: 2.5, dmg_share: 0.20, kp: 0.52, gold_min: 340 },
+  PLATINUM:     { cs_min: 6.0, vision_min: 0.55, kda: 2.7, dmg_share: 0.20, kp: 0.54, gold_min: 360 },
+  EMERALD:      { cs_min: 6.5, vision_min: 0.60, kda: 2.9, dmg_share: 0.20, kp: 0.55, gold_min: 375 },
+  DIAMOND:      { cs_min: 7.0, vision_min: 0.68, kda: 3.1, dmg_share: 0.20, kp: 0.57, gold_min: 390 },
+  MASTER:       { cs_min: 7.5, vision_min: 0.75, kda: 3.3, dmg_share: 0.20, kp: 0.58, gold_min: 410 },
+  GRANDMASTER:  { cs_min: 7.8, vision_min: 0.80, kda: 3.5, dmg_share: 0.20, kp: 0.60, gold_min: 425 },
+  CHALLENGER:   { cs_min: 8.0, vision_min: 0.85, kda: 3.7, dmg_share: 0.20, kp: 0.62, gold_min: 440 },
+};
+
+function EloComparison({ player, duration, tier }: { player: PostGamePlayer; duration: number; tier: string }) {
+  const bench = ELO_BENCHMARKS[tier.toUpperCase()] || ELO_BENCHMARKS.GOLD;
+  const mins = Math.max(duration / 60, 1);
+
+  const metrics = [
+    { label: "CS/min", value: player.cs / mins, avg: bench.cs_min, fmt: (v: number) => v.toFixed(1) },
+    { label: "Vision/min", value: player.vision_score / mins, avg: bench.vision_min, fmt: (v: number) => v.toFixed(2) },
+    { label: "KDA", value: player.deaths === 0 ? (player.kills + player.assists) : (player.kills + player.assists) / player.deaths, avg: bench.kda, fmt: (v: number) => v.toFixed(1) },
+    { label: "DMG%", value: player.damage_share, avg: bench.dmg_share, fmt: (v: number) => `${(v * 100).toFixed(0)}%` },
+    { label: "KP", value: player.kill_participation, avg: bench.kp, fmt: (v: number) => `${(v * 100).toFixed(0)}%` },
+    { label: "Gold/min", value: player.gold_earned / mins, avg: bench.gold_min, fmt: (v: number) => Math.round(v).toString() },
+  ];
+
+  return (
+    <div className="elo-panel">
+      <h4 className="elo-title">Your Performance vs {tier} Average</h4>
+      <div className="elo-metrics">
+        {metrics.map((m, i) => {
+          const pct = m.avg > 0 ? m.value / m.avg : 1;
+          const diff = pct - 1;
+          const cls = diff > 0.1 ? "elo-above" : diff < -0.1 ? "elo-below" : "elo-even";
+          return (
+            <div key={i} className="elo-row">
+              <span className="elo-label">{m.label}</span>
+              <div className="elo-bar-track">
+                <div className={`elo-bar-fill ${cls}`} style={{ width: `${Math.min(pct * 100, 150)}%` }} />
+                <div className="elo-bar-avg" />
+              </div>
+              <span className={`elo-value ${cls}`}>{m.fmt(m.value)}</span>
+              <span className={`elo-diff ${cls}`}>
+                {diff > 0 ? "+" : ""}{(diff * 100).toFixed(0)}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void }) {
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
 
@@ -1473,6 +1795,15 @@ function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats;
           );
         })}
       </div>
+
+      {/* Elo comparison for local player */}
+      {stats.game_duration_secs > 0 && (() => {
+        const local = stats.teams.flatMap(t => t.players).find(p => p.is_local);
+        if (!local || !local.rank) return null;
+        const tier = local.rank.split(" ")[0];
+        if (!tier || !ELO_BENCHMARKS[tier.toUpperCase()]) return null;
+        return <EloComparison player={local} duration={stats.game_duration_secs} tier={tier} />;
+      })()}
     </div>
   );
 }
@@ -1547,8 +1878,8 @@ function PostGameRow({ player: p, maxDamage, team, onViewPlayer }: { player: Pos
       <div className="pg-col-items">
         <div className="pg-items-row">
           {p.items.map((id, ii) => (
-            <div key={ii} className="pg-item" title={getItemName(id)}>
-              <img src={itemIconUrl(id)} alt="" />
+            <div key={ii} className="pg-item">
+              <ItemIcon id={id} size={24} />
             </div>
           ))}
         </div>
@@ -1623,14 +1954,11 @@ function RuneDisplay({ runes }: { runes: RuneBuild }) {
           </div>
         )}
         <div className="rune-slots">
-          {primaryPerks.map((id, i) => {
-            const rune = runeCache?.get(id);
-            return (
-              <div key={id} className={`rune-pip ${i === 0 ? "keystone" : ""}`} title={rune?.name || `${id}`}>
-                {rune ? <img src={runeIconUrl(rune.icon)} alt={rune.name} /> : <span className="rune-id">{id}</span>}
-              </div>
-            );
-          })}
+          {primaryPerks.map((id, i) => (
+            <div key={id} className={`rune-pip ${i === 0 ? "keystone" : ""}`}>
+              <RuneIcon id={id} size={i === 0 ? 32 : 28} />
+            </div>
+          ))}
         </div>
       </div>
       <div className="rune-divider" />
@@ -1642,14 +1970,11 @@ function RuneDisplay({ runes }: { runes: RuneBuild }) {
           </div>
         )}
         <div className="rune-slots">
-          {secondaryPerks.map(id => {
-            const rune = runeCache?.get(id);
-            return (
-              <div key={id} className="rune-pip" title={rune?.name || `${id}`}>
-                {rune ? <img src={runeIconUrl(rune.icon)} alt={rune.name} /> : <span className="rune-id">{id}</span>}
-              </div>
-            );
-          })}
+          {secondaryPerks.map(id => (
+            <div key={id} className="rune-pip">
+              <RuneIcon id={id} size={28} />
+            </div>
+          ))}
         </div>
       </div>
       {statShards.length > 0 && (

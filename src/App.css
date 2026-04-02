@@ -23,6 +23,23 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* === Tooltips === */
+.tt-wrap { display: inline-flex; position: relative; }
+.tt-box {
+  position: fixed; z-index: 200;
+  transform: translate(-50%, -100%) translateY(-8px);
+  background: #1a2130; border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px;
+  max-width: 250px; pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  animation: ttFade 0.12s ease;
+}
+@keyframes ttFade { from { opacity: 0; transform: translate(-50%, -100%) translateY(-4px); } to { opacity: 1; transform: translate(-50%, -100%) translateY(-8px); } }
+.tt-item { display: flex; flex-direction: column; gap: 3px; }
+.tt-name { font-size: 12px; font-weight: 700; color: var(--accent-gold); }
+.tt-gold { font-size: 10px; font-weight: 600; color: #fbbf24; }
+.tt-desc { font-size: 10px; color: var(--text-secondary); line-height: 1.4; }
+
 .app {
   padding: 0 24px 20px;
   height: 100vh;
@@ -974,6 +991,79 @@
   border: 1px solid var(--border);
 }
 
+/* Spell cooldown tracker */
+.lg-spells {
+  display: flex; gap: 3px; flex-shrink: 0;
+}
+.spell-cd-wrap {
+  position: relative; width: 24px; height: 24px;
+  border-radius: 4px; overflow: hidden; cursor: pointer;
+  border: 1px solid var(--border); transition: border-color 0.15s;
+}
+/* Lane matchups */
+.lane-matchups {
+  display: flex; gap: 8px; margin-bottom: 10px;
+  justify-content: center; flex-wrap: wrap;
+}
+.lane-row {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 8px; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 11px;
+}
+.lane-pos {
+  font-size: 9px; font-weight: 700; color: var(--text-muted);
+  min-width: 22px; text-align: center;
+}
+.lane-diff {
+  font-weight: 700; min-width: 50px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Power spike alerts */
+.lg-alerts {
+  display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px;
+}
+.lg-alert {
+  padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  animation: alertSlide 0.25s ease;
+}
+@keyframes alertSlide { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.lg-alert-info {
+  background: rgba(3, 151, 171, 0.15); color: var(--accent-blue);
+  border: 1px solid rgba(3, 151, 171, 0.3);
+}
+.lg-alert-warning {
+  background: rgba(232, 64, 87, 0.12); color: var(--accent-red);
+  border: 1px solid rgba(232, 64, 87, 0.25);
+}
+.lg-alert-gold {
+  font-weight: 800; color: #fbbf24;
+}
+.lg-alert-item {
+  color: var(--text-primary); font-weight: 700;
+}
+
+.spell-cd-wrap:hover { border-color: var(--text-secondary); }
+.spell-cd-img {
+  width: 100%; height: 100%; display: block;
+}
+.spell-on-cd .spell-cd-img {
+  filter: grayscale(0.8) brightness(0.4);
+}
+.spell-cd-ring {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+.spell-cd-text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  pointer-events: none;
+}
+
 /* Gold bar */
 .lg-gold-bar {
   display: flex; align-items: center; gap: 8px;
@@ -1053,6 +1143,52 @@
   color: #ff4444;
   border: 1px solid rgba(255, 60, 60, 0.3);
 }
+
+/* === Elo Comparison === */
+.elo-panel {
+  margin-top: 16px; padding: 14px 16px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+}
+.elo-title {
+  font-size: 12px; font-weight: 700; color: var(--accent-gold);
+  margin-bottom: 10px; letter-spacing: 0.3px;
+}
+.elo-metrics {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.elo-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.elo-label {
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  min-width: 70px;
+}
+.elo-bar-track {
+  flex: 1; height: 8px; background: var(--bg-primary);
+  border-radius: 4px; position: relative; overflow: hidden;
+}
+.elo-bar-fill {
+  height: 100%; border-radius: 4px; transition: width 0.4s ease;
+  max-width: 100%;
+}
+.elo-bar-avg {
+  position: absolute; left: 100%; top: 0; bottom: 0;
+  width: 2px; background: var(--text-muted); opacity: 0.5;
+}
+.elo-bar-fill.elo-above { background: var(--accent-green); }
+.elo-bar-fill.elo-below { background: var(--accent-red); }
+.elo-bar-fill.elo-even { background: var(--text-secondary); }
+.elo-value {
+  font-size: 12px; font-weight: 700; min-width: 45px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.elo-diff {
+  font-size: 10px; font-weight: 700; min-width: 40px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.elo-above { color: var(--accent-green); }
+.elo-below { color: var(--accent-red); }
+.elo-even { color: var(--text-secondary); }
 
 /* === Post-Game === */
 .postgame-layout {
