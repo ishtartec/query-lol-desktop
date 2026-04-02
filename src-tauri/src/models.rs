@@ -81,6 +81,7 @@ pub struct AppState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PostGameStats {
     pub teams: Vec<PostGameTeam>,
+    pub game_duration_secs: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -473,6 +474,7 @@ pub struct LiveGameState {
     pub allies: Vec<LiveGamePlayer>,
     pub enemies: Vec<LiveGamePlayer>,
     pub live_data: Option<LiveGameData>,
+    pub recommended_build: Option<ChampionBuild>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -481,6 +483,7 @@ pub struct LiveGamePlayer {
     pub summoner_name: String,
     pub rank: String,
     pub puuid: String,
+    pub position: String,
     pub smurf: Option<SmurfAnalysis>,
     // Ranked stats
     pub ranked_wins: i64,

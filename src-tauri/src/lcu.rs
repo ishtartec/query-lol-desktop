@@ -270,6 +270,11 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
     let raw: serde_json::Value = resp.json().await
         .map_err(|e| format!("Failed to parse EOG stats: {}", e))?;
 
+    let game_duration_secs = raw.get("gameLength")
+        .and_then(|v| v.as_i64())
+        .or_else(|| raw.get("gameDuration").and_then(|v| v.as_i64()))
+        .unwrap_or(0);
+
     // Parse the LCU response into our clean types
     let mut teams = vec![];
 
@@ -387,8 +392,8 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
         }
     }
 
-    info!("Post-game stats parsed: {} teams", teams.len());
-    Ok(PostGameStats { teams })
+    info!("Post-game stats parsed: {} teams, duration: {}s", teams.len(), game_duration_secs);
+    Ok(PostGameStats { teams, game_duration_secs })
 }
 
 /// Select a champion in champ select (hover). Optionally lock it in.
@@ -939,6 +944,11 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
     let raw: serde_json::Value = resp.json().await
         .map_err(|e| format!("Failed to parse match details: {}", e))?;
 
+    let game_duration_secs = raw.get("gameDuration")
+        .and_then(|v| v.as_i64())
+        .or_else(|| raw.get("gameLength").and_then(|v| v.as_i64()))
+        .unwrap_or(0);
+
     // Match details have a different structure: participants + participantIdentities
     let mut team_map: std::collections::HashMap<i64, Vec<PostGamePlayer>> = std::collections::HashMap::new();
     let mut winning_team: i64 = 0;
@@ -1068,7 +1078,7 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
     // Sort teams: winning team first
     teams.sort_by(|a, b| b.is_winner.cmp(&a.is_winner));
 
-    Ok(PostGameStats { teams })
+    Ok(PostGameStats { teams, game_duration_secs })
 }
 
 /// Get the current queue ID from the gameflow session.
@@ -1151,12 +1161,19 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
                 .unwrap_or("")
                 .to_string();
 
+            let position = p.get("selectedPosition")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("")
+                .to_uppercase();
+
             RawPlayer {
                 player: LiveGamePlayer {
                     champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
                     summoner_name: name,
                     rank: String::new(),
                     puuid: puuid.clone(),
+                    position,
                     smurf: None,
                     ranked_wins: 0,
                     ranked_losses: 0,
@@ -1329,7 +1346,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
     }
 
     info!("Live game: {} allies, {} enemies with ranks", allies.len(), enemies.len());
-    Ok(LiveGameState { queue_name, allies, enemies, live_data: None })
+    Ok(LiveGameState { queue_name, allies, enemies, live_data: None, recommended_build: None })
 }
 
 // ============================================================
@@ -1366,6 +1383,7 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
     // Build a lookup: summoner name -> live stats
     let mut player_stats: std::collections::HashMap<String, LivePlayerStats> = std::collections::HashMap::new();
     let mut player_teams: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut player_positions: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     if let Some(players) = players {
         for p in players {
@@ -1375,6 +1393,7 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
                 .unwrap_or("")
                 .to_string();
             let team = p.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let position = p.get("position").and_then(|v| v.as_str()).unwrap_or("").to_uppercase();
 
             let scores = p.get("scores").unwrap_or(&serde_json::Value::Null);
             let kills = scores.get("kills").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -1403,12 +1422,27 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
+            let s1 = spell_name_to_id(spell1);
+            let s2 = spell_name_to_id(spell2);
+
+            // Detect jungle by Smite
+            let resolved_pos = if !position.is_empty() {
+                position.clone()
+            } else if s1 == 11 || s2 == 11 {
+                "JUNGLE".to_string()
+            } else {
+                String::new()
+            };
+
             player_stats.insert(name.clone(), LivePlayerStats {
                 kills, deaths, assists, cs, level, current_gold, items,
-                spell1_id: spell_name_to_id(spell1),
-                spell2_id: spell_name_to_id(spell2),
+                spell1_id: s1,
+                spell2_id: s2,
             });
-            player_teams.insert(name, team);
+            player_teams.insert(name.clone(), team);
+            if !resolved_pos.is_empty() {
+                player_positions.insert(name, resolved_pos);
+            }
         }
     }
 
@@ -1428,10 +1462,15 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         }
     }
 
-    // Match live stats to existing players by summoner name
+    // Match live stats and positions to existing players by summoner name
     for player in live_state.allies.iter_mut().chain(live_state.enemies.iter_mut()) {
         if let Some(stats) = player_stats.remove(&player.summoner_name) {
             player.live = Some(stats);
+        }
+        if let Some(pos) = player_positions.remove(&player.summoner_name) {
+            if player.position.is_empty() || !pos.is_empty() {
+                player.position = pos;
+            }
         }
     }
 

@@ -421,8 +421,10 @@ async fn poll_loop(
             if !already_in_game {
                 // Fetch live game info once on transition
                 match lcu::get_live_game(&creds, sid).await {
-                    Ok(live) => {
+                    Ok(mut live) => {
                         let mut s = state.lock().await;
+                        // Preserve build into live game state for power spike alerts
+                        live.recommended_build = s.build.clone();
                         s.status = ConnectionStatus::InGame;
                         s.live_game = Some(live);
                         s.champion_id = None;
