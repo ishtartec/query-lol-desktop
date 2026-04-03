@@ -29,6 +29,13 @@
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+/* Position icons */
+.pos-icon {
+  display: inline-block; vertical-align: middle;
+  filter: brightness(0.7);
+  flex-shrink: 0;
+}
+
 /* === Tooltips === */
 .tt-wrap { display: inline-flex; position: relative; }
 .tt-box {

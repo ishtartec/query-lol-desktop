@@ -290,8 +290,22 @@ const SPELL_COOLDOWNS: Record<number, number> = {
 
 const POSITION_LABELS: Record<string, string> = {
   top: "TOP", jungle: "JNG", middle: "MID", mid: "MID",
-  bottom: "ADC", adc: "ADC", utility: "SUP", support: "SUP",
+  bottom: "BOT", adc: "BOT", utility: "SUP", support: "SUP",
 };
+
+const POSITION_ICON_KEYS: Record<string, string> = {
+  top: "top", jungle: "jungle", middle: "middle", mid: "middle",
+  bottom: "bottom", adc: "bottom", utility: "utility", support: "utility",
+  TOP: "top", JNG: "jungle", MID: "middle", BOT: "bottom", SUP: "utility",
+  JUNGLE: "jungle", MIDDLE: "middle", BOTTOM: "bottom", UTILITY: "utility",
+};
+
+const POS_ICON_BASE = "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/";
+
+function positionIconUrl(pos: string): string {
+  const key = POSITION_ICON_KEYS[pos] || POSITION_ICON_KEYS[pos.toLowerCase()];
+  return key ? `${POS_ICON_BASE}position-${key}.svg` : "";
+}
 
 const SKILL_COLORS: Record<string, string> = {
   Q: "#4fc3f7", W: "#81c784", E: "#ffb74d", R: "#ef5350",
@@ -464,6 +478,13 @@ function RuneIcon({ id, size = 28 }: { id: number; size?: number }) {
 }
 
 // --- Components ---
+
+function PositionIcon({ pos, size = 14 }: { pos: string; size?: number }) {
+  const url = positionIconUrl(pos);
+  if (!url) return null;
+  const label = POSITION_LABELS[pos] || POSITION_LABELS[pos.toLowerCase()] || pos;
+  return <img src={url} alt={label} className="pos-icon" style={{ width: size, height: size }} title={label} />;
+}
 
 function RankEmblem({ rank, size = 20 }: { rank: string; size?: number }) {
   if (!rank) return null;
@@ -730,7 +751,7 @@ function App() {
                       <ChampionIcon championId={p.champion_id} size={36} />
                       <div className="cs-player-info">
                         <ChampionNameLabel championId={p.champion_id} fallback={p.is_local ? "You" : "..."} />
-                        {p.position && <span className="cs-player-pos">{POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
+                        {p.position && <span className="cs-player-pos"><PositionIcon pos={p.position} size={12} /> {POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
                       </div>
                     </div>
                   ))}
@@ -770,7 +791,7 @@ function App() {
                     <h2 className="champion-name">{championInfo.name}</h2>
                     {state.assigned_position && (
                       <span className="position-tag">
-                        {POSITION_LABELS[state.assigned_position] || state.assigned_position.toUpperCase()}
+                        <PositionIcon pos={state.assigned_position} size={14} /> {POSITION_LABELS[state.assigned_position] || state.assigned_position.toUpperCase()}
                       </span>
                     )}
                   </div>
@@ -941,7 +962,7 @@ function App() {
                       <ChampionIcon championId={p.champion_id} size={36} />
                       <div className="cs-player-info">
                         <ChampionNameLabel championId={p.champion_id} fallback="..." />
-                        {p.position && <span className="cs-player-pos">{POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
+                        {p.position && <span className="cs-player-pos"><PositionIcon pos={p.position} size={12} /> {POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
                       </div>
                       {wr !== undefined && (
                         <span className={`matchup-badge ${wr > 0.5 ? "matchup-good" : "matchup-bad"}`}>
@@ -1423,7 +1444,7 @@ function LaneMatchups({ allies, enemies }: { allies: LiveGamePlayer[]; enemies: 
       {pairs.map((m, i) => (
         <div key={i} className="lane-row">
           <ChampionIcon championId={m.ally.champion_id} size={20} />
-          <span className="lane-pos">{m.pos}</span>
+          <PositionIcon pos={m.pos} size={14} />
           <span className={`lane-diff ${m.diff > 300 ? "lg-wr-good" : m.diff < -300 ? "lg-wr-bad" : ""}`}>
             {m.diff > 0 ? "+" : ""}{Math.round(m.diff).toLocaleString()}g
           </span>
@@ -1830,7 +1851,7 @@ function PostGameRow({ player: p, maxDamage, team, onViewPlayer }: { player: Pos
           </span>
           <span className="pg-champ-name">
             {champInfo?.name || ""}
-            {p.position && <> &middot; {POSITION_LABELS[p.position.toLowerCase()] || p.position}</>}
+            {p.position && <> &middot; <PositionIcon pos={p.position} size={12} /> {POSITION_LABELS[p.position.toLowerCase()] || p.position}</>}
             {p.rank && <> &middot; <RankEmblem rank={p.rank} size={12} /> <span className={`pg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span></>}
           </span>
         </div>
