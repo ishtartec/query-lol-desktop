@@ -671,24 +671,29 @@ pub async fn get_player_ranked_stats(creds: &LcuCredentials, puuid: &str) -> (St
         Err(_) => return (String::new(), 0, 0),
     };
 
-    if let Some(queues) = raw.get("queues").and_then(|q| q.as_array()) {
-        for q in queues {
-            let qt = q.get("queueType").and_then(|v| v.as_str()).unwrap_or("");
-            if qt == "RANKED_SOLO_5x5" {
-                let tier = q.get("tier").and_then(|v| v.as_str()).unwrap_or("");
-                let division = q.get("division").and_then(|v| v.as_str())
-                    .or_else(|| q.get("rank").and_then(|v| v.as_str()))
-                    .unwrap_or("");
-                let wins = q.get("wins").and_then(|v| v.as_i64()).unwrap_or(0);
-                let losses = q.get("losses").and_then(|v| v.as_i64()).unwrap_or(0);
-                let rank = if !tier.is_empty() && tier != "NONE" {
-                    format!("{} {}", tier, division)
-                } else {
-                    String::new()
-                };
-                return (rank, wins, losses);
-            }
-        }
+    // Try "queues" array first, then "queueMap" object (different LCU versions)
+    let solo_queue = if let Some(queues) = raw.get("queues").and_then(|q| q.as_array()) {
+        queues.iter().find(|q| q.get("queueType").and_then(|v| v.as_str()).unwrap_or("") == "RANKED_SOLO_5x5").cloned()
+    } else if let Some(qmap) = raw.get("queueMap").and_then(|q| q.as_object()) {
+        qmap.get("RANKED_SOLO_5x5").cloned()
+    } else {
+        None
+    };
+
+    if let Some(q) = solo_queue {
+        let tier = q.get("tier").and_then(|v| v.as_str()).unwrap_or("");
+        let division = q.get("division").and_then(|v| v.as_str())
+            .or_else(|| q.get("rank").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        let wins = q.get("wins").and_then(|v| v.as_i64()).unwrap_or(0);
+        let losses = q.get("losses").and_then(|v| v.as_i64()).unwrap_or(0);
+        let rank = if !tier.is_empty() && tier != "NONE" {
+            format!("{} {}", tier, division)
+        } else {
+            String::new()
+        };
+        info!("Ranked stats for {}: {} ({}W {}L)", puuid.chars().take(8).collect::<String>(), rank, wins, losses);
+        return (rank, wins, losses);
     }
     (String::new(), 0, 0)
 }

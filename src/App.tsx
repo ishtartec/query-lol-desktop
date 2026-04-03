@@ -1324,8 +1324,8 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
             <RankEmblem rank={p.rank} size={14} />
             <span className={`lg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span>
           </>}
-          {totalGames > 0 && <span className="lg-ranked-wl">{p.ranked_wins}W {p.ranked_losses}L</span>}
-          {totalGames > 0 && (
+          {totalGames > 0 && p.ranked_losses > 0 && <span className="lg-ranked-wl">{p.ranked_wins}W {p.ranked_losses}L</span>}
+          {totalGames > 0 && p.ranked_losses > 0 && (
             <span className={`lg-wr ${p.ranked_win_rate >= 0.52 ? "lg-wr-good" : p.ranked_win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
               {(p.ranked_win_rate * 100).toFixed(0)}%
             </span>
