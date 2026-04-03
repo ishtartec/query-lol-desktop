@@ -23,6 +23,12 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Hide native scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
 /* === Tooltips === */
 .tt-wrap { display: inline-flex; position: relative; }
 .tt-box {
@@ -72,7 +78,7 @@
   border-bottom: 1px solid var(--border);
   margin-bottom: 14px; flex-shrink: 0;
 }
-.header-left { display: flex; align-items: center; gap: 10px; }
+.header-left { display: flex; align-items: center; gap: 10px; padding-left: 60px; }
 .logo {
   width: 28px; height: 28px; border-radius: 6px;
   background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-dim));

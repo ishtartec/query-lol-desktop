@@ -1556,6 +1556,7 @@ fn spell_name_to_id(name: &str) -> i64 {
         s if s.contains("Cleanse") => 1,
         s if s.contains("Ghost") => 6,
         s if s.contains("Smite") => 11,
+        s if s.contains("Clarity") => 13,
         s if s.contains("Mark") => 32, // ARAM snowball
         _ => 0,
     }

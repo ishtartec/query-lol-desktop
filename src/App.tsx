@@ -273,19 +273,19 @@ const REGIONS = [
 
 const SPELL_NAMES: Record<number, string> = {
   1: "Cleanse", 3: "Exhaust", 4: "Flash", 6: "Ghost", 7: "Heal",
-  11: "Smite", 12: "Teleport", 14: "Ignite", 21: "Barrier", 32: "Mark",
+  11: "Smite", 12: "Teleport", 13: "Clarity", 14: "Ignite", 21: "Barrier", 32: "Mark",
 };
 
 const SPELL_KEYS: Record<number, string> = {
   1: "SummonerBoost", 3: "SummonerExhaust", 4: "SummonerFlash",
   6: "SummonerHaste", 7: "SummonerHeal", 11: "SummonerSmite",
-  12: "SummonerTeleport", 14: "SummonerDot", 21: "SummonerBarrier",
+  12: "SummonerTeleport", 13: "SummonerMana", 14: "SummonerDot", 21: "SummonerBarrier",
   32: "SummonerSnowball",
 };
 
 const SPELL_COOLDOWNS: Record<number, number> = {
   1: 210, 3: 210, 4: 300, 6: 210, 7: 240,
-  12: 360, 14: 180, 21: 180, 32: 80,
+  12: 360, 13: 240, 14: 180, 21: 180, 32: 80,
 };
 
 const POSITION_LABELS: Record<string, string> = {

@@ -15,7 +15,9 @@
         "title": "QueryLoL",
         "width": 1280,
         "height": 780,
-        "resizable": true
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
