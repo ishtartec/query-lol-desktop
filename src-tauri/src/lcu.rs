@@ -5,10 +5,37 @@ use std::path::PathBuf;
 
 /// Try to find and parse the League client lockfile.
 pub fn read_lockfile() -> Option<LcuCredentials> {
-    let possible_paths = vec![
-        Some(PathBuf::from("/Applications/League of Legends.app/Contents/LoL/lockfile")),
-        dirs_lockfile(),
-    ];
+    let mut possible_paths: Vec<Option<PathBuf>> = vec![];
+
+    // macOS paths
+    #[cfg(target_os = "macos")]
+    {
+        possible_paths.push(Some(PathBuf::from("/Applications/League of Legends.app/Contents/LoL/lockfile")));
+        if let Ok(home) = std::env::var("HOME") {
+            let path = PathBuf::from(home)
+                .join("Library/Application Support/Riot Games/League of Legends/lockfile");
+            if path.exists() { possible_paths.push(Some(path)); }
+        }
+    }
+
+    // Windows paths
+    #[cfg(target_os = "windows")]
+    {
+        let common_paths = [
+            "C:\\Riot Games\\League of Legends\\lockfile",
+            "D:\\Riot Games\\League of Legends\\lockfile",
+            "C:\\Program Files\\Riot Games\\League of Legends\\lockfile",
+            "C:\\Program Files (x86)\\Riot Games\\League of Legends\\lockfile",
+        ];
+        for p in &common_paths {
+            possible_paths.push(Some(PathBuf::from(p)));
+        }
+        // Also check LOCALAPPDATA for Riot Client install path
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let install_path = PathBuf::from(&local).join("Riot Games\\League of Legends\\lockfile");
+            possible_paths.push(Some(install_path));
+        }
+    }
 
     for path in possible_paths.into_iter().flatten() {
         if let Ok(content) = std::fs::read_to_string(&path) {
@@ -28,34 +55,41 @@ pub fn read_lockfile() -> Option<LcuCredentials> {
     read_from_process()
 }
 
-fn dirs_lockfile() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
-    let path = PathBuf::from(home)
-        .join("Library/Application Support/Riot Games/League of Legends/lockfile");
-    if path.exists() { Some(path) } else { None }
-}
-
 fn read_from_process() -> Option<LcuCredentials> {
-    let output = std::process::Command::new("ps")
-        .args(["-A", "-o", "args="])
-        .output()
-        .ok()?;
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("ps")
+            .args(["-A", "-o", "args="])
+            .output()
+            .ok()?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    for line in stdout.lines() {
-        if !line.contains("LeagueClientUx") {
-            continue;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if !line.contains("LeagueClientUx") { continue; }
+            let port = extract_arg(line, "--app-port=")?;
+            let token = extract_arg(line, "--remoting-auth-token=")?;
+            info!("Found LCU via process args (port: {})", port);
+            return Some(LcuCredentials { port: port.parse().ok()?, password: token });
         }
-        let port = extract_arg(line, "--app-port=")?;
-        let token = extract_arg(line, "--remoting-auth-token=")?;
-
-        info!("Found LCU via process args (port: {})", port);
-        return Some(LcuCredentials {
-            port: port.parse().ok()?,
-            password: token,
-        });
     }
+
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("wmic")
+            .args(["process", "where", "name='LeagueClientUx.exe'", "get", "CommandLine", "/format:list"])
+            .output()
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if !line.contains("LeagueClientUx") { continue; }
+            let port = extract_arg(line, "--app-port=")?;
+            let token = extract_arg(line, "--remoting-auth-token=")?;
+            info!("Found LCU via process args (port: {})", port);
+            return Some(LcuCredentials { port: port.parse().ok()?, password: token });
+        }
+    }
+
     None
 }
 
@@ -275,6 +309,10 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
         .or_else(|| raw.get("gameDuration").and_then(|v| v.as_i64()))
         .unwrap_or(0);
 
+    let game_id = raw.get("gameId")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
     // Parse the LCU response into our clean types
     let mut teams = vec![];
 
@@ -348,6 +386,7 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                         mvp_score: 0.0,
                         is_mvp: false,
                         items,
+                        phase_stats: vec![],
                     });
                 }
             }
@@ -392,8 +431,8 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
         }
     }
 
-    info!("Post-game stats parsed: {} teams, duration: {}s", teams.len(), game_duration_secs);
-    Ok(PostGameStats { teams, game_duration_secs })
+    info!("Post-game stats parsed: {} teams, duration: {}s, gameId: {}", teams.len(), game_duration_secs, game_id);
+    Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline: vec![], death_events: vec![] })
 }
 
 /// Select a champion in champ select (hover). Optionally lock it in.
@@ -867,6 +906,11 @@ pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Re
                         assists: stats.get("assists").and_then(|v| v.as_i64()).unwrap_or(0),
                         duration_secs: duration,
                         timestamp,
+                        cs: stats.get("totalMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0)
+                            + stats.get("neutralMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0),
+                        vision_score: stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0),
+                        gold_earned: stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0),
+                        total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
                     });
                 }
             }
@@ -922,6 +966,11 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
                         assists,
                         duration_secs: duration,
                         timestamp,
+                        cs: stats.get("totalMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0)
+                            + stats.get("neutralMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0),
+                        vision_score: stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0),
+                        gold_earned: stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0),
+                        total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
                     });
                 }
             }
@@ -1002,8 +1051,8 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                 stats.get(&format!("item{}", i)).and_then(|v| v.as_i64()).filter(|&id| id > 0)
             }).collect();
 
-            let position = p.get("timeline")
-                .and_then(|t| t.get("lane"))
+            let timeline = p.get("timeline").unwrap_or(&serde_json::Value::Null);
+            let position = timeline.get("lane")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_uppercase();
@@ -1038,6 +1087,7 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                 mvp_score: 0.0,
                 is_mvp: false,
                 items,
+                phase_stats: vec![],
             };
 
             player.mvp_score = kills as f64 * 4.0
@@ -1083,7 +1133,7 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
     // Sort teams: winning team first
     teams.sort_by(|a, b| b.is_winner.cmp(&a.is_winner));
 
-    Ok(PostGameStats { teams, game_duration_secs })
+    Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline: vec![], death_events: vec![] })
 }
 
 /// Get the current queue ID from the gameflow session.
@@ -1409,12 +1459,19 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
             let level = p.get("level").and_then(|v| v.as_i64()).unwrap_or(1);
             let current_gold = p.get("currentGold").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
-            let items: Vec<i64> = p.get("items")
-                .and_then(|i| i.as_array())
+            let items_arr = p.get("items").and_then(|i| i.as_array());
+            let items: Vec<i64> = items_arr
                 .map(|arr| arr.iter()
                     .filter_map(|item| item.get("itemID").and_then(|v| v.as_i64()))
                     .collect())
                 .unwrap_or_default();
+            // Sum item prices directly from API (more reliable than Data Dragon lookup)
+            let items_gold: f64 = items_arr
+                .map(|arr| arr.iter()
+                    .filter_map(|item| item.get("price").and_then(|v| v.as_f64()))
+                    .sum())
+                .unwrap_or(0.0);
+            let total_gold = current_gold + items_gold;
 
             let spell1 = p.get("summonerSpells")
                 .and_then(|s| s.get("summonerSpellOne"))
@@ -1440,7 +1497,7 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
             };
 
             player_stats.insert(name.clone(), LivePlayerStats {
-                kills, deaths, assists, cs, level, current_gold, items,
+                kills, deaths, assists, cs, level, current_gold, total_gold, items,
                 spell1_id: s1,
                 spell2_id: s2,
             });
@@ -1448,22 +1505,6 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
             if !resolved_pos.is_empty() {
                 player_positions.insert(name, resolved_pos);
             }
-        }
-    }
-
-    // Figure out which team is "my team"
-    let my_team = player_teams.get(my_name).cloned().unwrap_or_default();
-
-    // Calculate gold totals per team
-    let mut ally_gold: f64 = 0.0;
-    let mut enemy_gold: f64 = 0.0;
-    for (name, stats) in &player_stats {
-        let team = player_teams.get(name).map(|s| s.as_str()).unwrap_or("");
-        if team == my_team {
-            ally_gold += stats.current_gold;
-            // also add gold from items (current_gold is unspent gold)
-        } else {
-            enemy_gold += stats.current_gold;
         }
     }
 
@@ -1478,6 +1519,19 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
             }
         }
     }
+
+    // Calculate gold totals from matched players (allies/enemies already known)
+    let ally_gold: f64 = live_state.allies.iter()
+        .filter_map(|p| p.live.as_ref())
+        .map(|l| l.current_gold)
+        .sum();
+    let enemy_gold: f64 = live_state.enemies.iter()
+        .filter_map(|p| p.live.as_ref())
+        .map(|l| l.current_gold)
+        .sum();
+
+    // Figure out which team is "my team" for event labeling
+    let my_team = player_teams.get(my_name).cloned().unwrap_or_default();
 
     // Parse game events (objectives)
     let mut events = vec![];
@@ -1535,14 +1589,148 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         }
     }
 
+    // Preserve existing snapshots and add new ones every ~30s
+    let mut snapshots = live_state.live_data.as_ref()
+        .map(|d| d.snapshots.clone())
+        .unwrap_or_default();
+
+    let last_snapshot_time = snapshots.last().map(|s| s.game_time).unwrap_or(0.0);
+    if game_time - last_snapshot_time >= 30.0 || snapshots.is_empty() {
+        info!("Recording snapshot at game_time={:.0}s ({} existing snapshots)", game_time, snapshots.len());
+        for player in live_state.allies.iter().chain(live_state.enemies.iter()) {
+            if let Some(live) = &player.live {
+                snapshots.push(PlayerSnapshot {
+                    game_time,
+                    summoner_name: player.summoner_name.clone(),
+                    cs: live.cs,
+                    kills: live.kills,
+                    deaths: live.deaths,
+                    assists: live.assists,
+                    gold: live.total_gold,
+                });
+            }
+        }
+    }
+
     live_state.live_data = Some(LiveGameData {
         game_time,
         ally_gold,
         enemy_gold,
         events,
+        snapshots,
     });
 
     Ok(())
+}
+
+/// Compute per-phase stats from live game snapshots for a given player.
+pub fn compute_phase_stats(snapshots: &[PlayerSnapshot], player_name: &str) -> Vec<PhaseStats> {
+    let mine: Vec<&PlayerSnapshot> = snapshots.iter()
+        .filter(|s| s.summoner_name == player_name)
+        .collect();
+
+    if mine.len() < 2 { return vec![]; }
+
+    // Phase boundaries in seconds
+    let phases = [
+        ("Early (0-14m)", 0.0, 840.0),
+        ("Mid (14-25m)", 840.0, 1500.0),
+        ("Late (25m+)", 1500.0, f64::MAX),
+    ];
+
+    let mut result = vec![];
+
+    for (label, start, end) in &phases {
+        // Find first and last snapshot in this phase
+        let in_phase: Vec<&&PlayerSnapshot> = mine.iter()
+            .filter(|s| s.game_time >= *start && s.game_time < *end)
+            .collect();
+
+        if in_phase.len() < 2 { continue; }
+
+        let first = in_phase.first().unwrap();
+        let last = in_phase.last().unwrap();
+        let duration_min = (last.game_time - first.game_time) / 60.0;
+        if duration_min < 0.5 { continue; }
+
+        let cs_delta = (last.cs - first.cs) as f64;
+        let gold_delta = last.gold - first.gold;
+
+        result.push(PhaseStats {
+            phase: label.to_string(),
+            cs_per_min: cs_delta / duration_min,
+            gold_per_min: gold_delta / duration_min,
+            kills: last.kills - first.kills,
+            deaths: last.deaths - first.deaths,
+            assists: last.assists - first.assists,
+        });
+    }
+
+    result
+}
+
+/// Compute gold diff timeline and death impacts from snapshots.
+pub fn compute_gold_timeline(
+    snapshots: &[PlayerSnapshot],
+    ally_names: &[String],
+    enemy_names: &[String],
+) -> (Vec<GoldDiffPoint>, Vec<DeathImpact>) {
+    let ally_set: std::collections::HashSet<&str> = ally_names.iter().map(|s| s.as_str()).collect();
+    let enemy_set: std::collections::HashSet<&str> = enemy_names.iter().map(|s| s.as_str()).collect();
+
+    // Group snapshots by game_time
+    let mut time_groups: std::collections::BTreeMap<i64, Vec<&PlayerSnapshot>> = std::collections::BTreeMap::new();
+    for s in snapshots {
+        let t = s.game_time as i64;
+        time_groups.entry(t).or_default().push(s);
+    }
+
+    let mut timeline = vec![];
+    let mut prev_snapshots: std::collections::HashMap<String, &PlayerSnapshot> = std::collections::HashMap::new();
+    let mut deaths = vec![];
+
+    for (_, group) in &time_groups {
+        let mut ally_gold = 0.0;
+        let mut enemy_gold = 0.0;
+        let game_time = group.first().map(|s| s.game_time).unwrap_or(0.0);
+
+        for s in group {
+            if ally_set.contains(s.summoner_name.as_str()) {
+                ally_gold += s.gold;
+            } else if enemy_set.contains(s.summoner_name.as_str()) {
+                enemy_gold += s.gold;
+            }
+
+            // Detect deaths by comparing with previous snapshot
+            if let Some(prev) = prev_snapshots.get(s.summoner_name.as_str()) {
+                if s.deaths > prev.deaths {
+                    let is_ally = ally_set.contains(s.summoner_name.as_str());
+                    deaths.push(DeathImpact {
+                        game_time: s.game_time,
+                        summoner_name: s.summoner_name.clone(),
+                        is_ally,
+                        gold_swing: 0.0, // filled below
+                    });
+                }
+            }
+            prev_snapshots.insert(s.summoner_name.clone(), s);
+        }
+
+        let diff = ally_gold - enemy_gold;
+        timeline.push(GoldDiffPoint { game_time, gold_diff: diff });
+    }
+
+    // Compute gold swing for each death: diff at death time vs diff at previous snapshot
+    for death in &mut deaths {
+        let idx = timeline.iter().position(|p| p.game_time >= death.game_time);
+        if let Some(i) = idx {
+            let after = timeline[i].gold_diff;
+            let before = if i > 0 { timeline[i - 1].gold_diff } else { 0.0 };
+            death.gold_swing = if death.is_ally { after - before } else { before - after };
+        }
+    }
+
+    (timeline, deaths)
 }
 
 fn spell_name_to_id(name: &str) -> i64 {

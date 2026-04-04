@@ -21,14 +21,21 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
 }
 
 fn notify(title: &str, body: &str) {
-    let _ = std::process::Command::new("osascript")
-        .arg("-e")
-        .arg(format!(
-            "display notification \"{}\" with title \"{}\" sound name \"Glass\"",
-            body.replace('"', "\\\""),
-            title.replace('"', "\\\"")
-        ))
-        .spawn();
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(format!(
+                "display notification \"{}\" with title \"{}\" sound name \"Glass\"",
+                body.replace('"', "\\\""),
+                title.replace('"', "\\\"")
+            ))
+            .spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = (title, body); // suppress unused warnings; Windows notifications can be added later
+    }
 }
 
 fn map_position(pos: &str) -> &'static str {
@@ -444,8 +451,13 @@ async fn poll_loop(
                 // Poll live client data API for real-time stats
                 let mut s = state.lock().await;
                 if let Some(ref mut live) = s.live_game {
-                    if lcu::poll_live_game_data(live, &my_name).await.is_ok() {
-                        let _ = app_handle.emit("app-state-changed", s.clone());
+                    match lcu::poll_live_game_data(live, &my_name).await {
+                        Ok(_) => {
+                            let _ = app_handle.emit("app-state-changed", s.clone());
+                        }
+                        Err(e) => {
+                            log::debug!("Live client poll: {}", e);
+                        }
                     }
                 }
             }
@@ -454,9 +466,32 @@ async fn poll_loop(
             if s.status != ConnectionStatus::PostGame {
                 // Transition into post-game: fetch stats once
                 match lcu::get_end_of_game_stats(&creds).await {
-                    Ok(stats) => {
+                    Ok(mut stats) => {
                         s.status = ConnectionStatus::PostGame;
+                        // Compute phase stats and gold timeline from live game snapshots
+                        if let Some(ref live_game) = s.live_game {
+                            if let Some(ref live_data) = live_game.live_data {
+                                if !live_data.snapshots.is_empty() {
+                                    log::info!("Computing phase stats from {} snapshots", live_data.snapshots.len());
+                                    for team in &mut stats.teams {
+                                        for player in &mut team.players {
+                                            let phases = lcu::compute_phase_stats(&live_data.snapshots, &player.summoner_name);
+                                            if !phases.is_empty() {
+                                                player.phase_stats = phases;
+                                            }
+                                        }
+                                    }
+                                    // Gold timeline and death impacts
+                                    let ally_names: Vec<String> = live_game.allies.iter().map(|p| p.summoner_name.clone()).collect();
+                                    let enemy_names: Vec<String> = live_game.enemies.iter().map(|p| p.summoner_name.clone()).collect();
+                                    let (timeline, deaths) = lcu::compute_gold_timeline(&live_data.snapshots, &ally_names, &enemy_names);
+                                    stats.gold_timeline = timeline;
+                                    stats.death_events = deaths;
+                                }
+                            }
+                        }
                         s.post_game = Some(stats);
+                        s.live_game = None; // Clean up after consuming snapshots
                         s.champion_id = None;
                         s.build = None;
                 s.build_alternatives = None;
@@ -489,7 +524,10 @@ async fn poll_loop(
                 s.draft = None;
                 s.recommendations = vec![];
                 s.post_game = None;
-                s.live_game = None;
+                // Keep live_game until post-game has consumed snapshots
+                if s.live_game.as_ref().and_then(|lg| lg.live_data.as_ref()).map(|ld| ld.snapshots.is_empty()).unwrap_or(true) {
+                    s.live_game = None;
+                }
                 s.game_mode = "classic".to_string();
                 last_champion_id = 0;
                 last_draft_hash = 0;

@@ -82,6 +82,23 @@ pub struct AppState {
 pub struct PostGameStats {
     pub teams: Vec<PostGameTeam>,
     pub game_duration_secs: i64,
+    pub game_id: i64,
+    pub gold_timeline: Vec<GoldDiffPoint>,
+    pub death_events: Vec<DeathImpact>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoldDiffPoint {
+    pub game_time: f64,
+    pub gold_diff: f64, // ally - enemy
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeathImpact {
+    pub game_time: f64,
+    pub summoner_name: String,
+    pub is_ally: bool,
+    pub gold_swing: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +137,17 @@ pub struct PostGamePlayer {
     pub mvp_score: f64,
     pub is_mvp: bool,
     pub items: Vec<i64>,
+    pub phase_stats: Vec<PhaseStats>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseStats {
+    pub phase: String,
+    pub cs_per_min: f64,
+    pub gold_per_min: f64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
 }
 
 impl Default for AppState {
@@ -464,6 +492,10 @@ pub struct MatchHistoryEntry {
     pub assists: i64,
     pub duration_secs: i64,
     pub timestamp: i64, // epoch ms
+    pub cs: i64,
+    pub vision_score: i64,
+    pub gold_earned: i64,
+    pub total_damage: i64,
 }
 
 // --- Live game ---
@@ -507,6 +539,7 @@ pub struct LivePlayerStats {
     pub cs: i64,
     pub level: i64,
     pub current_gold: f64,
+    pub total_gold: f64,
     pub items: Vec<i64>,
     pub spell1_id: i64,
     pub spell2_id: i64,
@@ -518,6 +551,19 @@ pub struct LiveGameData {
     pub ally_gold: f64,
     pub enemy_gold: f64,
     pub events: Vec<GameEvent>,
+    #[serde(skip)]
+    pub snapshots: Vec<PlayerSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerSnapshot {
+    pub game_time: f64,
+    pub summoner_name: String,
+    pub cs: i64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+    pub gold: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
