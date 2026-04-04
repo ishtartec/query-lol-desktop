@@ -68,6 +68,16 @@ interface PostGamePlayer {
   mvp_score: number;
   is_mvp: boolean;
   items: number[];
+  phase_stats: PhaseStats[];
+}
+
+interface PhaseStats {
+  phase: string;
+  cs_per_min: number;
+  gold_per_min: number;
+  kills: number;
+  deaths: number;
+  assists: number;
 }
 
 interface PostGameTeam {
@@ -79,9 +89,15 @@ interface PostGameTeam {
   avg_vision: number;
 }
 
+interface GoldDiffPoint { game_time: number; gold_diff: number; }
+interface DeathImpact { game_time: number; summoner_name: string; is_ally: boolean; gold_swing: number; }
+
 interface PostGameStats {
   teams: PostGameTeam[];
   game_duration_secs: number;
+  game_id: number;
+  gold_timeline: GoldDiffPoint[];
+  death_events: DeathImpact[];
 }
 
 interface MatchHistoryEntry {
@@ -95,6 +111,10 @@ interface MatchHistoryEntry {
   assists: number;
   duration_secs: number;
   timestamp: number;
+  cs: number;
+  vision_score: number;
+  gold_earned: number;
+  total_damage: number;
 }
 
 interface LivePlayerStats {
@@ -104,6 +124,7 @@ interface LivePlayerStats {
   cs: number;
   level: number;
   current_gold: number;
+  total_gold: number;
   items: number[];
   spell1_id: number;
   spell2_id: number;
@@ -301,6 +322,365 @@ const POSITION_ICON_KEYS: Record<string, string> = {
 };
 
 const POS_ICON_BASE = "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/";
+
+// --- Champion traits for adaptive item recommendations ---
+
+// Champions tagged by relevant trait (champion IDs)
+const TRAIT_HEALERS = new Set([
+  16,  // Soraka
+  266, // Aatrox
+  8,   // Vladimir
+  36,  // Dr. Mundo
+  106, // Volibear
+  19,  // Warwick
+  50,  // Swain
+  154, // Zac
+  57,  // Maokai
+  427, // Ivern
+  117, // Lulu (W heal)
+  267, // Nami
+  37,  // Sona
+  350, // Bel'Veth
+  145, // Rek'Sai (not really, remove)
+  887, // Gwen
+  86,  // Garen (passive)
+  122, // Darius (Q heal)
+  164, // Camille
+  141, // Kayn (red form)
+  876, // Lillia
+  80,  // Pantheon
+  5,   // Xin Zhao
+  2,   // Olaf
+  77,  // Udyr
+  420, // Illaoi
+  6,   // Urgot
+  82,  // Mordekaiser
+  83,  // Yorick
+  240, // Kled
+  58,  // Renekton
+  23,  // Tryndamere
+  11,  // Master Yi
+  10,  // Kayle
+  518, // Neeko
+  62,  // Wukong
+  777, // Yone
+  157, // Yasuo
+  39,  // Irelia
+  114, // Fiora
+  92,  // Riven
+  245, // Ekko
+  105, // Fizz
+  131, // Diana
+  84,  // Akali
+  55,  // Katarina
+  238, // Zed
+  91,  // Talon
+  121, // Kha'Zix
+  107, // Rengar
+  28,  // Evelynn
+  360, // Samira
+  119, // Draven
+  498, // Xayah
+  895, // Nilah
+]);
+
+const TRAIT_SHIELDERS = new Set([
+  117, // Lulu
+  43,  // Karma
+  40,  // Janna
+  497, // Rakan
+  412, // Thresh
+  201, // Braum
+  25,  // Morgana
+  61,  // Orianna
+  134, // Syndra
+  3,   // Galio
+  54,  // Malphite (passive)
+  78,  // Poppy
+  98,  // Shen
+  223, // Tahm Kench
+  432, // Bard
+  685, // Renata Glasc
+  526, // Rell
+  147, // Seraphine
+  350, // Bel'Veth
+  427, // Ivern
+]);
+
+// Map champion ID to primary damage type: "ap" or "ad"
+const CHAMP_DAMAGE_TYPE: Record<number, "ap" | "ad"> = {};
+// AP champions
+[1,3,4,7,8,9,10,13,17,25,26,27,28,30,31,34,37,38,40,42,43,45,50,55,61,63,68,69,74,76,79,82,84,85,90,96,99,101,103,105,112,113,115,117,127,131,134,142,143,147,150,161,163,245,246,267,268,350,353,360,427,432,497,518,526,555,685,711,876,887,901,902,950].forEach(id => CHAMP_DAMAGE_TYPE[id] = "ap");
+// AD champions (rest default to AD for simplicity)
+
+interface ItemRec {
+  category: string;
+  reason: string;
+  priority: "high" | "medium";
+  items: { id: number; name: string }[];
+}
+
+function analyzeEnemyComp(enemyIds: number[]): ItemRec[] {
+  const recs: ItemRec[] = [];
+  if (enemyIds.length === 0) return recs;
+
+  const healers = enemyIds.filter(id => TRAIT_HEALERS.has(id));
+  const shielders = enemyIds.filter(id => TRAIT_SHIELDERS.has(id));
+  const apCount = enemyIds.filter(id => CHAMP_DAMAGE_TYPE[id] === "ap").length;
+  const adCount = enemyIds.length - apCount;
+
+  // Antiheal
+  if (healers.length >= 2) {
+    const names = healers.map(id => championCache?.[id.toString()]?.name || "?").join(", ");
+    recs.push({
+      category: "Antiheal",
+      reason: `Heavy healing: ${names}`,
+      priority: "high",
+      items: [
+        { id: 3165, name: "Morellonomicon" },
+        { id: 3033, name: "Mortal Reminder" },
+        { id: 3011, name: "Chemtech Putrifier" },
+      ],
+    });
+  } else if (healers.length === 1) {
+    const name = championCache?.[healers[0].toString()]?.name || "?";
+    recs.push({
+      category: "Antiheal",
+      reason: `${name} has healing`,
+      priority: "medium",
+      items: [
+        { id: 3165, name: "Morellonomicon" },
+        { id: 3033, name: "Mortal Reminder" },
+      ],
+    });
+  }
+
+  // Heavy AP
+  if (apCount >= 4) {
+    recs.push({
+      category: "Magic Resist",
+      reason: `${apCount} AP champions — stack MR`,
+      priority: "high",
+      items: [
+        { id: 3065, name: "Spirit Visage" },
+        { id: 4401, name: "Force of Nature" },
+        { id: 3111, name: "Mercury's Treads" },
+      ],
+    });
+  } else if (apCount >= 3) {
+    recs.push({
+      category: "Magic Resist",
+      reason: `${apCount} AP champions`,
+      priority: "medium",
+      items: [
+        { id: 3111, name: "Mercury's Treads" },
+        { id: 4401, name: "Force of Nature" },
+      ],
+    });
+  }
+
+  // Heavy AD
+  if (adCount >= 4) {
+    recs.push({
+      category: "Armor",
+      reason: `${adCount} AD champions — stack armor`,
+      priority: "high",
+      items: [
+        { id: 3143, name: "Randuin's Omen" },
+        { id: 3110, name: "Frozen Heart" },
+        { id: 3047, name: "Plated Steelcaps" },
+      ],
+    });
+  } else if (adCount >= 3) {
+    recs.push({
+      category: "Armor",
+      reason: `${adCount} AD champions`,
+      priority: "medium",
+      items: [
+        { id: 3047, name: "Plated Steelcaps" },
+        { id: 3143, name: "Randuin's Omen" },
+      ],
+    });
+  }
+
+  // Shielders
+  if (shielders.length >= 2) {
+    const names = shielders.map(id => championCache?.[id.toString()]?.name || "?").join(", ");
+    recs.push({
+      category: "Anti-Shield",
+      reason: `Heavy shielding: ${names}`,
+      priority: "medium",
+      items: [
+        { id: 6609, name: "Serpent's Fang" },
+      ],
+    });
+  }
+
+  return recs;
+}
+
+// --- Champion power curves for matchup analysis ---
+
+// Power levels: 1=weak, 2=below avg, 3=average, 4=strong, 5=dominant
+interface PowerCurve { early: number; mid: number; late: number; spikes: number[]; }
+
+// Default: average across all phases
+const DEFAULT_CURVE: PowerCurve = { early: 3, mid: 3, late: 3, spikes: [6] };
+
+// Champions with notable power curves (only non-average ones listed)
+const POWER_CURVES: Record<number, PowerCurve> = {
+  // Early dominant
+  266: { early: 5, mid: 3, late: 2, spikes: [1, 3] },      // Aatrox
+  122: { early: 5, mid: 4, late: 2, spikes: [1, 6] },       // Darius
+  80:  { early: 5, mid: 3, late: 1, spikes: [1, 3] },       // Pantheon
+  58:  { early: 5, mid: 3, late: 2, spikes: [2, 3] },       // Renekton
+  119: { early: 5, mid: 3, late: 2, spikes: [1, 2] },       // Draven
+  236: { early: 4, mid: 3, late: 2, spikes: [2, 3] },       // Lucian
+  104: { early: 4, mid: 3, late: 2, spikes: [3, 6] },       // Graves
+  2:   { early: 5, mid: 3, late: 2, spikes: [1] },          // Olaf
+  59:  { early: 4, mid: 3, late: 2, spikes: [2, 3] },       // Jarvan
+  64:  { early: 4, mid: 3, late: 2, spikes: [2, 3, 6] },    // Lee Sin
+  76:  { early: 4, mid: 3, late: 2, spikes: [3, 6] },       // Nidalee
+  60:  { early: 4, mid: 3, late: 2, spikes: [3, 6] },       // Elise
+  240: { early: 5, mid: 3, late: 2, spikes: [1, 4] },       // Kled
+  420: { early: 4, mid: 4, late: 2, spikes: [1, 6] },       // Illaoi
+
+  // Level 6 spikers
+  84:  { early: 2, mid: 4, late: 3, spikes: [6] },          // Akali
+  238: { early: 2, mid: 5, late: 2, spikes: [6] },          // Zed
+  91:  { early: 2, mid: 5, late: 2, spikes: [6] },          // Talon
+  55:  { early: 2, mid: 4, late: 3, spikes: [6, 11] },      // Katarina
+  105: { early: 2, mid: 4, late: 3, spikes: [6] },          // Fizz
+  131: { early: 2, mid: 4, late: 3, spikes: [6] },          // Diana
+  245: { early: 2, mid: 4, late: 3, spikes: [6] },          // Ekko
+  121: { early: 2, mid: 5, late: 3, spikes: [6, 11] },      // Kha'Zix
+  107: { early: 2, mid: 5, late: 3, spikes: [6] },          // Rengar
+  28:  { early: 1, mid: 5, late: 3, spikes: [6] },          // Evelynn
+  54:  { early: 2, mid: 4, late: 4, spikes: [6] },          // Malphite
+  555: { early: 3, mid: 5, late: 3, spikes: [6] },          // Pyke
+  7:   { early: 2, mid: 4, late: 3, spikes: [6, 11] },      // LeBlanc
+  4:   { early: 2, mid: 4, late: 3, spikes: [6, 11] },      // Twisted Fate
+  246: { early: 2, mid: 4, late: 3, spikes: [3, 6] },       // Qiyana
+
+  // Mid game power
+  39:  { early: 3, mid: 5, late: 3, spikes: [6, 9] },       // Irelia
+  777: { early: 3, mid: 5, late: 4, spikes: [6, 11] },      // Yone
+  157: { early: 2, mid: 4, late: 5, spikes: [6, 11] },      // Yasuo
+  92:  { early: 3, mid: 5, late: 3, spikes: [6, 11] },      // Riven
+  114: { early: 3, mid: 4, late: 5, spikes: [1, 6, 11] },   // Fiora
+  23:  { early: 3, mid: 3, late: 5, spikes: [6, 11] },      // Tryndamere
+  5:   { early: 4, mid: 4, late: 2, spikes: [2, 3, 6] },    // Xin Zhao
+
+  // Late game scalers
+  10:  { early: 1, mid: 2, late: 5, spikes: [6, 11, 16] },  // Kayle
+  38:  { early: 1, mid: 3, late: 5, spikes: [6, 11, 16] },  // Kassadin
+  67:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Vayne
+  96:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Kog'Maw
+  29:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Twitch
+  13:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Ryze
+  45:  { early: 1, mid: 3, late: 5, spikes: [6, 11, 16] },  // Veigar
+  75:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Nasus
+  30:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Karthus
+  8:   { early: 2, mid: 3, late: 5, spikes: [6, 9, 11] },   // Vladimir
+  17:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Teemo (not really late but annoying)
+  222: { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Jinx
+  51:  { early: 3, mid: 3, late: 5, spikes: [6, 11] },      // Caitlyn
+  18:  { early: 2, mid: 3, late: 5, spikes: [6, 11, 16] },  // Tristana
+  498: { early: 3, mid: 3, late: 4, spikes: [6, 11] },      // Xayah
+  81:  { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Ezreal
+  887: { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Gwen
+  200: { early: 1, mid: 3, late: 5, spikes: [6, 16] },      // Bel'Veth
+  11:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Master Yi
+  19:  { early: 4, mid: 3, late: 2, spikes: [1, 3, 6] },    // Warwick
+
+  // Tanks (scale with levels)
+  31:  { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Cho'Gath
+  113: { early: 3, mid: 4, late: 4, spikes: [6] },          // Sejuani
+  154: { early: 3, mid: 4, late: 3, spikes: [6] },          // Zac
+  111: { early: 3, mid: 4, late: 4, spikes: [6] },          // Nautilus
+  89:  { early: 4, mid: 4, late: 3, spikes: [2, 3, 6] },    // Leona
+  12:  { early: 3, mid: 4, late: 4, spikes: [6] },          // Alistar
+  201: { early: 3, mid: 4, late: 3, spikes: [1, 6] },       // Braum
+  78:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Poppy
+  57:  { early: 3, mid: 4, late: 4, spikes: [6] },          // Maokai
+  516: { early: 3, mid: 4, late: 4, spikes: [6] },          // Ornn
+
+  // Enchanters
+  16:  { early: 3, mid: 3, late: 4, spikes: [6, 11] },      // Soraka
+  117: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Lulu
+  40:  { early: 3, mid: 3, late: 4, spikes: [6] },          // Janna
+  267: { early: 3, mid: 3, late: 3, spikes: [6] },          // Nami
+  37:  { early: 2, mid: 3, late: 5, spikes: [6, 11, 16] },  // Sona
+  43:  { early: 4, mid: 3, late: 3, spikes: [1, 6] },       // Karma
+
+  // Mages
+  99:  { early: 3, mid: 4, late: 3, spikes: [6, 11] },      // Lux
+  161: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Vel'Koz
+  101: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Xerath
+  112: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Viktor
+  134: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Syndra
+  61:  { early: 3, mid: 4, late: 4, spikes: [6, 9] },       // Orianna
+  69:  { early: 4, mid: 4, late: 4, spikes: [1, 6, 11] },   // Cassiopeia
+  3:   { early: 3, mid: 4, late: 3, spikes: [6] },          // Galio
+  127: { early: 3, mid: 4, late: 3, spikes: [6, 11] },      // Lissandra
+  50:  { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Swain
+  90:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Malzahar
+  1:   { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Annie
+  25:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Morgana
+  63:  { early: 4, mid: 4, late: 3, spikes: [3, 6] },       // Brand
+  143: { early: 3, mid: 4, late: 3, spikes: [6] },          // Zyra
+};
+
+function getCurve(id: number): PowerCurve {
+  return POWER_CURVES[id] || DEFAULT_CURVE;
+}
+
+interface MatchupPhase { range: string; advantage: "you" | "enemy" | "even"; tip: string; }
+
+function analyzeMatchup(myId: number, enemyId: number, counterWr?: number): { phases: MatchupPhase[]; summary: string } {
+  const my = getCurve(myId);
+  const en = getCurve(enemyId);
+  const myName = championCache?.[myId.toString()]?.name || "You";
+  const enName = championCache?.[enemyId.toString()]?.name || "Enemy";
+
+  const phases: MatchupPhase[] = [];
+
+  // Early (1-5)
+  const earlyDiff = my.early - en.early;
+  if (earlyDiff >= 2) phases.push({ range: "Lv 1-5", advantage: "you", tip: `${myName} dominates early — play aggressive` });
+  else if (earlyDiff <= -2) phases.push({ range: "Lv 1-5", advantage: "enemy", tip: `${enName} is stronger early — farm safely` });
+  else if (earlyDiff >= 1) phases.push({ range: "Lv 1-5", advantage: "you", tip: "Slight early advantage — look for trades" });
+  else if (earlyDiff <= -1) phases.push({ range: "Lv 1-5", advantage: "enemy", tip: "Slight early disadvantage — trade carefully" });
+  else phases.push({ range: "Lv 1-5", advantage: "even", tip: "Even early — skill matchup" });
+
+  // Level 6 spike check
+  const myHas6 = my.spikes.includes(6);
+  const enHas6 = en.spikes.includes(6);
+  if (myHas6 && !enHas6) phases.push({ range: "Lv 6", advantage: "you", tip: `${myName} power spike — look for all-in` });
+  else if (!myHas6 && enHas6) phases.push({ range: "Lv 6", advantage: "enemy", tip: `${enName} power spike — respect ult` });
+
+  // Mid (6-11)
+  const midDiff = my.mid - en.mid;
+  if (midDiff >= 2) phases.push({ range: "Lv 6-11", advantage: "you", tip: "Strong mid game — roam and skirmish" });
+  else if (midDiff <= -2) phases.push({ range: "Lv 6-11", advantage: "enemy", tip: "Enemy stronger mid game — avoid solo fights" });
+  else if (Math.abs(midDiff) <= 0) phases.push({ range: "Lv 6-11", advantage: "even", tip: "Even mid game — focus on objectives" });
+
+  // Late (16+)
+  const lateDiff = my.late - en.late;
+  if (lateDiff >= 2) phases.push({ range: "Late", advantage: "you", tip: `${myName} outscales — play for late` });
+  else if (lateDiff <= -2) phases.push({ range: "Late", advantage: "enemy", tip: `${enName} outscales — end early` });
+
+  // Summary
+  let summary = "";
+  if (my.late >= 4 && en.late <= 2) summary = "You outscale — survive early, win late";
+  else if (en.late >= 4 && my.late <= 2) summary = "Enemy outscales — press your lead early";
+  else if (my.early >= 4 && en.early <= 2) summary = "You win early — snowball your advantage";
+  else if (counterWr && counterWr > 0.53) summary = "Favorable matchup — play confidently";
+  else if (counterWr && counterWr < 0.47) summary = "Unfavorable matchup — play safe and outfarm";
+  else summary = "Skill matchup — punish mistakes";
+
+  return { phases, summary };
+}
 
 function positionIconUrl(pos: string): string {
   const key = POSITION_ICON_KEYS[pos] || POSITION_ICON_KEYS[pos.toLowerCase()];
@@ -701,6 +1081,7 @@ function App() {
           {state.match_history.length > 0 ? (
             <>
               <LobbyBackground history={state.match_history} />
+              {state.ranked && <ImprovementPanel history={state.match_history} ranked={state.ranked} />}
               {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
               <MatchHistoryView history={state.match_history} />
             </>
@@ -915,6 +1296,8 @@ function App() {
             )}
 
             {/* Prediction & Strategy (not ARAM) */}
+            {state.draft && <DamageCompBar allies={state.draft.allies} enemies={state.draft.enemies} />}
+
             {state.prediction && state.game_mode !== "aram" && (
               <div className="prediction-card">
                 <div className="prediction-header">
@@ -948,6 +1331,63 @@ function App() {
                 <p className="prediction-tip">{state.prediction.tip}</p>
               </div>
             )}
+
+            {/* Adaptive item recommendations */}
+            {state.draft && state.draft.enemies.filter(e => e.champion_id > 0).length >= 2 && (() => {
+              const enemyIds = state.draft.enemies.filter(e => e.champion_id > 0).map(e => e.champion_id);
+              const recs = analyzeEnemyComp(enemyIds);
+              if (recs.length === 0) return null;
+              return (
+                <div className="item-recs-panel">
+                  <h4 className="item-recs-title">Situational Items</h4>
+                  {recs.map((r, i) => (
+                    <div key={i} className={`item-rec ${r.priority === "high" ? "item-rec-high" : "item-rec-medium"}`}>
+                      <div className="item-rec-header">
+                        <span className="item-rec-cat">{r.category}</span>
+                        <span className="item-rec-reason">{r.reason}</span>
+                      </div>
+                      <div className="item-rec-items">
+                        {r.items.map((item, j) => (
+                          <ItemIcon key={j} id={item.id} size={24} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Matchup analysis by level */}
+            {state.champion_id && state.draft && (() => {
+              const myId = state.champion_id!;
+              const visibleEnemies = state.draft.enemies.filter(e => e.champion_id > 0);
+              if (visibleEnemies.length === 0) return null;
+              // Show analysis for the lane opponent (same position) or first visible enemy
+              const myPos = state.assigned_position;
+              const laneOpponent = myPos
+                ? visibleEnemies.find(e => e.position === myPos) || visibleEnemies[0]
+                : visibleEnemies[0];
+              const wr = state.counters[laneOpponent.champion_id.toString()];
+              const analysis = analyzeMatchup(myId, laneOpponent.champion_id, wr);
+              return (
+                <div className="matchup-panel">
+                  <div className="matchup-header">
+                    <ChampionIcon championId={myId} size={24} />
+                    <span className="matchup-vs">vs</span>
+                    <ChampionIcon championId={laneOpponent.champion_id} size={24} />
+                    <span className="matchup-summary">{analysis.summary}</span>
+                  </div>
+                  <div className="matchup-phases">
+                    {analysis.phases.map((p, i) => (
+                      <div key={i} className={`matchup-phase matchup-${p.advantage}`}>
+                        <span className="matchup-range">{p.range}</span>
+                        <span className="matchup-tip">{p.tip}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Right: Enemies */}
@@ -1063,6 +1503,74 @@ function ChampionNameLabel({ championId, fallback }: { championId: number; fallb
 // --- Recommendation Card ---
 
 
+// --- Improvement Priorities ---
+
+function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; ranked: RankedInfo }) {
+  const tierKey = ranked.tier.toUpperCase();
+  const tierLabel = ranked.tier.charAt(0).toUpperCase() + ranked.tier.slice(1).toLowerCase();
+  const bench = ELO_BENCHMARKS[tierKey] || ELO_BENCHMARKS.GOLD;
+
+  // Filter ranked games with enough data (must have gold > 0 to ensure stats were populated)
+  const games = history.filter(m =>
+    (m.queue_id === 420 || m.queue_id === 440) && m.duration_secs > 300 && m.gold_earned > 0
+  );
+  if (games.length < 5) return null;
+
+  const n = games.length;
+  const totalMins = games.reduce((s, m) => s + m.duration_secs / 60, 0);
+
+  const avgCsMin = games.reduce((s, m) => s + m.cs, 0) / totalMins;
+  const avgVisionMin = games.reduce((s, m) => s + m.vision_score, 0) / totalMins;
+  const avgDeaths = games.reduce((s, m) => s + m.deaths, 0) / n;
+  const totalK = games.reduce((s, m) => s + m.kills, 0);
+  const totalD = games.reduce((s, m) => s + m.deaths, 0);
+  const totalA = games.reduce((s, m) => s + m.assists, 0);
+  const avgKda = totalD === 0 ? totalK + totalA : (totalK + totalA) / totalD;
+  const avgGoldMin = games.reduce((s, m) => s + m.gold_earned, 0) / totalMins;
+
+  type Priority = { metric: string; gap: number; yours: string; target: string; tip: string };
+  const priorities: Priority[] = [];
+
+  const check = (val: number, ref_val: number, metric: string, yourFmt: string, refFmt: string, tip: string) => {
+    const gap = (ref_val - val) / ref_val;
+    if (gap > 0.05) priorities.push({ metric, gap, yours: yourFmt, target: refFmt, tip });
+  };
+
+  check(avgCsMin, bench.cs_min, "CS/min", avgCsMin.toFixed(1), bench.cs_min.toString(), "Practice last-hitting in practice tool");
+  check(avgVisionMin, bench.vision_min, "Vision/min", avgVisionMin.toFixed(2), bench.vision_min.toString(), "Buy control wards, use trinket on cooldown");
+  check(avgKda, bench.kda, "KDA", avgKda.toFixed(1), bench.kda.toString(), "Focus on dying less in trades and teamfights");
+  check(avgGoldMin, bench.gold_min, "Gold/min", Math.round(avgGoldMin).toString(), bench.gold_min.toString(), "Improve CS and look for plate gold");
+
+  if (avgDeaths > 5.5) {
+    priorities.push({ metric: "Deaths", gap: (avgDeaths - 4.5) / 4.5, yours: avgDeaths.toFixed(1) + "/game", target: "<5", tip: "Review positioning and map awareness" });
+  }
+
+  priorities.sort((a, b) => b.gap - a.gap);
+  const top3 = priorities.slice(0, 3);
+
+  if (top3.length === 0) return null;
+
+  return (
+    <div className="improve-panel">
+      <h4 className="improve-title">Areas to Improve <span className="improve-sub">vs {tierLabel} avg · {n} ranked games</span></h4>
+      {top3.map((p, i) => (
+        <div key={i} className="improve-row">
+          <span className="improve-metric">{p.metric}</span>
+          <div className="improve-bar-track">
+            <div className="improve-bar-fill" style={{ width: `${Math.min((1 - p.gap) * 100, 100)}%` }} />
+          </div>
+          <span className="improve-values">
+            <span className="improve-yours">{p.yours}</span>
+            <span className="improve-sep">/</span>
+            <span className="improve-target">{p.target}</span>
+          </span>
+          <span className="improve-tip">{p.tip}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // --- LP Chart ---
 
 function LpChart({ history }: { history: LpEntry[] }) {
@@ -1128,11 +1636,11 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
   const [modeFilter, setModeFilter] = useState<string>("all");
   const [showAll, setShowAll] = useState(false);
 
-  let filtered = history;
-  if (modeFilter === "ranked") filtered = filtered.filter(m => m.queue_id === 420 || m.queue_id === 440);
-  else if (modeFilter === "normal") filtered = filtered.filter(m => m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490);
-  else if (modeFilter === "aram") filtered = filtered.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM");
-  if (champFilter) filtered = filtered.filter(m => m.champion_id === champFilter);
+  let modeFiltered = history;
+  if (modeFilter === "ranked") modeFiltered = modeFiltered.filter(m => m.queue_id === 420 || m.queue_id === 440);
+  else if (modeFilter === "normal") modeFiltered = modeFiltered.filter(m => m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490);
+  else if (modeFilter === "aram") modeFiltered = modeFiltered.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM");
+  const filtered = champFilter ? modeFiltered.filter(m => m.champion_id === champFilter) : modeFiltered;
   const visible = showAll ? filtered : filtered.slice(0, 10);
 
   const wins = filtered.filter(h => h.win).length;
@@ -1181,7 +1689,7 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
       </div>
 
       {/* Champion Stats */}
-      <ChampionStatsBar history={filtered} filter={champFilter} onFilter={setChampFilter} />
+      <ChampionStatsBar history={modeFiltered} filter={champFilter} onFilter={setChampFilter} />
 
       <div className="mh-trend">
         {filtered.slice(0, 15).map((m, i) => (
@@ -1277,6 +1785,97 @@ function formatGameTime(secs: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function ObjectiveTimers({ events, gameTime }: { events: GameEvent[]; gameTime: number }) {
+  const buffs: { label: string; remaining: number; team: "ally" | "enemy" }[] = [];
+
+  // Baron buff: 180s
+  const lastBaron = [...events].reverse().find(e => e.event_type === "BaronKill");
+  if (lastBaron) {
+    const remaining = 180 - (gameTime - lastBaron.time);
+    if (remaining > 0) {
+      const team = lastBaron.label.startsWith("Ally") ? "ally" as const : "enemy" as const;
+      buffs.push({ label: "Baron", remaining, team });
+    }
+  }
+
+  // Elder Dragon buff: 150s
+  const lastDragon = [...events].reverse().find(e => e.event_type === "DragonKill" && e.label.includes("Elder"));
+  if (lastDragon) {
+    const remaining = 150 - (gameTime - lastDragon.time);
+    if (remaining > 0) {
+      const team = lastDragon.label.startsWith("Ally") ? "ally" as const : "enemy" as const;
+      buffs.push({ label: "Elder", remaining, team });
+    }
+  }
+
+  // Dragon soul: count dragon kills per team (4+ = soul)
+  const allyDragons = events.filter(e => e.event_type === "DragonKill" && e.label.startsWith("Ally")).length;
+  const enemyDragons = events.filter(e => e.event_type === "DragonKill" && e.label.startsWith("Enemy")).length;
+  if (allyDragons >= 4) buffs.push({ label: "Dragon Soul", remaining: Infinity, team: "ally" });
+  else if (enemyDragons >= 4) buffs.push({ label: "Dragon Soul", remaining: Infinity, team: "enemy" });
+
+  if (buffs.length === 0) return null;
+
+  return (
+    <div className="obj-timers">
+      {buffs.map((b, i) => (
+        <span key={i} className={`obj-timer obj-timer-${b.team} ${b.remaining < 30 ? "obj-timer-urgent" : ""}`}>
+          {b.team === "ally" ? "Ally" : "Enemy"} {b.label}
+          {b.remaining < Infinity && ` ${formatGameTime(b.remaining)}`}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DamageCompBar({ allies, enemies }: { allies: DraftPlayer[]; enemies: DraftPlayer[] }) {
+  function calc(players: DraftPlayer[]) {
+    const picked = players.filter(p => p.champion_id > 0);
+    if (picked.length === 0) return { ap: 0, ad: 0, total: 0 };
+    const ap = picked.filter(p => CHAMP_DAMAGE_TYPE[p.champion_id] === "ap").length;
+    return { ap, ad: picked.length - ap, total: picked.length };
+  }
+  const ally = calc(allies);
+  const enemy = calc(enemies);
+  if (ally.total === 0 && enemy.total === 0) return null;
+
+  function Bar({ label, data, color }: { label: string; data: { ap: number; ad: number; total: number }; color: string }) {
+    if (data.total === 0) return null;
+    const adPct = Math.round((data.ad / data.total) * 100);
+    const apPct = 100 - adPct;
+    const heavy = adPct >= 80 ? "Heavy AD" : apPct >= 80 ? "Heavy AP" : null;
+    return (
+      <div className="dmg-row">
+        <span className="dmg-label" style={{ color }}>{label}</span>
+        <div className="dmg-bar">
+          <div className="dmg-ad" style={{ width: `${adPct}%` }}>{adPct > 15 ? `${adPct}% AD` : ""}</div>
+          <div className="dmg-ap" style={{ width: `${apPct}%` }}>{apPct > 15 ? `${apPct}% AP` : ""}</div>
+        </div>
+        {heavy && <span className="dmg-warn">{heavy}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="dmg-comp">
+      <Bar label="Ally" data={ally} color="var(--accent-blue)" />
+      <Bar label="Enemy" data={enemy} color="var(--accent-red)" />
+    </div>
+  );
+}
+
+function getPlayerLabels(p: LiveGamePlayer): { text: string; cls: string }[] {
+  const labels: { text: string; cls: string }[] = [];
+  if (p.smurf && p.smurf.games_played >= 10 && p.smurf.unique_champions <= 3) labels.push({ text: "OTP", cls: "label-otp" });
+  if (p.champ_games === 0) labels.push({ text: "1st TIME", cls: "label-autofill" });
+  if (p.streak >= 4) labels.push({ text: `${p.streak}W Streak`, cls: "label-winstreak" });
+  else if (p.streak <= -4) labels.push({ text: "TILTED", cls: "label-tilted" });
+  else if (p.streak <= -3) labels.push({ text: `${Math.abs(p.streak)}L Streak`, cls: "label-lossstreak" });
+  else if (p.streak >= 3) labels.push({ text: `${p.streak}W Streak`, cls: "label-winstreak" });
+  if (p.ranked_losses > 0 && p.ranked_win_rate >= 0.58 && (p.ranked_wins + p.ranked_losses) >= 20) labels.push({ text: "HIGH WR", cls: "label-highwr" });
+  return labels;
+}
+
 interface SpellCdProps {
   gameTime: number;
   spellTimers: Map<string, number>; // key: "name_spellId" -> game_time when used
@@ -1351,6 +1950,9 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
               {(p.ranked_win_rate * 100).toFixed(0)}%
             </span>
           )}
+          {getPlayerLabels(p).map((l, li) => (
+            <span key={li} className={`player-label ${l.cls}`}>{l.text}</span>
+          ))}
         </span>
       </div>
       {isEnemy && live && spellCd && (
@@ -1398,12 +2000,7 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
 
 function playerTotalGold(p: LiveGamePlayer): number {
   if (!p.live) return 0;
-  let gold = p.live.current_gold;
-  for (const id of p.live.items) {
-    const item = getItemData(id);
-    if (item) gold += item.gold;
-  }
-  return gold;
+  return p.live.total_gold;
 }
 
 function normPos(pos: string): string {
@@ -1457,7 +2054,10 @@ function LaneMatchups({ allies, enemies }: { allies: LiveGamePlayer[]; enemies: 
 
 function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlayer?: (puuid: string) => void }) {
   const ld = game.live_data;
-  const goldDiff = ld ? ld.ally_gold - ld.enemy_gold : 0;
+  // Calculate total gold from players (unspent + items) instead of backend values
+  const allyGold = game.allies.reduce((s, p) => s + playerTotalGold(p), 0);
+  const enemyGold = game.enemies.reduce((s, p) => s + playerTotalGold(p), 0);
+  const goldDiff = allyGold - enemyGold;
   const recentEvents = ld?.events.slice(-5).reverse() ?? [];
 
   // Spell cooldown tracking (persists across re-renders)
@@ -1541,11 +2141,11 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
 
       {ld && (
         <div className="lg-gold-bar">
-          <span className="lg-gold-ally">{Math.round(ld.ally_gold).toLocaleString()}g</span>
+          <span className="lg-gold-ally">{Math.round(allyGold).toLocaleString()}g</span>
           <div className="lg-gold-track">
-            <div className="lg-gold-fill" style={{ width: `${ld.ally_gold / (ld.ally_gold + ld.enemy_gold + 1) * 100}%` }} />
+            <div className="lg-gold-fill" style={{ width: `${allyGold / (allyGold + enemyGold + 1) * 100}%` }} />
           </div>
-          <span className="lg-gold-enemy">{Math.round(ld.enemy_gold).toLocaleString()}g</span>
+          <span className="lg-gold-enemy">{Math.round(enemyGold).toLocaleString()}g</span>
           <span className={`lg-gold-diff ${goldDiff > 0 ? "lg-wr-good" : goldDiff < 0 ? "lg-wr-bad" : ""}`}>
             {goldDiff > 0 ? "+" : ""}{Math.round(goldDiff).toLocaleString()}
           </span>
@@ -1588,6 +2188,8 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
           </div>
         </div>
       </div>
+
+      {ld && <ObjectiveTimers events={ld.events} gameTime={ld.game_time} />}
 
       {recentEvents.length > 0 && (
         <div className="lg-events">
@@ -1767,6 +2369,113 @@ function EloComparison({ player, duration, tier }: { player: PostGamePlayer; dur
   );
 }
 
+function PhaseBreakdown({ phases }: { phases: PhaseStats[] }) {
+  if (phases.length === 0) return null;
+  const metrics: { label: string; values: number[]; fmt: (v: number) => string }[] = [
+    { label: "KDA", values: phases.map(p => p.deaths === 0 ? p.kills + p.assists : (p.kills + p.assists) / p.deaths), fmt: v => v.toFixed(1) },
+    { label: "K/D/A", values: phases.map(() => 0), fmt: () => "" }, // special row
+    { label: "CS/min", values: phases.map(p => p.cs_per_min), fmt: v => v.toFixed(1) },
+    { label: "Gold/min", values: phases.map(p => p.gold_per_min), fmt: v => Math.round(v).toString() },
+  ];
+
+  return (
+    <div className="phase-panel">
+      <h4 className="phase-title">Performance by Phase</h4>
+      <div className="phase-grid">
+        <div className="phase-row phase-header-row">
+          <span className="phase-metric-label" />
+          {phases.map((p, i) => <span key={i} className="phase-col-header">{p.phase}</span>)}
+        </div>
+        {/* KDA row */}
+        <div className="phase-row">
+          <span className="phase-metric-label">KDA</span>
+          {phases.map((p, i) => (
+            <div key={i} className="phase-cell">
+              <span className="phase-kda">
+                <span className="lg-live-k">{p.kills}</span>/<span className="lg-live-d">{p.deaths}</span>/<span className="lg-live-a">{p.assists}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+        {/* Metric rows */}
+        {metrics.filter(m => m.label !== "KDA" && m.label !== "K/D/A").map((m, mi) => {
+          const max = Math.max(...m.values, 1);
+          return (
+            <div key={mi} className="phase-row">
+              <span className="phase-metric-label">{m.label}</span>
+              {m.values.map((v, vi) => (
+                <div key={vi} className="phase-cell">
+                  <div className="phase-bar-track">
+                    <div className="phase-bar-fill" style={{ width: `${(v / max) * 100}%` }} />
+                  </div>
+                  <span className="phase-val">{m.fmt(v)}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPoint[]; deaths: DeathImpact[]; duration: number }) {
+  if (timeline.length < 3) return null;
+
+  const width = 600;
+  const height = 100;
+  const pad = { top: 10, bottom: 20, left: 0, right: 0 };
+  const w = width - pad.left - pad.right;
+  const h = height - pad.top - pad.bottom;
+
+  const maxAbs = Math.max(...timeline.map(p => Math.abs(p.gold_diff)), 1000);
+  const maxTime = timeline[timeline.length - 1].game_time || duration;
+
+  const toX = (t: number) => pad.left + (t / maxTime) * w;
+  const toY = (g: number) => pad.top + h / 2 - (g / maxAbs) * (h / 2);
+
+  // Build SVG path
+  const points = timeline.map(p => `${toX(p.game_time)},${toY(p.gold_diff)}`);
+  const areaAbove = `M${points[0]} ${points.join(" L")} L${toX(timeline[timeline.length - 1].game_time)},${toY(0)} L${toX(timeline[0].game_time)},${toY(0)} Z`;
+
+  return (
+    <div className="gold-timeline-panel">
+      <h4 className="gold-timeline-title">Gold Advantage</h4>
+      <svg viewBox={`0 0 ${width} ${height}`} className="gold-timeline-svg">
+        {/* Zero line */}
+        <line x1={pad.left} x2={width - pad.right} y1={toY(0)} y2={toY(0)} stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="4,4" opacity="0.4" />
+
+        {/* Gold diff area */}
+        <defs>
+          <linearGradient id="goldGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent-blue)" stopOpacity="0.3" />
+            <stop offset="50%" stopColor="transparent" stopOpacity="0" />
+            <stop offset="100%" stopColor="var(--accent-red)" stopOpacity="0.3" />
+          </linearGradient>
+        </defs>
+        <path d={areaAbove} fill="url(#goldGrad)" />
+
+        {/* Gold diff line */}
+        <polyline points={points.join(" ")} fill="none" stroke="var(--text-primary)" strokeWidth="1.5" opacity="0.8" />
+
+        {/* Death markers */}
+        {deaths.map((d, i) => (
+          <circle key={i} cx={toX(d.game_time)} cy={toY(0)} r="3"
+            fill={d.is_ally ? "var(--accent-red)" : "var(--accent-blue)"}
+            opacity="0.7">
+            <title>{d.summoner_name} died ({d.gold_swing > 0 ? "+" : ""}{Math.round(d.gold_swing)}g swing)</title>
+          </circle>
+        ))}
+
+        {/* Time labels */}
+        {[5, 10, 15, 20, 25, 30, 35, 40].filter(m => m * 60 < maxTime).map(m => (
+          <text key={m} x={toX(m * 60)} y={height - 4} textAnchor="middle" fontSize="8" fill="var(--text-muted)">{m}m</text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void }) {
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
 
@@ -1817,6 +2526,10 @@ function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats;
         })}
       </div>
 
+      {stats.gold_timeline.length > 0 && (
+        <GoldDiffTimeline timeline={stats.gold_timeline} deaths={stats.death_events} duration={stats.game_duration_secs} />
+      )}
+
       {/* Elo comparison for local player */}
       {stats.game_duration_secs > 0 && (() => {
         const local = stats.teams.flatMap(t => t.players).find(p => p.is_local);
@@ -1824,6 +2537,13 @@ function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats;
         const tier = local.rank.split(" ")[0];
         if (!tier || !ELO_BENCHMARKS[tier.toUpperCase()]) return null;
         return <EloComparison player={local} duration={stats.game_duration_secs} tier={tier} />;
+      })()}
+
+      {/* Phase breakdown for local player */}
+      {(() => {
+        const local = stats.teams.flatMap(t => t.players).find(p => p.is_local);
+        if (!local || local.phase_stats.length === 0) return null;
+        return <PhaseBreakdown phases={local.phase_stats} />;
       })()}
     </div>
   );
