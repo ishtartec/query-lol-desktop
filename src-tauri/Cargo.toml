@@ -1,6 +1,6 @@
 [package]
 name = "query-lol-desktop"
-version = "0.3.1"
+version = "0.4.0"
 description = "Auto-configure optimal League of Legends builds"
 authors = ["you"]
 edition = "2021"
