@@ -788,7 +788,98 @@ async fn back_to_lobby(
     Ok(())
 }
 
+#[tauri::command]
+async fn set_overlay_position(
+    position: String,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    state.lock().await.overlay_position = position.clone();
+    if position == "off" {
+        if let Some(window) = app_handle.get_webview_window("overlay") {
+            let _ = window.hide();
+        }
+        return Ok(());
+    }
+    if let Some(window) = app_handle.get_webview_window("overlay") {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let monitor = window.current_monitor()
+            .map_err(|e| format!("Failed to get monitor: {}", e))?
+            .ok_or("No monitor found")?;
+        let screen = monitor.size();
+        let ow = (400.0 * scale) as i32 + 20;
+        let oh = (300.0 * scale) as i32 + 20;
+        let margin = (10.0 * scale) as i32;
+        let sw = screen.width as i32;
+        let sh = screen.height as i32;
+        let (x, y) = match position.as_str() {
+            "top-left" => (margin, margin),
+            "top-right" => (sw - ow, margin),
+            "bottom-left" => (margin, sh - oh),
+            "bottom-right" => (sw - ow, sh - oh),
+            "center" => (sw / 2 - ow / 2, sh / 2 - oh / 2),
+            _ => (margin, margin),
+        };
+        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(x, y)))
+            .map_err(|e| format!("Failed to set position: {}", e))?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Monitors TAB key and shows/hides the overlay window during in-game.
+async fn overlay_loop(state: SharedState, app_handle: tauri::AppHandle) {
+    use device_query::{DeviceQuery, DeviceState, Keycode};
+
+    let device_state = DeviceState::new();
+    let mut was_visible = false;
+
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let (is_in_game, overlay_off) = {
+            let s = state.lock().await;
+            (s.status == ConnectionStatus::InGame, s.overlay_position == "off")
+        };
+
+        if overlay_off {
+            if was_visible {
+                if let Some(window) = app_handle.get_webview_window("overlay") {
+                    let _ = window.hide();
+                }
+                was_visible = false;
+            }
+            continue;
+        }
+
+        if !is_in_game {
+            if was_visible {
+                if let Some(window) = app_handle.get_webview_window("overlay") {
+                    let _ = window.hide();
+                }
+                was_visible = false;
+            }
+            continue;
+        }
+
+        let keys = device_state.get_keys();
+        let tab_pressed = keys.contains(&Keycode::Tab);
+
+        if tab_pressed && !was_visible {
+            if let Some(window) = app_handle.get_webview_window("overlay") {
+                let _ = window.show();
+                let _ = window.set_ignore_cursor_events(true);
+            }
+            was_visible = true;
+        } else if !tab_pressed && was_visible {
+            if let Some(window) = app_handle.get_webview_window("overlay") {
+                let _ = window.hide();
+            }
+            was_visible = false;
+        }
+    }
+}
+
 pub fn run() {
     env_logger::init();
 
@@ -812,6 +903,7 @@ pub fn run() {
             view_player_profile,
             view_match_details,
             back_to_lobby,
+            set_overlay_position,
         ])
         .setup(|app| {
             // Load persisted preferences
@@ -831,6 +923,13 @@ pub fn run() {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 watcher_loop(state_clone, app_handle).await;
+            });
+
+            // Spawn overlay keyboard listener (TAB hold-to-show)
+            let overlay_state = Arc::clone(&*app.state::<SharedState>());
+            let overlay_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                overlay_loop(overlay_state, overlay_handle).await;
             });
 
             Ok(())

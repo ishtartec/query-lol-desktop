@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+// getCurrentWebviewWindow is used in main.tsx for overlay detection
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
@@ -1071,6 +1072,17 @@ function App() {
               <span className="toggle-slider" />
               Auto-accept
             </label>
+            <select className="select select-sm overlay-pos-select"
+              defaultValue="top-left"
+              onChange={(e) => invoke("set_overlay_position", { position: e.target.value })}
+              title="Overlay position (hold TAB in-game)">
+              <option value="off">Overlay: Off</option>
+              <option value="top-left">Overlay: Top-Left</option>
+              <option value="top-right">Overlay: Top-Right</option>
+              <option value="bottom-left">Overlay: Bottom-Left</option>
+              <option value="bottom-right">Overlay: Bottom-Right</option>
+              <option value="center">Overlay: Center</option>
+            </select>
           </div>
         </div>
       )}
@@ -2741,4 +2753,98 @@ function RuneDisplay({ runes }: { runes: RuneBuild }) {
   );
 }
 
-export default App;
+// --- Overlay Window ---
+
+function OverlayApp() {
+  const [state, setState] = useState<AppState | null>(null);
+
+  useEffect(() => {
+    // Poll state every second (more reliable than event listener for overlay)
+    const poll = setInterval(() => {
+      invoke<AppState>("get_state").then(setState).catch(() => {});
+    }, 1000);
+    // Also listen for events
+    invoke<AppState>("get_state").then(setState);
+    const unlisten = listen<AppState>("app-state-changed", (e) => setState(e.payload));
+    fetchLatestVersion().then(() => { loadChampionData(); loadItemData(); });
+    return () => { clearInterval(poll); unlisten.then(fn => fn()); };
+  }, []);
+
+  if (!state || !state.live_game) return <div className="overlay"><span style={{ color: "var(--text-muted)", fontSize: 11 }}>Waiting for game data...</span></div>;
+  const game = state.live_game;
+  const ld = game.live_data;
+  const allyGold = game.allies.reduce((s, p) => s + playerTotalGold(p), 0);
+  const enemyGold = game.enemies.reduce((s, p) => s + playerTotalGold(p), 0);
+  const goldDiff = allyGold - enemyGold;
+  const allyKills = game.allies.reduce((s, p) => s + (p.live?.kills ?? 0), 0);
+  const enemyKills = game.enemies.reduce((s, p) => s + (p.live?.kills ?? 0), 0);
+
+  return (
+    <div className="overlay">
+      {/* Header: timer + team score + gold */}
+      <div className="ov-header">
+        {ld && <span className="ov-timer">{formatGameTime(ld.game_time)}</span>}
+        <div className="ov-score">
+          <span className="ov-score-ally">{allyKills}</span>
+          <span className="ov-score-sep">vs</span>
+          <span className="ov-score-enemy">{enemyKills}</span>
+        </div>
+        <span className={`ov-gold-diff ${goldDiff > 0 ? "lg-wr-good" : goldDiff < 0 ? "lg-wr-bad" : ""}`}>
+          {goldDiff > 0 ? "+" : ""}{Math.round(goldDiff).toLocaleString()}g
+        </span>
+      </div>
+
+      {/* Gold bar */}
+      <div className="ov-gold-bar">
+        <div className="ov-gold-fill" style={{ width: `${allyGold / (allyGold + enemyGold + 1) * 100}%` }} />
+      </div>
+
+      {/* Enemy team */}
+      <div className="ov-enemies">
+        <div className="ov-enemies-header">
+          <span>Champion</span><span>KDA</span><span>CS</span><span>Items</span><span>Spells</span>
+        </div>
+        {game.enemies.map((p, i) => {
+          const live = p.live;
+          if (!live) return null;
+          return (
+            <div key={i} className="ov-enemy">
+              <div className="ov-enemy-champ">
+                <ChampionIcon championId={p.champion_id} size={18} />
+                <span className="ov-enemy-lvl">{live.level}</span>
+              </div>
+              <span className="ov-enemy-kda">
+                <span className="lg-live-k">{live.kills}</span>/<span className="lg-live-d">{live.deaths}</span>/<span className="lg-live-a">{live.assists}</span>
+              </span>
+              <span className="ov-enemy-cs">{live.cs}</span>
+              <div className="ov-enemy-items">
+                {live.items.filter(id => id > 0).slice(0, 6).map((id, j) => (
+                  <img key={j} src={itemIconUrl(id)} alt="" className="ov-item-img" />
+                ))}
+              </div>
+              <div className="ov-enemy-spells">
+                {live.spell1_id > 0 && SPELL_KEYS[live.spell1_id] && (
+                  <img src={spellIconUrl(live.spell1_id)} alt="" className="ov-spell-img" />
+                )}
+                {live.spell2_id > 0 && SPELL_KEYS[live.spell2_id] && (
+                  <img src={spellIconUrl(live.spell2_id)} alt="" className="ov-spell-img" />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Objective timers */}
+      {ld && <ObjectiveTimers events={ld.events} gameTime={ld.game_time} />}
+    </div>
+  );
+}
+
+// Router: main app or overlay based on window label (set in main.tsx)
+function AppRouter() {
+  const isOverlay = (window as any).__QUERYLOL_OVERLAY__ === true;
+  return isOverlay ? <OverlayApp /> : <App />;
+}
+
+export default AppRouter;

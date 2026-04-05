@@ -18,6 +18,21 @@
         "resizable": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
+      },
+      {
+        "label": "overlay",
+        "title": "QueryLoL Overlay",
+        "url": "/index.html",
+        "width": 400,
+        "height": 300,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "x": 10,
+        "y": 10
       }
     ],
     "security": {

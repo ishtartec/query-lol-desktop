@@ -1,8 +1,8 @@
 # QueryLoL Desktop
 
-A desktop companion app for League of Legends that auto-configures optimal builds, provides counter-based pick/ban suggestions, and delivers post-game analysis — all in real time.
+A desktop companion app for League of Legends that auto-configures optimal builds, provides counter-based pick/ban suggestions, real-time in-game tracking, and post-game analysis — all in real time.
 
-Built with **Tauri** (Rust) + **React** (TypeScript).
+Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Overwolf, no Electron.
 
 ---
 
@@ -10,6 +10,7 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 
 ### Auto-Detection & Connection
 - Automatically detects the League of Legends client via LCU (League Client Update)
+- **Windows and macOS** support with automatic lockfile and process detection
 - Displays summoner name, ranked tier, rank, and LP on connection
 - Supports 11 regions: EUW, NA, KR, EUNE, BR, LAS, LAN, OCE, TR, RU, JP
 - Persistent configuration saved to disk (region, toggles, LP history)
@@ -21,18 +22,23 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 - **Auto-apply item sets** — creates a custom item set with starter items, boots, and core build
 - **Alternative builds** — up to 3 options per category (runes, spells, items) with win rate and pick rate, switchable via tabs
 - **Skill priority** — color-coded skill order sequence (Q/W/E/R)
+- **Item & rune tooltips** — hover any icon to see name, description, and gold cost
 - Manual "Apply" button when auto-apply is disabled
 
 ### Champion Select — Drafting Intelligence
 - **Pick recommendations** — scrollable carousel of suggested champions scored 0-100, factoring in enemy counters, ally synergies, and meta strength
 - **Ban suggestions** — top ban candidates for your position with win rate and pick rate, one-click ban
 - **Matchup win rates** — per-enemy win rate badges (green = favorable, red = unfavorable)
+- **Matchup analysis by level** — phase-by-phase power comparison (early/mid/late) with actionable tips like "avoid trades level 1-3" or "power spike at level 6"
+- **Damage composition** — AD/AP split bar for both teams, with warnings for heavy one-type compositions
+- **Adaptive item recommendations** — situational items based on enemy comp (antiheal, MR stacking, armor, anti-shield) with champion-specific reasoning
 - **Game prediction** — team-vs-team analysis with early/late game phase scores and a strategy tip
 - **One-click pick/ban** — click any recommendation or ban suggestion to lock it in
 - **Auto-lock** — optionally auto-lock your champion selection
-- **Full draft visualization** — ally/enemy picks, bans, and positions displayed in a 3-column layout
+- **Full draft visualization** — ally/enemy picks, bans, and positions with role icons displayed in a 3-column layout
 
 ### Lobby
+- **Improvement priorities** — top 3 areas to improve based on your ranked history vs elo benchmarks, with visual bars and actionable advice
 - **Match history** — recent games with champion icon, result, KDA, duration, and relative timestamps
 - **Mode filters** — filter by All, Ranked, Normal, or ARAM
 - **Champion filter** — filter match history by your top 5 most-played champions
@@ -40,21 +46,26 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 - **LP progress chart** — SVG line chart tracking LP changes over time (up to 50 data points) with bezier curves and color-coded gains/losses
 - **Champion stats bar** — top 5 champions by games played with win rate badges
 - **Hero splash background** — dynamic background using your most-played champion's splash art
-- **Show more** — expandable match history (up to 50 matches)
 
 ### Live Game
 - **Team compositions** — blue vs red side with champion icons and summoner names
 - **Player ranks** — rank emblems and tier text for every player in the match
-- **Ranked stats** — W/L record, win rate, and current win/loss streak for all players
-- **Champion proficiency** — games played, win rate, and KDA on the picked champion (or "1st time" flag)
+- **Player labels** — automatic badges: OTP, Autofill/1st Time, Win Streak, Loss Streak, Tilted, High WR
+- **Ranked stats** — W/L record, win rate, and current win/loss streak
+- **Champion proficiency** — games played, win rate, and KDA on the picked champion
 - **Smurf detection** — automatic analysis of enemy accounts using account level, win rate, games played, KDA, and champion diversity to flag likely smurfs with a 0-100 confidence score
 - **Real-time scoreboard** — live KDA, CS, level, and current items for all players (via Live Client Data API)
-- **Gold tracker** — team gold bar with visual diff and numerical advantage/disadvantage
+- **Gold tracker** — team gold bar with total gold comparison (unspent + item value)
+- **Lane matchup gold diff** — per-position gold comparison between matched lane opponents
+- **Spell cooldown tracker** — click enemy summoner spells to start countdown timers (Flash 5:00, TP 6:00, etc.), click again to cancel
+- **Power spike alerts** — "400g to [item]" for your next core item, and "Enemy completed [item]" when enemies buy key items
+- **Objective timers** — Baron buff (3:00), Elder Dragon buff (2:30), and Dragon Soul tracking with countdown and team indicator
 - **Objective feed** — dragons, baron, herald, turrets, inhibitors, and multikills with timestamps
+- **In-game overlay** — hold TAB to show a compact overlay with gold diff, enemy KDA/spells, and objective timers (Windows, borderless windowed mode)
 - **Player profiles** — click any player to view their match history in an overlay
 
 ### Post-Game Analysis
-- **Full scoreboard** — all 10 players with comprehensive stats
+- **Full scoreboard** — all 10 players with comprehensive stats and position icons
 - **KDA** — kills, deaths, assists with computed KDA ratio (or "Perfect" for 0 deaths)
 - **Damage & damage share** — total damage with proportional bar, damage percentage of team total
 - **Kill participation** — percentage of team kills involved in
@@ -63,7 +74,10 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 - **Performance highlighting** — stats color-coded green (>115% of team avg) or red (<85% of team avg)
 - **MVP badge** — awarded to the top performer based on a composite score
 - **Multikill badges** — triple, quadra, and penta kill indicators
-- **Final items** — complete end-game item build for each player
+- **Final items** — complete end-game item build for each player with tooltips
+- **Gold advantage timeline** — SVG chart showing gold diff over time with death markers
+- **Elo comparison** — your CS/min, vision/min, KDA, damage share, KP, and gold/min compared against your rank's average with percentage deltas
+- **Performance by phase** — CS/min, gold/min, and KDA broken down by early (0-14m), mid (14-25m), and late (25m+) game phases
 - **Player profiles** — click any player name to view their ranked info and match history
 
 ### Ready Check
@@ -82,6 +96,34 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 
 ---
 
+## Download & Install
+
+Pre-built binaries for **Windows** (.exe) and **macOS** (.dmg) are available from the [Releases](../../releases/latest) page.
+
+### Windows
+
+1. Download the `.exe` installer from the latest release
+2. Run the installer — Windows SmartScreen will show a warning because the app is not code-signed yet
+3. Click **"More info"** → **"Run anyway"** to proceed with the installation
+4. Launch QueryLoL from the Start Menu or desktop shortcut
+5. Set League of Legends to **Borderless** display mode (Settings → Video) for the in-game overlay to work
+
+### macOS
+
+1. Download the `.dmg` from the latest release
+2. Open the DMG and drag QueryLoL to Applications
+3. On first launch, macOS may block the app. If you see "app is damaged", open Terminal and run:
+   ```bash
+   xattr -cr /Applications/QueryLoL.app
+   ```
+4. Open QueryLoL from Applications
+
+### In-Game Overlay
+
+During a match, hold **TAB** to show a compact overlay with gold diff, enemy KDA/items/spells, and objective timers. The overlay position can be configured from the toolbar dropdown (Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, or Off). Requires **Borderless** display mode in League of Legends.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -95,36 +137,10 @@ Built with **Tauri** (Rust) + **React** (TypeScript).
 
 ### Data Sources
 - **Riot LCU** — local League client API for game state, summoner info, applying builds, match history
-- **Riot Live Client Data** — real-time in-game stats (port 2999): KDA, CS, gold, items, events
+- **Riot Live Client Data** — real-time in-game stats (port 2999): KDA, CS, gold, items, game events
 - **OP.GG API** — champion builds, counters, win rates, ban suggestions, pick recommendations, game predictions
-- **Data Dragon** (Riot CDN) — champion data, item/rune/spell icons and metadata
-- **CommunityDragon** — rank emblems, stat shard icons, rune icons
-
----
-
-## Project Structure
-
-```
-query-lol-desktop/
-├── src/                        # Frontend (React + TypeScript)
-│   ├── App.tsx                 # Main app component & all child components
-│   ├── App.css                 # Full styling (dark theme, CSS variables)
-│   ├── main.tsx                # React entry point
-│   └── vite-env.d.ts
-├── src-tauri/                  # Backend (Rust + Tauri)
-│   ├── src/
-│   │   ├── main.rs             # Entry point
-│   │   ├── lib.rs              # Tauri commands, watcher loop, state management
-│   │   ├── lcu.rs              # League Client (LCU) integration
-│   │   ├── opgg.rs             # OP.GG API integration
-│   │   ├── models.rs           # Data structures
-│   │   └── config.rs           # Config persistence
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── package.json
-├── vite.config.ts
-└── tsconfig.json
-```
+- **Data Dragon** (Riot CDN) — champion/item/rune/spell metadata, icons, and descriptions
+- **CommunityDragon** — rank emblems, stat shard icons, position icons
 
 ---
 
@@ -134,10 +150,6 @@ query-lol-desktop/
 - [Node.js](https://nodejs.org/) (LTS)
 - [Rust](https://www.rust-lang.org/tools/install)
 - [Tauri prerequisites](https://tauri.app/start/prerequisites/)
-
-### Download
-
-Pre-built binaries for **Windows** (.exe) and **macOS** (.dmg) are available from the [Releases](../../releases/latest) page.
 
 ### Development
 
@@ -156,6 +168,13 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
+### Release
+
+```bash
+# Bump version, commit, tag, and push (triggers CI build + GitHub Release)
+./scripts/release.sh 0.5.0
+```
+
 ---
 
 ## How It Works
@@ -164,9 +183,11 @@ pnpm tauri build
 2. **Phase detection** — polls the game phase every second (lobby, champ select, in-game, post-game) and reacts to transitions.
 3. **Build fetching** — when you pick a champion in champ select, it fetches the optimal build from OP.GG for your champion + position + region.
 4. **Auto-apply** — writes runes, summoner spells, and item sets directly to the League client via LCU endpoints.
-5. **Draft analysis** — as enemies are revealed, it calculates matchup win rates, generates pick/ban recommendations, and produces a game prediction with early/late phase analysis.
-6. **Live game data** — during a match, polls the Live Client Data API (port 2999) every second for real-time KDA, CS, gold, items, and game events.
-7. **State sync** — the backend emits `app-state-changed` events to the React frontend, which re-renders reactively.
+5. **Draft analysis** — as enemies are revealed, it calculates matchup win rates, power curves, damage composition, generates pick/ban recommendations, adaptive item suggestions, and a game prediction.
+6. **Live game data** — during a match, polls the Live Client Data API (port 2999) every second for real-time KDA, CS, gold, items, and game events. Records snapshots every 30s for post-game phase analysis.
+7. **Overlay** — a second transparent window (hold TAB) shows compact live game info on top of the game (Windows borderless windowed).
+8. **Post-game analysis** — computes gold timeline, death impacts, per-phase stats, and elo comparison from collected snapshots.
+9. **State sync** — the backend emits `app-state-changed` events to the React frontend, which re-renders reactively.
 
 ---
 

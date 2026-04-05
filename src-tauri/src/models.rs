@@ -74,6 +74,8 @@ pub struct AppState {
     pub auto_lock: bool,
     pub auto_accept: bool,
     pub region: String,
+    #[serde(skip)]
+    pub overlay_position: String,
 }
 
 // --- Post-game stats ---
@@ -179,6 +181,7 @@ impl Default for AppState {
             auto_lock: false,
             auto_accept: false,
             region: "euw".to_string(),
+            overlay_position: "top-left".to_string(),
         }
     }
 }
