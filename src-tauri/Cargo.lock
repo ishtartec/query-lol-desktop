@@ -3064,7 +3064,7 @@ dependencies = [
 
 [[package]]
 name = "query-lol-desktop"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
  "device_query",
