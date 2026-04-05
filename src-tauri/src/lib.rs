@@ -807,8 +807,8 @@ async fn set_overlay_position(
             .map_err(|e| format!("Failed to get monitor: {}", e))?
             .ok_or("No monitor found")?;
         let screen = monitor.size();
-        let ow = (400.0 * scale) as i32 + 20;
-        let oh = (300.0 * scale) as i32 + 20;
+        let ow = (320.0 * scale) as i32 + 20;
+        let oh = (260.0 * scale) as i32 + 20;
         let margin = (10.0 * scale) as i32;
         let sw = screen.width as i32;
         let sh = screen.height as i32;

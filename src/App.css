@@ -1595,80 +1595,72 @@
   display: flex; flex-direction: column; gap: 8px;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  min-width: 400px;
+  min-width: 280px;
 }
 
 .ov-header {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.ov-score-ally {
+  font-size: 22px; font-weight: 800; color: var(--accent-blue);
+  min-width: 30px; text-align: center;
+}
+.ov-score-enemy {
+  font-size: 22px; font-weight: 800; color: var(--accent-red);
+  min-width: 30px; text-align: center;
+}
+.ov-center {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.ov-total-diff {
+  font-size: 14px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 .ov-timer {
-  font-size: 14px; font-weight: 700; color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-.ov-score {
-  display: flex; align-items: center; gap: 4px;
-  margin-left: auto;
-}
-.ov-score-ally { font-size: 16px; font-weight: 800; color: var(--accent-blue); }
-.ov-score-enemy { font-size: 16px; font-weight: 800; color: var(--accent-red); }
-.ov-score-sep { font-size: 10px; font-weight: 700; color: var(--text-muted); }
-.ov-gold-diff {
-  font-size: 13px; font-weight: 800; min-width: 65px; text-align: right;
+  font-size: 9px; font-weight: 600; color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.ov-gold-bar {
-  height: 4px; background: var(--accent-red); border-radius: 2px;
-  overflow: hidden; opacity: 0.6;
+.ov-lanes {
+  display: flex; flex-direction: column; gap: 3px;
 }
-.ov-gold-fill {
-  height: 100%; background: var(--accent-blue); border-radius: 2px;
-  transition: width 0.5s ease;
+.ov-lane {
+  display: flex; align-items: center; gap: 0;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
 }
-
-.ov-enemies { display: flex; flex-direction: column; gap: 2px; }
-.ov-enemies-header {
+.ov-lane:last-child { border-bottom: none; }
+.ov-lane-player {
   display: flex; align-items: center; gap: 6px;
-  font-size: 8px; font-weight: 700; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.5px;
-  padding: 0 2px 2px;
+  flex: 1;
 }
-.ov-enemies-header span:nth-child(1) { width: 44px; }
-.ov-enemies-header span:nth-child(2) { width: 52px; }
-.ov-enemies-header span:nth-child(3) { width: 30px; }
-.ov-enemies-header span:nth-child(4) { flex: 1; }
-.ov-enemies-header span:nth-child(5) { width: 36px; text-align: right; }
-
-.ov-enemy {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11px; padding: 2px;
-  border-radius: 4px;
+.ov-lane-ally { justify-content: flex-start; }
+.ov-lane-enemy { justify-content: flex-end; }
+.ov-lane-gold {
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  font-variant-numeric: tabular-nums; min-width: 38px;
 }
-.ov-enemy:hover { background: rgba(255,255,255,0.03); }
-.ov-enemy-champ {
-  position: relative; width: 24px; height: 18px; flex-shrink: 0;
+.ov-lane-ally .ov-lane-gold { text-align: right; }
+.ov-lane-enemy .ov-lane-gold { text-align: left; }
+.ov-champ {
+  position: relative; flex-shrink: 0;
 }
-.ov-enemy-lvl {
+.ov-champ img {
+  border-radius: 6px; border: 1.5px solid var(--border);
+}
+.ov-champ-lvl {
   position: absolute; bottom: -2px; right: -4px;
-  font-size: 7px; font-weight: 800; color: var(--text-primary);
-  background: var(--bg-primary); border-radius: 3px; padding: 0 2px;
-  line-height: 1.3;
+  font-size: 8px; font-weight: 800; color: var(--text-primary);
+  background: rgba(10, 14, 19, 0.9); border-radius: 3px;
+  padding: 0 3px; line-height: 1.4;
+  border: 1px solid var(--border);
 }
-.ov-enemy-kda {
-  font-weight: 700; width: 48px; letter-spacing: 0.3px;
-  font-variant-numeric: tabular-nums; flex-shrink: 0;
+.ov-lane-enemy .ov-champ-lvl { right: auto; left: -4px; }
+.ov-lane-center {
+  min-width: 70px; text-align: center;
 }
-.ov-enemy-cs {
-  color: var(--text-secondary); font-weight: 600; width: 28px;
-  font-variant-numeric: tabular-nums; flex-shrink: 0;
-}
-.ov-enemy-items { display: flex; gap: 1px; flex: 1; }
-.ov-item-img {
-  width: 14px; height: 14px; border-radius: 2px;
-  border: 1px solid rgba(255,255,255,0.08);
-}
-.ov-enemy-spells { display: flex; gap: 2px; flex-shrink: 0; }
-.ov-spell-img {
-  width: 16px; height: 16px; border-radius: 3px;
-  border: 1px solid rgba(255,255,255,0.1);
+.ov-lane-diff {
+  font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
 }

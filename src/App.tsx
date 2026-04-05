@@ -2773,66 +2773,81 @@ function OverlayApp() {
   if (!state || !state.live_game) return <div className="overlay"><span style={{ color: "var(--text-muted)", fontSize: 11 }}>Waiting for game data...</span></div>;
   const game = state.live_game;
   const ld = game.live_data;
-  const allyGold = game.allies.reduce((s, p) => s + playerTotalGold(p), 0);
-  const enemyGold = game.enemies.reduce((s, p) => s + playerTotalGold(p), 0);
-  const goldDiff = allyGold - enemyGold;
   const allyKills = game.allies.reduce((s, p) => s + (p.live?.kills ?? 0), 0);
   const enemyKills = game.enemies.reduce((s, p) => s + (p.live?.kills ?? 0), 0);
 
+  // Build lane matchups: pair allies and enemies by position, fallback by index
+  const matchups: { ally: LiveGamePlayer; enemy: LiveGamePlayer; allyGold: number; enemyGold: number; diff: number }[] = [];
+  const usedEnemies = new Set<number>();
+
+  // First pass: match by position
+  for (const ally of game.allies) {
+    const allyPos = ally.position ? normPos(ally.position) : "";
+    if (!allyPos) continue;
+    const enemyIdx = game.enemies.findIndex((e, i) => !usedEnemies.has(i) && e.position && normPos(e.position) === allyPos);
+    if (enemyIdx >= 0) {
+      usedEnemies.add(enemyIdx);
+      const ag = playerTotalGold(ally);
+      const eg = playerTotalGold(game.enemies[enemyIdx]);
+      matchups.push({ ally, enemy: game.enemies[enemyIdx], allyGold: ag, enemyGold: eg, diff: ag - eg });
+    }
+  }
+
+  // Second pass: pair remaining by index
+  for (const ally of game.allies) {
+    if (matchups.some(m => m.ally === ally)) continue;
+    const enemyIdx = game.enemies.findIndex((_, i) => !usedEnemies.has(i));
+    if (enemyIdx >= 0) {
+      usedEnemies.add(enemyIdx);
+      const ag = playerTotalGold(ally);
+      const eg = playerTotalGold(game.enemies[enemyIdx]);
+      matchups.push({ ally, enemy: game.enemies[enemyIdx], allyGold: ag, enemyGold: eg, diff: ag - eg });
+    }
+  }
+
+  const totalAllyGold = matchups.reduce((s, m) => s + m.allyGold, 0);
+  const totalEnemyGold = matchups.reduce((s, m) => s + m.enemyGold, 0);
+  const totalDiff = totalAllyGold - totalEnemyGold;
+
   return (
     <div className="overlay">
-      {/* Header: timer + team score + gold */}
+      {/* Header: ally kills + gold diff + enemy kills */}
       <div className="ov-header">
-        {ld && <span className="ov-timer">{formatGameTime(ld.game_time)}</span>}
-        <div className="ov-score">
-          <span className="ov-score-ally">{allyKills}</span>
-          <span className="ov-score-sep">vs</span>
-          <span className="ov-score-enemy">{enemyKills}</span>
+        <span className="ov-score-ally">{allyKills}</span>
+        <div className="ov-center">
+          <span className={`ov-total-diff ${totalDiff > 0 ? "lg-wr-good" : totalDiff < 0 ? "lg-wr-bad" : ""}`}>
+            {totalDiff > 0 ? "◀◀" : totalDiff < 0 ? "▶▶" : "="} {Math.abs(Math.round(totalDiff)).toLocaleString()}
+          </span>
+          {ld && <span className="ov-timer">{formatGameTime(ld.game_time)}</span>}
         </div>
-        <span className={`ov-gold-diff ${goldDiff > 0 ? "lg-wr-good" : goldDiff < 0 ? "lg-wr-bad" : ""}`}>
-          {goldDiff > 0 ? "+" : ""}{Math.round(goldDiff).toLocaleString()}g
-        </span>
+        <span className="ov-score-enemy">{enemyKills}</span>
       </div>
 
-      {/* Gold bar */}
-      <div className="ov-gold-bar">
-        <div className="ov-gold-fill" style={{ width: `${allyGold / (allyGold + enemyGold + 1) * 100}%` }} />
-      </div>
-
-      {/* Enemy team */}
-      <div className="ov-enemies">
-        <div className="ov-enemies-header">
-          <span>Champion</span><span>KDA</span><span>CS</span><span>Items</span><span>Spells</span>
-        </div>
-        {game.enemies.map((p, i) => {
-          const live = p.live;
-          if (!live) return null;
-          return (
-            <div key={i} className="ov-enemy">
-              <div className="ov-enemy-champ">
-                <ChampionIcon championId={p.champion_id} size={18} />
-                <span className="ov-enemy-lvl">{live.level}</span>
+      {/* Lane matchups */}
+      <div className="ov-lanes">
+        {matchups.map((m, i) => (
+          <div key={i} className="ov-lane">
+            <div className="ov-lane-player ov-lane-ally">
+              <div className="ov-champ">
+                <ChampionIcon championId={m.ally.champion_id} size={28} />
+                {m.ally.live && <span className="ov-champ-lvl">{m.ally.live.level}</span>}
               </div>
-              <span className="ov-enemy-kda">
-                <span className="lg-live-k">{live.kills}</span>/<span className="lg-live-d">{live.deaths}</span>/<span className="lg-live-a">{live.assists}</span>
+              <span className="ov-lane-gold">{Math.round(m.allyGold).toLocaleString()}</span>
+            </div>
+            <div className="ov-lane-center">
+              <span className={`ov-lane-diff ${m.diff > 200 ? "lg-wr-good" : m.diff < -200 ? "lg-wr-bad" : ""}`}>
+                {m.diff > 0 ? "◀ " : m.diff < 0 ? " ▶" : ""}{Math.abs(Math.round(m.diff)).toLocaleString()}
               </span>
-              <span className="ov-enemy-cs">{live.cs}</span>
-              <div className="ov-enemy-items">
-                {live.items.filter(id => id > 0).slice(0, 6).map((id, j) => (
-                  <img key={j} src={itemIconUrl(id)} alt="" className="ov-item-img" />
-                ))}
-              </div>
-              <div className="ov-enemy-spells">
-                {live.spell1_id > 0 && SPELL_KEYS[live.spell1_id] && (
-                  <img src={spellIconUrl(live.spell1_id)} alt="" className="ov-spell-img" />
-                )}
-                {live.spell2_id > 0 && SPELL_KEYS[live.spell2_id] && (
-                  <img src={spellIconUrl(live.spell2_id)} alt="" className="ov-spell-img" />
-                )}
+            </div>
+            <div className="ov-lane-player ov-lane-enemy">
+              <span className="ov-lane-gold">{Math.round(m.enemyGold).toLocaleString()}</span>
+              <div className="ov-champ">
+                {m.enemy.live && <span className="ov-champ-lvl">{m.enemy.live.level}</span>}
+                <ChampionIcon championId={m.enemy.champion_id} size={28} />
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
 
       {/* Objective timers */}

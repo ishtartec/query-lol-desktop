@@ -1052,10 +1052,23 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
             }).collect();
 
             let timeline = p.get("timeline").unwrap_or(&serde_json::Value::Null);
-            let position = timeline.get("lane")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_uppercase();
+            let lane = timeline.get("lane").and_then(|v| v.as_str()).unwrap_or("");
+            let role = timeline.get("role").and_then(|v| v.as_str()).unwrap_or("");
+            let has_smite = p.get("spell1Id").and_then(|v| v.as_i64()).unwrap_or(0) == 11
+                || p.get("spell2Id").and_then(|v| v.as_i64()).unwrap_or(0) == 11;
+            let position = if has_smite {
+                "JUNGLE"
+            } else {
+                match (lane, role) {
+                    ("JUNGLE", _) => "TOP",  // JUNGLE without Smite = likely TOP
+                    ("TOP", _) => "TOP",
+                    ("MIDDLE" | "MID", _) => "MIDDLE",
+                    ("BOTTOM" | "BOT", "DUO_SUPPORT") => "UTILITY",
+                    ("BOTTOM" | "BOT", _) if cs < 100 && vision_score > 15 => "UTILITY",
+                    ("BOTTOM" | "BOT", _) => "BOTTOM",
+                    _ => lane,
+                }
+            }.to_uppercase();
 
             let (name, puuid) = identities_map.get(&pid)
                 .cloned()
