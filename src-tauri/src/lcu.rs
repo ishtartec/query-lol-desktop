@@ -1521,14 +1521,24 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         }
     }
 
-    // Match live stats and positions to existing players by summoner name
+    // Match live stats and positions to existing players by summoner name (case-insensitive)
     for player in live_state.allies.iter_mut().chain(live_state.enemies.iter_mut()) {
-        if let Some(stats) = player_stats.remove(&player.summoner_name) {
-            player.live = Some(stats);
+        let key = player_stats.keys()
+            .find(|k| k.eq_ignore_ascii_case(&player.summoner_name))
+            .cloned();
+        if let Some(k) = key {
+            if let Some(stats) = player_stats.remove(&k) {
+                player.live = Some(stats);
+            }
         }
-        if let Some(pos) = player_positions.remove(&player.summoner_name) {
-            if player.position.is_empty() || !pos.is_empty() {
-                player.position = pos;
+        let pos_key = player_positions.keys()
+            .find(|k| k.eq_ignore_ascii_case(&player.summoner_name))
+            .cloned();
+        if let Some(k) = pos_key {
+            if let Some(pos) = player_positions.remove(&k) {
+                if player.position.is_empty() || !pos.is_empty() {
+                    player.position = pos;
+                }
             }
         }
     }

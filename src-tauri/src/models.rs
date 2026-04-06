@@ -395,6 +395,8 @@ pub struct BuildAlternatives {
     pub runes: Vec<RuneOption>,
     pub summoner_spells: Vec<SpellOption>,
     pub core_items: Vec<ItemOption>,
+    pub starter_items: Vec<ItemOption>,
+    pub boots: Vec<ItemOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -416,6 +418,7 @@ pub struct ItemOption {
     pub ids: Vec<i64>,
     pub win_rate: f64,
     pub pick_rate: f64,
+    pub games: i64,
 }
 
 // --- Fetch result from OP.GG (internal) ---

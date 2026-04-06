@@ -669,10 +669,12 @@
 
 /* === Items === */
 .items-sections { display: flex; flex-direction: column; gap: 8px; }
-.items-group { display: flex; align-items: center; gap: 10px; }
+.items-top-row { display: flex; gap: 12px; }
+.items-half { flex: 1; }
+.items-group { display: flex; flex-direction: column; gap: 3px; }
 .items-label {
   font-size: 10px; font-weight: 600; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.5px; min-width: 36px;
+  text-transform: uppercase; letter-spacing: 0.5px;
 }
 .items-row { display: flex; gap: 4px; align-items: center; }
 .item-slot {
@@ -681,6 +683,21 @@
 }
 .item-slot img { width: 100%; height: 100%; display: block; }
 .item-arrow { color: var(--text-muted); font-size: 10px; margin: 0 1px; }
+
+.item-option-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 4px; border-radius: 4px;
+  border: 1px solid transparent;
+}
+.item-option-row:hover { background: var(--bg-card-hover); }
+.item-option-active { border-color: var(--accent-gold-dim); }
+.item-option-icons { display: flex; gap: 2px; align-items: center; }
+.item-core-slot { display: flex; align-items: center; gap: 1px; }
+.item-arrow-sm { color: var(--text-muted); font-size: 8px; }
+.item-opt-pr { font-size: 9px; font-weight: 600; color: var(--text-muted); margin-left: auto; }
+.item-opt-wr {
+  font-size: 10px; font-weight: 700; min-width: 36px; text-align: right;
+}
 
 /* === Toast === */
 .toast-error {
@@ -1111,6 +1128,11 @@
 }
 .lg-gold-diff {
   font-size: 11px; font-weight: 700; min-width: 50px; text-align: right;
+}
+.lg-win-prob {
+  font-size: 12px; font-weight: 800; min-width: 35px; text-align: center;
+  padding: 1px 6px; border-radius: 4px;
+  background: rgba(200, 155, 60, 0.15); color: var(--accent-gold);
 }
 
 /* Game timer */
@@ -1612,8 +1634,12 @@
 .ov-center {
   display: flex; flex-direction: column; align-items: center; gap: 1px;
 }
+.ov-win-prob {
+  font-size: 18px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
 .ov-total-diff {
-  font-size: 14px; font-weight: 800;
+  font-size: 12px; font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .ov-timer {

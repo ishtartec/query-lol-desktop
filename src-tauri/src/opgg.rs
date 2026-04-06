@@ -92,6 +92,25 @@ pub async fn fetch_champion_data(
             ids: c.ids.clone(),
             win_rate: if c.play > 0 { c.win as f64 / c.play as f64 } else { 0.0 },
             pick_rate: c.pick_rate,
+            games: c.play,
+        }
+    }).collect();
+
+    let starter_alts: Vec<ItemOption> = data.data.starter_items.iter().take(3).map(|s| {
+        ItemOption {
+            ids: s.ids.clone(),
+            win_rate: if s.play > 0 { s.win as f64 / s.play as f64 } else { 0.0 },
+            pick_rate: s.pick_rate,
+            games: s.play,
+        }
+    }).collect();
+
+    let boots_alts: Vec<ItemOption> = data.data.boots.iter().take(3).map(|b| {
+        ItemOption {
+            ids: b.ids.clone(),
+            win_rate: if b.play > 0 { b.win as f64 / b.play as f64 } else { 0.0 },
+            pick_rate: b.pick_rate,
+            games: b.play,
         }
     }).collect();
 
@@ -99,6 +118,8 @@ pub async fn fetch_champion_data(
         runes: rune_alts,
         summoner_spells: spell_alts,
         core_items: item_alts,
+        starter_items: starter_alts,
+        boots: boots_alts,
     };
 
     info!("Champion data fetched: {} counters, {} rune options", counters.len(), alternatives.runes.len());

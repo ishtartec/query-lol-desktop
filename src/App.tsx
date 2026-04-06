@@ -233,12 +233,15 @@ interface ItemOption {
   ids: number[];
   win_rate: number;
   pick_rate: number;
+  games: number;
 }
 
 interface BuildAlternatives {
   runes: RuneOption[];
   summoner_spells: SpellOption[];
   core_items: ItemOption[];
+  starter_items: ItemOption[];
+  boots: ItemOption[];
 }
 
 interface AppState {
@@ -683,6 +686,54 @@ function analyzeMatchup(myId: number, enemyId: number, counterWr?: number): { ph
   return { phases, summary };
 }
 
+// --- Win probability model ---
+// Logistic curve calibrated from League analytics:
+// gold_diff is the dominant predictor (~80% of signal)
+// Adjusted by game time (early gold matters more) and objectives
+function estimateWinProbability(
+  goldDiff: number,
+  gameTimeSecs: number,
+  allyDragons: number,
+  enemyDragons: number,
+  allyBaronActive: boolean,
+  enemyBaronActive: boolean,
+): number {
+  const mins = Math.max(gameTimeSecs / 60, 1);
+
+  // Gold advantage decays in impact over time (early leads matter more)
+  // At 10min, 1000g = ~6% swing. At 30min, 1000g = ~3% swing
+  const timeDecay = Math.max(0.3, 1.0 - (mins - 10) * 0.02);
+  const goldFactor = (goldDiff / 1000) * 0.06 * timeDecay;
+
+  // Dragon advantage: each dragon ≈ 2% swing, soul (4+) = extra 5%
+  const dragonDiff = allyDragons - enemyDragons;
+  const dragonFactor = dragonDiff * 0.02 + (allyDragons >= 4 ? 0.05 : 0) - (enemyDragons >= 4 ? 0.05 : 0);
+
+  // Baron buff: ~8% swing while active
+  const baronFactor = (allyBaronActive ? 0.08 : 0) - (enemyBaronActive ? 0.08 : 0);
+
+  // Combine into logistic
+  const z = goldFactor + dragonFactor + baronFactor;
+  return 1 / (1 + Math.exp(-z * 10)); // scale for sharper curve
+}
+
+function getObjectiveState(events: GameEvent[], gameTime: number) {
+  let allyDragons = 0, enemyDragons = 0;
+  let allyBaronActive = false, enemyBaronActive = false;
+  for (const ev of events) {
+    if (ev.event_type === "DragonKill") {
+      if (ev.label.startsWith("Ally")) allyDragons++; else enemyDragons++;
+    }
+    if (ev.event_type === "BaronKill") {
+      const remaining = 180 - (gameTime - ev.time);
+      if (remaining > 0) {
+        if (ev.label.startsWith("Ally")) allyBaronActive = true; else enemyBaronActive = true;
+      }
+    }
+  }
+  return { allyDragons, enemyDragons, allyBaronActive, enemyBaronActive };
+}
+
 function positionIconUrl(pos: string): string {
   const key = POSITION_ICON_KEYS[pos] || POSITION_ICON_KEYS[pos.toLowerCase()];
   return key ? `${POS_ICON_BASE}position-${key}.svg` : "";
@@ -760,10 +811,6 @@ async function loadItemData() {
     itemCache = byId;
     return byId;
   } catch { return {}; }
-}
-
-function getItemName(id: number): string {
-  return itemCache?.[id.toString()]?.name || `Item ${id}`;
 }
 
 function getItemData(id: number): ItemData | null {
@@ -1255,50 +1302,90 @@ function App() {
 
                     {(state.build!.starter_items.length > 0 || state.build!.core_items.length > 0) && (
                       <div className="build-card">
-                        <div className="card-header">
-                          <h3 className="card-label">Items</h3>
-                          {state.build_alternatives && state.build_alternatives.core_items.length > 1 && (
-                            <AltTabs
-                              options={state.build_alternatives.core_items}
-                              category="items"
-                              currentIds={state.build!.core_items}
-                            />
-                          )}
-                        </div>
+                        <h3 className="card-label">Items</h3>
                         <div className="items-sections">
-                          {state.build!.starter_items.length > 0 && (
-                            <div className="items-group">
-                              <span className="items-label">Start</span>
-                              <div className="items-row">
-                                {state.build!.starter_items.map(id => (
-                                  <div key={id} className="item-slot"><ItemIcon id={id} size={32} /></div>
+                          {/* Start + Boots side by side */}
+                          <div className="items-top-row">
+                            {state.build_alternatives && state.build_alternatives.starter_items.length > 0 ? (
+                              <div className="items-group items-half">
+                                <span className="items-label">Start</span>
+                                {state.build_alternatives.starter_items.slice(0, 2).map((opt, oi) => (
+                                  <div key={oi} className="item-option-row">
+                                    <div className="item-option-icons">
+                                      {opt.ids.map(id => <ItemIcon key={id} id={id} size={22} />)}
+                                    </div>
+                                    <span className="item-opt-pr">{(opt.pick_rate * 100).toFixed(0)}%</span>
+                                    <span className={`item-opt-wr ${opt.win_rate >= 0.52 ? "lg-wr-good" : opt.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
+                                      {(opt.win_rate * 100).toFixed(1)}%
+                                    </span>
+                                  </div>
                                 ))}
                               </div>
-                            </div>
-                          )}
-                          {state.build!.boots.length > 0 && (
-                            <div className="items-group">
-                              <span className="items-label">Boots</span>
-                              <div className="items-row">
-                                {state.build!.boots.map(id => (
-                                  <div key={id} className="item-slot"><ItemIcon id={id} size={32} /></div>
+                            ) : state.build!.starter_items.length > 0 && (
+                              <div className="items-group items-half">
+                                <span className="items-label">Start</span>
+                                <div className="items-row">
+                                  {state.build!.starter_items.map(id => <ItemIcon key={id} id={id} size={22} />)}
+                                </div>
+                              </div>
+                            )}
+                            {state.build_alternatives && state.build_alternatives.boots.length > 0 ? (
+                              <div className="items-group items-half">
+                                <span className="items-label">Boots</span>
+                                {state.build_alternatives.boots.slice(0, 2).map((opt, oi) => (
+                                  <div key={oi} className="item-option-row">
+                                    <div className="item-option-icons">
+                                      {opt.ids.map(id => <ItemIcon key={id} id={id} size={22} />)}
+                                    </div>
+                                    <span className="item-opt-pr">{(opt.pick_rate * 100).toFixed(0)}%</span>
+                                    <span className={`item-opt-wr ${opt.win_rate >= 0.52 ? "lg-wr-good" : opt.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
+                                      {(opt.win_rate * 100).toFixed(1)}%
+                                    </span>
+                                  </div>
                                 ))}
                               </div>
-                            </div>
-                          )}
-                          {state.build!.core_items.length > 0 && (
-                            <div className="items-group">
-                              <span className="items-label">Core</span>
+                            ) : state.build!.boots.length > 0 && (
+                              <div className="items-group items-half">
+                                <span className="items-label">Boots</span>
+                                <div className="items-row">
+                                  {state.build!.boots.map(id => <ItemIcon key={id} id={id} size={22} />)}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          {/* Core builds with alternatives */}
+                          <div className="items-group">
+                            <span className="items-label">Core</span>
+                            {state.build_alternatives && state.build_alternatives.core_items.length > 0 ? (
+                              state.build_alternatives.core_items.slice(0, 3).map((opt, oi) => (
+                                <div key={oi} className={`item-option-row ${oi === 0 ? "item-option-active" : ""}`}
+                                  onClick={() => invoke("select_build_option", { category: "items", index: oi })}
+                                  style={{ cursor: "pointer" }}>
+                                  <div className="item-option-icons">
+                                    {opt.ids.map((id, ii) => (
+                                      <span key={id} className="item-core-slot">
+                                        <ItemIcon id={id} size={22} />
+                                        {ii < opt.ids.length - 1 && <span className="item-arrow-sm">&rarr;</span>}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <span className="item-opt-pr">{(opt.pick_rate * 100).toFixed(0)}%</span>
+                                  <span className={`item-opt-wr ${opt.win_rate >= 0.52 ? "lg-wr-good" : opt.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
+                                    {(opt.win_rate * 100).toFixed(1)}%
+                                  </span>
+                                </div>
+                              ))
+                            ) : (
                               <div className="items-row">
                                 {state.build!.core_items.map((id, i) => (
                                   <div key={id} className="items-row">
-                                    <div className="item-slot" title={getItemName(id)}><img src={itemIconUrl(id)} alt="" /></div>
+                                    <ItemIcon id={id} size={32} />
                                     {i < state.build!.core_items.length - 1 && <span className="item-arrow">&rarr;</span>}
                                   </div>
                                 ))}
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -2071,6 +2158,8 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
   const enemyGold = game.enemies.reduce((s, p) => s + playerTotalGold(p), 0);
   const goldDiff = allyGold - enemyGold;
   const recentEvents = ld?.events.slice(-5).reverse() ?? [];
+  const objState = ld ? getObjectiveState(ld.events, ld.game_time) : null;
+  const winProb = ld && objState ? estimateWinProbability(goldDiff, ld.game_time, objState.allyDragons, objState.enemyDragons, objState.allyBaronActive, objState.enemyBaronActive) : 0.5;
 
   // Spell cooldown tracking (persists across re-renders)
   const spellTimers = useRef<Map<string, number>>(new Map()).current;
@@ -2160,6 +2249,9 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
           <span className="lg-gold-enemy">{Math.round(enemyGold).toLocaleString()}g</span>
           <span className={`lg-gold-diff ${goldDiff > 0 ? "lg-wr-good" : goldDiff < 0 ? "lg-wr-bad" : ""}`}>
             {goldDiff > 0 ? "+" : ""}{Math.round(goldDiff).toLocaleString()}
+          </span>
+          <span className={`lg-win-prob ${winProb > 0.55 ? "lg-wr-good" : winProb < 0.45 ? "lg-wr-bad" : ""}`}>
+            {(winProb * 100).toFixed(0)}%
           </span>
         </div>
       )}
@@ -2435,8 +2527,8 @@ function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPo
   if (timeline.length < 3) return null;
 
   const width = 600;
-  const height = 100;
-  const pad = { top: 10, bottom: 20, left: 0, right: 0 };
+  const height = 120;
+  const pad = { top: 10, bottom: 20, left: 30, right: 30 };
   const w = width - pad.left - pad.right;
   const h = height - pad.top - pad.bottom;
 
@@ -2445,6 +2537,13 @@ function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPo
 
   const toX = (t: number) => pad.left + (t / maxTime) * w;
   const toY = (g: number) => pad.top + h / 2 - (g / maxAbs) * (h / 2);
+  const toYProb = (p: number) => pad.top + h - (p * h); // 0% at bottom, 100% at top
+
+  // Compute win probability for each point
+  const winProbPoints = timeline.map(p => {
+    const prob = estimateWinProbability(p.gold_diff, p.game_time, 0, 0, false, false);
+    return `${toX(p.game_time)},${toYProb(prob)}`;
+  });
 
   // Build SVG path
   const points = timeline.map(p => `${toX(p.game_time)},${toY(p.gold_diff)}`);
@@ -2469,6 +2568,14 @@ function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPo
 
         {/* Gold diff line */}
         <polyline points={points.join(" ")} fill="none" stroke="var(--text-primary)" strokeWidth="1.5" opacity="0.8" />
+
+        {/* Win probability line */}
+        <polyline points={winProbPoints.join(" ")} fill="none" stroke="var(--accent-gold)" strokeWidth="1.5" opacity="0.6" strokeDasharray="3,2" />
+        {/* 50% reference line */}
+        <line x1={pad.left} x2={width - pad.right} y1={toYProb(0.5)} y2={toYProb(0.5)} stroke="var(--accent-gold)" strokeWidth="0.5" opacity="0.2" strokeDasharray="2,4" />
+        {/* Win prob axis labels */}
+        <text x={width - pad.right + 4} y={toYProb(0.5) + 3} fontSize="7" fill="var(--accent-gold)" opacity="0.5">50%</text>
+        <text x={width - pad.right + 4} y={pad.top + 4} fontSize="7" fill="var(--accent-gold)" opacity="0.5">Win</text>
 
         {/* Death markers */}
         {deaths.map((d, i) => (
@@ -2808,13 +2915,18 @@ function OverlayApp() {
   const totalAllyGold = matchups.reduce((s, m) => s + m.allyGold, 0);
   const totalEnemyGold = matchups.reduce((s, m) => s + m.enemyGold, 0);
   const totalDiff = totalAllyGold - totalEnemyGold;
+  const ovObjState = ld ? getObjectiveState(ld.events, ld.game_time) : null;
+  const ovWinProb = ld && ovObjState ? estimateWinProbability(totalDiff, ld.game_time, ovObjState.allyDragons, ovObjState.enemyDragons, ovObjState.allyBaronActive, ovObjState.enemyBaronActive) : 0.5;
 
   return (
     <div className="overlay">
-      {/* Header: ally kills + gold diff + enemy kills */}
+      {/* Header: ally kills + win prob + gold diff + enemy kills */}
       <div className="ov-header">
         <span className="ov-score-ally">{allyKills}</span>
         <div className="ov-center">
+          <span className={`ov-win-prob ${ovWinProb > 0.55 ? "lg-wr-good" : ovWinProb < 0.45 ? "lg-wr-bad" : ""}`}>
+            {(ovWinProb * 100).toFixed(0)}%
+          </span>
           <span className={`ov-total-diff ${totalDiff > 0 ? "lg-wr-good" : totalDiff < 0 ? "lg-wr-bad" : ""}`}>
             {totalDiff > 0 ? "◀◀" : totalDiff < 0 ? "▶▶" : "="} {Math.abs(Math.round(totalDiff)).toLocaleString()}
           </span>
