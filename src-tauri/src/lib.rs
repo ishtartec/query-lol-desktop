@@ -271,6 +271,35 @@ async fn poll_loop(
                 }
                 s.draft = Some(draft.clone());
                 s.ban_phase_active = ban_active;
+
+                // ARAM: update bench champion IDs
+                if is_aram && !session.bench_champion_ids.is_empty() {
+                    let bench_changed = s.aram_bench.iter().map(|b| b.champion_id).collect::<Vec<_>>()
+                        != session.bench_champion_ids;
+                    if bench_changed {
+                        // Collect all champion IDs (bench + team picks) for win rate fetch
+                        let all_ids: Vec<i64> = session.bench_champion_ids.iter()
+                            .chain(session.my_team.iter().map(|p| &p.champion_id))
+                            .filter(|&&id| id > 0)
+                            .copied()
+                            .collect();
+                        let region = s.region.clone();
+                        drop(s);
+                        if let Ok(rates) = opgg::fetch_aram_win_rates(&region, &all_ids).await {
+                            let mut s = state.lock().await;
+                            s.aram_bench = all_ids.iter().map(|&id| {
+                                models::AramBenchChampion {
+                                    champion_id: id,
+                                    win_rate: *rates.get(&id).unwrap_or(&0.0),
+                                }
+                            }).collect();
+                            let _ = app_handle.emit("app-state-changed", s.clone());
+                        }
+                        // Continue to avoid double-lock below
+                        continue;
+                    }
+                }
+
                 let _ = app_handle.emit("app-state-changed", s.clone());
             }
 
@@ -830,6 +859,24 @@ async fn set_overlay_position(
 /// Monitors TAB key and shows/hides the overlay window during in-game.
 async fn overlay_loop(state: SharedState, app_handle: tauri::AppHandle) {
     use device_query::{DeviceQuery, DeviceState, Keycode};
+
+    // On macOS, check accessibility permission — skip overlay if not granted
+    #[cfg(target_os = "macos")]
+    {
+        use macos_accessibility_client::accessibility;
+        if !accessibility::application_is_trusted() {
+            log::info!("Overlay disabled: macOS Accessibility permission not granted. Grant it in System Settings > Privacy & Security > Accessibility");
+            // Don't prompt — it would target the parent process (terminal) in dev mode
+            // Just silently disable overlay
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                if accessibility::application_is_trusted() {
+                    log::info!("macOS Accessibility permission granted — overlay enabled");
+                    break;
+                }
+            }
+        }
+    }
 
     let device_state = DeviceState::new();
     let mut was_visible = false;

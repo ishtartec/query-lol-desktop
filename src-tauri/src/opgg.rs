@@ -373,6 +373,32 @@ pub async fn fetch_champion_win_rates(
     Ok(rates)
 }
 
+/// Fetch ARAM win rates for a set of champion IDs.
+pub async fn fetch_aram_win_rates(
+    region: &str,
+    champion_ids: &[i64],
+) -> Result<HashMap<i64, f64>, String> {
+    let url = format!("{}/{}/champions/aram", OPGG_API_BASE, region);
+
+    let data: OpggTierListResponse = http_client()
+        .get(&url)
+        .header("User-Agent", "QueryLoLDesktop/0.1")
+        .send()
+        .await
+        .map_err(|e| format!("HTTP: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Parse: {}", e))?;
+
+    let mut rates = HashMap::new();
+    for champ in &data.data {
+        if champion_ids.contains(&champ.id) {
+            rates.insert(champ.id, champ.average_stats.win_rate);
+        }
+    }
+    Ok(rates)
+}
+
 /// Generate pick recommendations.
 pub async fn recommend_picks(
     region: &str,

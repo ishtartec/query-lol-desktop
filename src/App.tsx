@@ -244,6 +244,11 @@ interface BuildAlternatives {
   boots: ItemOption[];
 }
 
+interface AramBenchChampion {
+  champion_id: number;
+  win_rate: number;
+}
+
 interface AppState {
   status: "disconnected" | "connected" | "champ_select" | "in_game" | "post_game";
   summoner_name: string | null;
@@ -263,6 +268,7 @@ interface AppState {
   live_game: LiveGameState | null;
   post_game: PostGameStats | null;
   game_mode: string;
+  aram_bench: AramBenchChampion[];
   recommendations: PickRecommendation[];
   ban_phase_active: boolean;
   auto_apply: boolean;
@@ -952,7 +958,7 @@ function App() {
     build_alternatives: null, counters: {},
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
-    game_mode: "classic", recommendations: [], ban_phase_active: false,
+    game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
     auto_apply: true, auto_lock: false, auto_accept: false, region: "euw",
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
@@ -1030,7 +1036,7 @@ function App() {
         </div>
       )}
       {/* Header */}
-      <header className="header">
+      <header className="header" data-tauri-drag-region>
         <div className="header-left">
           <div className="logo">Q</div>
           <span className="app-title">QueryLoL</span>
@@ -1161,8 +1167,31 @@ function App() {
       {/* Champ select */}
       {inChampSelect && (
         <div className="champ-select-layout">
-          {/* Top: Draft Recommendations carousel */}
-          {!hasChampion && state.recommendations.length > 0 && (
+          {/* Top: ARAM bench or Draft Recommendations */}
+          {state.game_mode === "aram" && state.aram_bench.length > 0 ? (
+            <div className="cs-recs-bar aram-bench-bar">
+              <span className="cs-recs-label">ARAM Win Rates</span>
+              <div className="cs-recs-scroll">
+                {[...state.aram_bench]
+                  .sort((a, b) => b.win_rate - a.win_rate)
+                  .map(champ => {
+                    const isOnBench = !state.draft?.allies.some(a => a.champion_id === champ.champion_id);
+                    return (
+                      <div key={champ.champion_id} className={`aram-bench-chip ${isOnBench ? "aram-bench-available" : "aram-bench-picked"}`}>
+                        <ChampionIcon championId={champ.champion_id} size={32} />
+                        <div className="aram-bench-info">
+                          <ChampionNameLabel championId={champ.champion_id} fallback="..." />
+                          <span className={`aram-bench-wr ${champ.win_rate >= 0.52 ? "lg-wr-good" : champ.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
+                            {(champ.win_rate * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        {isOnBench && <span className="aram-bench-tag">Bench</span>}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          ) : !hasChampion && state.recommendations.length > 0 && (
             <div className="cs-recs-bar">
               <span className="cs-recs-label">Recommended</span>
               <div className="cs-recs-scroll">
@@ -1672,19 +1701,33 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
 
 // --- LP Chart ---
 
+// Convert tier + rank + LP to absolute LP value for charting
+function absoluteLp(tier: string, rank: string, lp: number): number {
+  const tiers: Record<string, number> = {
+    IRON: 0, BRONZE: 400, SILVER: 800, GOLD: 1200,
+    PLATINUM: 1600, EMERALD: 2000, DIAMOND: 2400,
+    MASTER: 2800, GRANDMASTER: 3200, CHALLENGER: 3600,
+  };
+  const divisions: Record<string, number> = { IV: 0, III: 100, II: 200, I: 300 };
+  const t = tiers[tier.toUpperCase()] ?? 1200;
+  const d = divisions[rank.toUpperCase()] ?? 0;
+  return t + d + lp;
+}
+
 function LpChart({ history }: { history: LpEntry[] }) {
   const width = 400;
   const height = 80;
   const pad = { top: 8, bottom: 20, left: 8, right: 8 };
 
-  const lps = history.map(h => h.lp);
-  const minLp = Math.min(...lps) - 5;
-  const maxLp = Math.max(...lps) + 5;
-  const range = Math.max(maxLp - minLp, 10);
+  const absLps = history.map(h => absoluteLp(h.tier, h.rank, h.lp));
+  const minLp = Math.min(...absLps) - 15;
+  const maxLp = Math.max(...absLps) + 15;
+  const range = Math.max(maxLp - minLp, 20);
 
   const points = history.map((h, i) => {
+    const abs = absoluteLp(h.tier, h.rank, h.lp);
     const x = pad.left + (i / Math.max(history.length - 1, 1)) * (width - pad.left - pad.right);
-    const y = pad.top + (1 - (h.lp - minLp) / range) * (height - pad.top - pad.bottom);
+    const y = pad.top + (1 - (abs - minLp) / range) * (height - pad.top - pad.bottom);
     return { x, y, lp: h.lp, tier: h.tier, rank: h.rank };
   });
 
@@ -1692,7 +1735,9 @@ function LpChart({ history }: { history: LpEntry[] }) {
 
   const first = history[0];
   const last = history[history.length - 1];
-  const diff = last.lp - first.lp;
+  const absFirst = absoluteLp(first.tier, first.rank, first.lp);
+  const absLast = absoluteLp(last.tier, last.rank, last.lp);
+  const diff = absLast - absFirst;
   const diffColor = diff >= 0 ? "var(--accent-green)" : "var(--accent-red)";
 
   return (
@@ -1700,7 +1745,7 @@ function LpChart({ history }: { history: LpEntry[] }) {
       <div className="lp-chart-header">
         <h3 className="section-title">LP Progress</h3>
         <span className="lp-diff" style={{ color: diffColor }}>
-          {diff >= 0 ? "+" : ""}{diff} LP
+          {diff >= 0 ? "+" : ""}{diff} LP {first.tier !== last.tier || first.rank !== last.rank ? `(${last.tier} ${last.rank})` : ""}
         </span>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="lp-chart-svg">

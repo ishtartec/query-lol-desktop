@@ -10,9 +10,10 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "QueryLoL",
+        "title": "",
         "width": 1280,
         "height": 780,
         "resizable": true,

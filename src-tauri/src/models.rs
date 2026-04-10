@@ -70,6 +70,7 @@ pub struct AppState {
     #[serde(skip)]
     pub viewing_past_match: bool,
     pub game_mode: String,
+    pub aram_bench: Vec<AramBenchChampion>,
     pub auto_apply: bool,
     pub auto_lock: bool,
     pub auto_accept: bool,
@@ -177,6 +178,7 @@ impl Default for AppState {
             post_game: None,
             viewing_past_match: false,
             game_mode: "classic".to_string(),
+            aram_bench: vec![],
             auto_apply: true,
             auto_lock: false,
             auto_accept: false,
@@ -196,6 +198,8 @@ pub struct ChampSelectSession {
     #[serde(default)]
     pub their_team: Vec<ChampSelectPlayer>,
     pub actions: Vec<Vec<ChampSelectAction>>,
+    #[serde(default)]
+    pub bench_champion_ids: Vec<i64>, // populated manually from benchChampions
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -502,6 +506,14 @@ pub struct MatchHistoryEntry {
     pub vision_score: i64,
     pub gold_earned: i64,
     pub total_damage: i64,
+}
+
+// --- ARAM bench ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AramBenchChampion {
+    pub champion_id: i64,
+    pub win_rate: f64,
 }
 
 // --- Live game ---

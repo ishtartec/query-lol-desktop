@@ -154,8 +154,35 @@ pub async fn get_champ_select_session(creds: &LcuCredentials) -> Result<ChampSel
         .await
         .map_err(|e| format!("Failed to get champ select: {}", e))?;
 
-    resp.json().await
-        .map_err(|e| format!("Failed to parse champ select session: {}", e))
+    let raw: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Failed to parse champ select session: {}", e))?;
+
+    // Log bench-related keys for ARAM debugging
+    if let Some(obj) = raw.as_object() {
+        let bench_keys: Vec<&str> = obj.keys()
+            .filter(|k| k.to_lowercase().contains("bench"))
+            .map(|k| k.as_str())
+            .collect();
+        if !bench_keys.is_empty() {
+            info!("Champ select bench keys: {:?}", bench_keys);
+            for k in &bench_keys {
+                info!("  {}: {:?}", k, obj.get(*k));
+            }
+        }
+    }
+
+    let mut session: ChampSelectSession = serde_json::from_value(raw.clone())
+        .map_err(|e| format!("Failed to deserialize champ select session: {}", e))?;
+
+    // Parse benchChampions (array of objects with championId) into bench_champion_ids
+    if let Some(bench) = raw.get("benchChampions").and_then(|b| b.as_array()) {
+        session.bench_champion_ids = bench.iter()
+            .filter_map(|c| c.get("championId").and_then(|v| v.as_i64()))
+            .filter(|&id| id > 0)
+            .collect();
+    }
+
+    Ok(session)
 }
 
 pub async fn apply_runes(creds: &LcuCredentials, build: &RuneBuild) -> Result<(), String> {

@@ -291,6 +291,30 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ARAM Bench */
+.aram-bench-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; background: var(--bg-primary);
+  border: 1px solid var(--border); border-radius: 8px;
+  flex-shrink: 0; position: relative;
+}
+.aram-bench-available { border-color: rgba(200, 155, 60, 0.3); }
+.aram-bench-picked { opacity: 0.6; }
+.aram-bench-info {
+  display: flex; flex-direction: column;
+}
+.aram-bench-info .draft-champ-name { font-size: 11px; }
+.aram-bench-wr {
+  font-size: 14px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.aram-bench-tag {
+  font-size: 7px; font-weight: 700; color: var(--accent-gold);
+  background: rgba(200, 155, 60, 0.2); padding: 1px 4px;
+  border-radius: 3px; position: absolute; top: 2px; right: 4px;
+  letter-spacing: 0.5px; text-transform: uppercase;
+}
+
 /* Main 3-column area */
 .cs-main {
   display: flex;

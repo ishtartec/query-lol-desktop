@@ -4,5 +4,7 @@
   <dict>
     <key>CFBundleIconName</key>
     <string>QueryLoL</string>
+    <key>NSRequiresAquaSystemAppearance</key>
+    <false/>
   </dict>
 </plist>
