@@ -298,7 +298,8 @@
   border: 1px solid var(--border); border-radius: 8px;
   flex-shrink: 0; position: relative;
 }
-.aram-bench-available { border-color: rgba(200, 155, 60, 0.3); }
+.aram-bench-available { border-color: rgba(200, 155, 60, 0.3); cursor: pointer; }
+.aram-bench-available:hover { border-color: var(--accent-gold); background: var(--bg-card-hover); }
 .aram-bench-picked { opacity: 0.6; }
 .aram-bench-info {
   display: flex; flex-direction: column;

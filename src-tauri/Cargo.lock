@@ -3070,7 +3070,6 @@ dependencies = [
  "device_query",
  "env_logger",
  "log",
- "macos-accessibility-client",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

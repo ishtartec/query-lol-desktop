@@ -1170,25 +1170,24 @@ function App() {
           {/* Top: ARAM bench or Draft Recommendations */}
           {state.game_mode === "aram" && state.aram_bench.length > 0 ? (
             <div className="cs-recs-bar aram-bench-bar">
-              <span className="cs-recs-label">ARAM Win Rates</span>
+              <span className="cs-recs-label">ARAM Bench</span>
               <div className="cs-recs-scroll">
                 {[...state.aram_bench]
+                  .filter(champ => !state.draft?.allies.some(a => a.champion_id === champ.champion_id))
                   .sort((a, b) => b.win_rate - a.win_rate)
-                  .map(champ => {
-                    const isOnBench = !state.draft?.allies.some(a => a.champion_id === champ.champion_id);
-                    return (
-                      <div key={champ.champion_id} className={`aram-bench-chip ${isOnBench ? "aram-bench-available" : "aram-bench-picked"}`}>
-                        <ChampionIcon championId={champ.champion_id} size={32} />
-                        <div className="aram-bench-info">
-                          <ChampionNameLabel championId={champ.champion_id} fallback="..." />
-                          <span className={`aram-bench-wr ${champ.win_rate >= 0.52 ? "lg-wr-good" : champ.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
-                            {(champ.win_rate * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                        {isOnBench && <span className="aram-bench-tag">Bench</span>}
+                  .map(champ => (
+                    <div key={champ.champion_id} className="aram-bench-chip aram-bench-available"
+                      onClick={() => invoke("swap_aram_bench", { championId: champ.champion_id })}
+                      title="Click to swap">
+                      <ChampionIcon championId={champ.champion_id} size={32} />
+                      <div className="aram-bench-info">
+                        <ChampionNameLabel championId={champ.champion_id} fallback="..." />
+                        <span className={`aram-bench-wr ${champ.win_rate >= 0.52 ? "lg-wr-good" : champ.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
+                          {(champ.win_rate * 100).toFixed(1)}%
+                        </span>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
               </div>
             </div>
           ) : !hasChampion && state.recommendations.length > 0 && (

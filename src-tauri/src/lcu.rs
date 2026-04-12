@@ -157,20 +157,6 @@ pub async fn get_champ_select_session(creds: &LcuCredentials) -> Result<ChampSel
     let raw: serde_json::Value = resp.json().await
         .map_err(|e| format!("Failed to parse champ select session: {}", e))?;
 
-    // Log bench-related keys for ARAM debugging
-    if let Some(obj) = raw.as_object() {
-        let bench_keys: Vec<&str> = obj.keys()
-            .filter(|k| k.to_lowercase().contains("bench"))
-            .map(|k| k.as_str())
-            .collect();
-        if !bench_keys.is_empty() {
-            info!("Champ select bench keys: {:?}", bench_keys);
-            for k in &bench_keys {
-                info!("  {}: {:?}", k, obj.get(*k));
-            }
-        }
-    }
-
     let mut session: ChampSelectSession = serde_json::from_value(raw.clone())
         .map_err(|e| format!("Failed to deserialize champ select session: {}", e))?;
 
@@ -1670,6 +1656,24 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         snapshots,
     });
 
+    Ok(())
+}
+
+/// Swap a champion from the ARAM bench.
+pub async fn swap_bench_champion(creds: &LcuCredentials, champion_id: i64) -> Result<(), String> {
+    let client = lcu_client();
+    let url = lcu_url(creds, &format!("/lol-champ-select/v1/session/bench/swap/{}", champion_id));
+    let resp = client
+        .post(&url)
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to swap bench champion: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Bench swap returned: {}", resp.status()));
+    }
+    info!("Swapped bench champion: {}", champion_id);
     Ok(())
 }
 

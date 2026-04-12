@@ -271,13 +271,13 @@ async fn poll_loop(
                 }
                 s.draft = Some(draft.clone());
                 s.ban_phase_active = ban_active;
+                let _ = app_handle.emit("app-state-changed", s.clone());
 
-                // ARAM: update bench champion IDs
+                // ARAM: update bench champion IDs (after emit so UI always updates)
                 if is_aram && !session.bench_champion_ids.is_empty() {
                     let bench_changed = s.aram_bench.iter().map(|b| b.champion_id).collect::<Vec<_>>()
                         != session.bench_champion_ids;
                     if bench_changed {
-                        // Collect all champion IDs (bench + team picks) for win rate fetch
                         let all_ids: Vec<i64> = session.bench_champion_ids.iter()
                             .chain(session.my_team.iter().map(|p| &p.champion_id))
                             .filter(|&&id| id > 0)
@@ -285,7 +285,12 @@ async fn poll_loop(
                             .collect();
                         let region = s.region.clone();
                         drop(s);
-                        if let Ok(rates) = opgg::fetch_aram_win_rates(&region, &all_ids).await {
+                        // Try ARAM tier list, fallback to ranked tier list
+                        let rates = match opgg::fetch_aram_win_rates(&region, &all_ids).await {
+                            Ok(r) => r,
+                            Err(_) => opgg::fetch_champion_win_rates(&region, "aram", &all_ids).await.unwrap_or_default(),
+                        };
+                        if !rates.is_empty() {
                             let mut s = state.lock().await;
                             s.aram_bench = all_ids.iter().map(|&id| {
                                 models::AramBenchChampion {
@@ -295,12 +300,8 @@ async fn poll_loop(
                             }).collect();
                             let _ = app_handle.emit("app-state-changed", s.clone());
                         }
-                        // Continue to avoid double-lock below
-                        continue;
                     }
                 }
-
-                let _ = app_handle.emit("app-state-changed", s.clone());
             }
 
             // If our champion changed, fetch build
@@ -805,6 +806,12 @@ async fn view_match_details(
 }
 
 #[tauri::command]
+async fn swap_aram_bench(champion_id: i64) -> Result<(), String> {
+    let creds = lcu::read_lockfile().ok_or("League client not found")?;
+    lcu::swap_bench_champion(&creds, champion_id).await
+}
+
+#[tauri::command]
 async fn back_to_lobby(
     state: tauri::State<'_, SharedState>,
     app_handle: tauri::AppHandle,
@@ -860,25 +867,15 @@ async fn set_overlay_position(
 async fn overlay_loop(state: SharedState, app_handle: tauri::AppHandle) {
     use device_query::{DeviceQuery, DeviceState, Keycode};
 
-    // On macOS, check accessibility permission — skip overlay if not granted
-    #[cfg(target_os = "macos")]
-    {
-        use macos_accessibility_client::accessibility;
-        if !accessibility::application_is_trusted() {
-            log::info!("Overlay disabled: macOS Accessibility permission not granted. Grant it in System Settings > Privacy & Security > Accessibility");
-            // Don't prompt — it would target the parent process (terminal) in dev mode
-            // Just silently disable overlay
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                if accessibility::application_is_trusted() {
-                    log::info!("macOS Accessibility permission granted — overlay enabled");
-                    break;
-                }
-            }
+    // Try to initialize keyboard listener — may fail without accessibility permission
+    let device_state = match std::panic::catch_unwind(DeviceState::new) {
+        Ok(ds) => ds,
+        Err(_) => {
+            log::warn!("Overlay disabled: could not access keyboard. On macOS, grant Accessibility permission in System Settings > Privacy & Security > Accessibility, then restart the app.");
+            return; // Exit overlay loop — overlay won't work without keyboard access
         }
-    }
-
-    let device_state = DeviceState::new();
+    };
+    log::info!("Overlay keyboard listener active");
     let mut was_visible = false;
 
     loop {
@@ -950,6 +947,7 @@ pub fn run() {
             view_player_profile,
             view_match_details,
             back_to_lobby,
+            swap_aram_bench,
             set_overlay_position,
         ])
         .setup(|app| {
