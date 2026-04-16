@@ -36,6 +36,7 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **One-click pick/ban** — click any recommendation or ban suggestion to lock it in
 - **Auto-lock** — optionally auto-lock your champion selection
 - **Full draft visualization** — ally/enemy picks, bans, and positions with role icons displayed in a 3-column layout
+- **ARAM bench** — shows available bench champions sorted by ARAM win rate, click to swap
 
 ### Lobby
 - **Improvement priorities** — top 3 areas to improve based on your ranked history vs elo benchmarks, with visual bars and actionable advice
@@ -61,7 +62,8 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **Power spike alerts** — "400g to [item]" for your next core item, and "Enemy completed [item]" when enemies buy key items
 - **Objective timers** — Baron buff (3:00), Elder Dragon buff (2:30), and Dragon Soul tracking with countdown and team indicator
 - **Objective feed** — dragons, baron, herald, turrets, inhibitors, and multikills with timestamps
-- **In-game overlay** — hold TAB to show a compact overlay with gold diff, enemy KDA/spells, and objective timers (Windows, borderless windowed mode)
+- **Win probability** — real-time win % estimate based on gold diff, game time, dragons, and baron (displayed in gold bar and overlay)
+- **In-game overlay** — hold TAB to show a compact overlay with win probability, lane gold diffs, and objective timers (borderless windowed mode, configurable position)
 - **Player profiles** — click any player to view their match history in an overlay
 
 ### Post-Game Analysis
@@ -75,7 +77,7 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **MVP badge** — awarded to the top performer based on a composite score
 - **Multikill badges** — triple, quadra, and penta kill indicators
 - **Final items** — complete end-game item build for each player with tooltips
-- **Gold advantage timeline** — SVG chart showing gold diff over time with death markers
+- **Gold advantage timeline** — SVG chart showing gold diff over time with death markers and win probability curve overlay
 - **Elo comparison** — your CS/min, vision/min, KDA, damage share, KP, and gold/min compared against your rank's average with percentage deltas
 - **Performance by phase** — CS/min, gold/min, and KDA broken down by early (0-14m), mid (14-25m), and late (25m+) game phases
 - **Player profiles** — click any player name to view their ranked info and match history
