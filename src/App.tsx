@@ -420,7 +420,7 @@ const TRAIT_SHIELDERS = new Set([
 // Map champion ID to primary damage type: "ap" or "ad"
 const CHAMP_DAMAGE_TYPE: Record<number, "ap" | "ad"> = {};
 // AP champions
-[1,3,4,7,8,9,10,13,17,25,26,27,28,30,31,34,37,38,40,42,43,45,50,55,61,63,68,69,74,76,79,82,84,85,90,96,99,101,103,105,112,113,115,117,127,131,134,142,143,147,150,161,163,245,246,267,268,350,353,360,427,432,497,518,526,555,685,711,876,887,901,902,950].forEach(id => CHAMP_DAMAGE_TYPE[id] = "ap");
+[1,3,4,7,8,9,10,13,16,17,25,26,27,28,30,31,34,37,38,40,42,43,45,50,54,55,57,60,61,63,68,69,74,76,79,82,84,85,90,96,99,101,103,105,112,113,115,117,127,131,134,136,142,143,147,150,154,161,163,245,246,267,268,350,353,360,427,432,497,517,518,526,555,685,711,800,876,887,888,893,901,902,910,950].forEach(id => CHAMP_DAMAGE_TYPE[id] = "ap");
 // AD champions (rest default to AD for simplicity)
 
 interface ItemRec {
@@ -2060,6 +2060,17 @@ function SpellCdIcon({ spellId, playerName, gameTime, spellTimers, onSpellClick 
   );
 }
 
+function SpellStaticIcon({ spellId }: { spellId: number }) {
+  const spellKey = SPELL_KEYS[spellId];
+  const spellName = SPELL_NAMES[spellId] || "Spell";
+  if (!spellKey) return <div className="spell-cd-wrap" title={spellName} />;
+  return (
+    <div className="spell-cd-wrap" title={spellName}>
+      <img src={spellIconUrl(spellId)} alt={spellName} className="spell-cd-img" />
+    </div>
+  );
+}
+
 function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGamePlayer; onViewPlayer?: (puuid: string) => void; isEnemy?: boolean; spellCd?: SpellCdProps }) {
   const totalGames = p.ranked_wins + p.ranked_losses;
   const champWr = p.champ_games > 0 ? (p.champ_wins / p.champ_games * 100) : 0;
@@ -2098,10 +2109,19 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
           ))}
         </span>
       </div>
-      {isEnemy && live && spellCd && (
+      {live && (live.spell1_id > 0 || live.spell2_id > 0) && (
         <div className="lg-spells">
-          <SpellCdIcon spellId={live.spell1_id} playerName={p.summoner_name} {...spellCd} />
-          <SpellCdIcon spellId={live.spell2_id} playerName={p.summoner_name} {...spellCd} />
+          {isEnemy && spellCd ? (
+            <>
+              <SpellCdIcon spellId={live.spell1_id} playerName={p.summoner_name} {...spellCd} />
+              <SpellCdIcon spellId={live.spell2_id} playerName={p.summoner_name} {...spellCd} />
+            </>
+          ) : (
+            <>
+              <SpellStaticIcon spellId={live.spell1_id} />
+              <SpellStaticIcon spellId={live.spell2_id} />
+            </>
+          )}
         </div>
       )}
       {live ? (

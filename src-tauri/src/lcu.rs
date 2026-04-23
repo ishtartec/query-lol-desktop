@@ -1788,18 +1788,21 @@ pub fn compute_gold_timeline(
 }
 
 fn spell_name_to_id(name: &str) -> i64 {
+    // Live Client Data returns `rawDisplayName` as the internal key like
+    // "GeneratedTip_SummonerSpell_SummonerDot_DisplayName" (Ignite). Match on
+    // both the internal key and the English display name to survive localization.
     match name {
-        s if s.contains("Flash") => 4,
-        s if s.contains("Ignite") => 14,
-        s if s.contains("Teleport") => 12,
-        s if s.contains("Exhaust") => 3,
-        s if s.contains("Heal") => 7,
-        s if s.contains("Barrier") => 21,
-        s if s.contains("Cleanse") => 1,
-        s if s.contains("Ghost") => 6,
-        s if s.contains("Smite") => 11,
-        s if s.contains("Clarity") => 13,
-        s if s.contains("Mark") => 32, // ARAM snowball
+        s if s.contains("SummonerFlash") || s.contains("Flash") => 4,
+        s if s.contains("SummonerDot") || s.contains("Ignite") => 14,
+        s if s.contains("SummonerTeleport") || s.contains("Teleport") => 12,
+        s if s.contains("SummonerExhaust") || s.contains("Exhaust") => 3,
+        s if s.contains("SummonerHeal") || s.contains("Heal") => 7,
+        s if s.contains("SummonerBarrier") || s.contains("Barrier") => 21,
+        s if s.contains("SummonerBoost") || s.contains("Cleanse") => 1,
+        s if s.contains("SummonerHaste") || s.contains("Ghost") => 6,
+        s if s.contains("SummonerSmite") || s.contains("Smite") => 11,
+        s if s.contains("SummonerMana") || s.contains("Clarity") => 13,
+        s if s.contains("SummonerSnowball") || s.contains("Mark") => 32, // ARAM snowball
         _ => 0,
     }
 }
