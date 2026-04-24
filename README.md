@@ -30,6 +30,7 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **Ban suggestions** — top ban candidates for your position with win rate and pick rate, one-click ban
 - **Matchup win rates** — per-enemy win rate badges (green = favorable, red = unfavorable)
 - **Matchup analysis by level** — phase-by-phase power comparison (early/mid/late) with actionable tips like "avoid trades level 1-3" or "power spike at level 6"
+- **Level-by-level plan** — 18-level timeline vs your lane opponent with a contextual action per level (e.g. "Lvl 3 trade", "All-in con R", "Farm lado opuesto", "R2 + obj"). Calculates per-level advantage from power curves + spike bonuses + ult-strength comparison, with hexagonal nodes pulsing on spike levels and color-coded categories (dominant / strong / even / careful / weak). Full coverage for all 172 champions. Hover any level to see a coach-style tip in the detail card
 - **Damage composition** — AD/AP split bar for both teams, with warnings for heavy one-type compositions
 - **Adaptive item recommendations** — situational items based on enemy comp (antiheal, MR stacking, armor, anti-shield) with champion-specific reasoning
 - **Game prediction** — team-vs-team analysis with early/late game phase scores and a strategy tip
@@ -58,12 +59,13 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **Real-time scoreboard** — live KDA, CS, level, and current items for all players (via Live Client Data API)
 - **Gold tracker** — team gold bar with total gold comparison (unspent + item value)
 - **Lane matchup gold diff** — per-position gold comparison between matched lane opponents
+- **Summoner spell display** — all 10 players show their summoner spells (Flash, Ignite, TP, etc.). Localized LoL clients supported via internal spell-key matching
 - **Spell cooldown tracker** — click enemy summoner spells to start countdown timers (Flash 5:00, TP 6:00, etc.), click again to cancel
 - **Power spike alerts** — "400g to [item]" for your next core item, and "Enemy completed [item]" when enemies buy key items
 - **Objective timers** — Baron buff (3:00), Elder Dragon buff (2:30), and Dragon Soul tracking with countdown and team indicator
 - **Objective feed** — dragons, baron, herald, turrets, inhibitors, and multikills with timestamps
 - **Win probability** — real-time win % estimate based on gold diff, game time, dragons, and baron (displayed in gold bar and overlay)
-- **In-game overlay** — hold TAB to show a compact overlay with win probability, lane gold diffs, and objective timers (borderless windowed mode, configurable position)
+- **In-game overlay** — hold TAB to show a compact overlay with win probability, lane gold diffs, objective timers, and a **5-level plan preview** (current level + next 4 with actions, advantage, and spike warnings for both you and the lane opponent). Borderless windowed mode, configurable position
 - **Player profiles** — click any player to view their match history in an overlay
 
 ### Post-Game Analysis
@@ -185,7 +187,7 @@ pnpm tauri build
 2. **Phase detection** — polls the game phase every second (lobby, champ select, in-game, post-game) and reacts to transitions.
 3. **Build fetching** — when you pick a champion in champ select, it fetches the optimal build from OP.GG for your champion + position + region.
 4. **Auto-apply** — writes runes, summoner spells, and item sets directly to the League client via LCU endpoints.
-5. **Draft analysis** — as enemies are revealed, it calculates matchup win rates, power curves, damage composition, generates pick/ban recommendations, adaptive item suggestions, and a game prediction.
+5. **Draft analysis** — as enemies are revealed, it calculates matchup win rates, power curves, damage composition, generates pick/ban recommendations, adaptive item suggestions, a game prediction, and an 18-level action plan against your lane opponent (combining interpolated power curves, per-champion spike levels, and ult-strength comparison).
 6. **Live game data** — during a match, polls the Live Client Data API (port 2999) every second for real-time KDA, CS, gold, items, and game events. Records snapshots every 30s for post-game phase analysis.
 7. **Overlay** — a second transparent window (hold TAB) shows compact live game info on top of the game (Windows borderless windowed).
 8. **Post-game analysis** — computes gold timeline, death impacts, per-phase stats, and elo comparison from collected snapshots.

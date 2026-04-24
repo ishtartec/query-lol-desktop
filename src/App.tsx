@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
@@ -639,10 +639,375 @@ const POWER_CURVES: Record<number, PowerCurve> = {
   25:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Morgana
   63:  { early: 4, mid: 4, late: 3, spikes: [3, 6] },       // Brand
   143: { early: 3, mid: 4, late: 3, spikes: [6] },          // Zyra
+
+  // Expanded coverage (heuristics by archetype)
+
+  // Tank-Fighter / Juggernauts
+  6:   { early: 3, mid: 4, late: 3, spikes: [6, 11] },      // Urgot
+  14:  { early: 2, mid: 3, late: 4, spikes: [6, 11] },      // Sion
+  20:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Nunu
+  33:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Rammus
+  36:  { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Dr. Mundo
+  48:  { early: 4, mid: 4, late: 3, spikes: [2, 6] },       // Trundle
+  62:  { early: 4, mid: 4, late: 3, spikes: [2, 6] },       // Wukong
+  72:  { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Skarner
+  77:  { early: 4, mid: 4, late: 3, spikes: [1, 6] },       // Udyr
+  83:  { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Yorick
+  86:  { early: 4, mid: 4, late: 2, spikes: [3, 6] },       // Garen
+  98:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Shen
+  102: { early: 3, mid: 4, late: 3, spikes: [6] },          // Shyvana
+  106: { early: 4, mid: 4, late: 3, spikes: [1, 6] },       // Volibear
+  120: { early: 3, mid: 4, late: 3, spikes: [3, 6] },       // Hecarim
+  150: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Gnar
+  421: { early: 4, mid: 4, late: 3, spikes: [3, 6] },       // Rek'Sai
+  875: { early: 4, mid: 4, late: 3, spikes: [2, 6] },       // Sett
+  897: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // K'Sante
+
+  // Assassins / Skirmishers
+  35:  { early: 3, mid: 4, late: 3, spikes: [3, 6] },       // Shaco
+  56:  { early: 2, mid: 5, late: 3, spikes: [6] },          // Nocturne
+  141: { early: 3, mid: 5, late: 3, spikes: [6, 11] },      // Kayn
+  164: { early: 3, mid: 5, late: 3, spikes: [6, 11] },      // Camille
+  233: { early: 4, mid: 4, late: 2, spikes: [3, 6] },       // Briar
+  234: { early: 2, mid: 5, late: 3, spikes: [6, 11] },      // Viego
+  254: { early: 3, mid: 4, late: 3, spikes: [6, 11] },      // Vi
+  799: { early: 3, mid: 5, late: 3, spikes: [6, 11] },      // Ambessa
+  895: { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Nilah
+  904: { early: 3, mid: 5, late: 3, spikes: [6, 11] },      // Zaahen
+  950: { early: 2, mid: 4, late: 3, spikes: [6, 11] },      // Naafiri
+
+  // Mages (burst / control / artillery)
+  9:   { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Fiddlesticks
+  34:  { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Anivia
+  74:  { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Heimerdinger
+  85:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Kennen
+  103: { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Ahri
+  115: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Ziggs
+  136: { early: 1, mid: 3, late: 5, spikes: [6, 11, 16] },  // Aurelion Sol
+  142: { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Zoe
+  147: { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Seraphine
+  163: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Taliyah
+  517: { early: 3, mid: 4, late: 4, spikes: [6] },          // Sylas
+  518: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Neeko
+  711: { early: 3, mid: 4, late: 3, spikes: [6] },          // Vex
+  800: { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Mel
+  876: { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Lillia
+  893: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Aurora
+  910: { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Hwei
+
+  // Battle mages / Tank-Mages
+  27:  { early: 2, mid: 4, late: 4, spikes: [6] },          // Singed
+  68:  { early: 2, mid: 4, late: 3, spikes: [6] },          // Rumble
+  79:  { early: 3, mid: 4, late: 4, spikes: [6] },          // Gragas
+  82:  { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Mordekaiser
+
+  // Marksmen (hyperscaling / utility)
+  15:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Sivir
+  21:  { early: 3, mid: 4, late: 3, spikes: [6, 11] },      // Miss Fortune
+  22:  { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Ashe
+  42:  { early: 2, mid: 4, late: 4, spikes: [6, 11] },      // Corki
+  110: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Varus
+  133: { early: 3, mid: 4, late: 3, spikes: [6] },          // Quinn
+  145: { early: 2, mid: 4, late: 5, spikes: [6, 11] },      // Kai'Sa
+  166: { early: 3, mid: 4, late: 3, spikes: [6] },          // Akshan
+  202: { early: 3, mid: 4, late: 4, spikes: [6, 11] },      // Jhin
+  203: { early: 3, mid: 3, late: 5, spikes: [6, 11] },      // Kindred
+  221: { early: 1, mid: 3, late: 5, spikes: [6, 11] },      // Zeri
+  235: { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Senna
+  268: { early: 2, mid: 4, late: 5, spikes: [6, 11] },      // Azir
+  360: { early: 2, mid: 4, late: 5, spikes: [6, 11] },      // Samira
+  429: { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Kalista
+  523: { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Aphelios
+  804: { early: 2, mid: 3, late: 5, spikes: [6, 11] },      // Yunara
+  901: { early: 1, mid: 3, late: 5, spikes: [6, 11] },      // Smolder
+
+  // Fighter-Marksman hybrid
+  126: { early: 4, mid: 4, late: 3, spikes: [2, 3, 6] },    // Jayce
+
+  // Bruisers (pure Fighter)
+  24:  { early: 3, mid: 5, late: 3, spikes: [3, 6, 11] },   // Jax
+  41:  { early: 4, mid: 4, late: 4, spikes: [1, 6] },       // Gangplank
+
+  // Supports (enchanters / engage / catchers)
+  26:  { early: 3, mid: 3, late: 4, spikes: [6, 11] },      // Zilean
+  32:  { early: 3, mid: 4, late: 3, spikes: [6] },          // Amumu
+  44:  { early: 4, mid: 4, late: 3, spikes: [6] },          // Taric
+  53:  { early: 4, mid: 3, late: 3, spikes: [6] },          // Blitzcrank
+  223: { early: 3, mid: 4, late: 3, spikes: [6] },          // Tahm Kench
+  350: { early: 2, mid: 3, late: 4, spikes: [6, 11] },      // Yuumi
+  412: { early: 4, mid: 3, late: 3, spikes: [6] },          // Thresh
+  427: { early: 3, mid: 3, late: 4, spikes: [6, 11] },      // Ivern
+  432: { early: 3, mid: 3, late: 4, spikes: [6, 11] },      // Bard
+  497: { early: 3, mid: 4, late: 3, spikes: [6] },          // Rakan
+  526: { early: 3, mid: 4, late: 3, spikes: [6] },          // Rell
+  888: { early: 3, mid: 3, late: 4, spikes: [6, 11] },      // Renata Glasc
+  902: { early: 3, mid: 3, late: 4, spikes: [6, 11] },      // Milio
 };
 
 function getCurve(id: number): PowerCurve {
   return POWER_CURVES[id] || DEFAULT_CURVE;
+}
+
+// --- Level-by-level plan ---
+
+// Smooth curve interpolation using 3 anchor points: lv2=early, lv8=mid, lv15=late
+function interpolateCurve(curve: PowerCurve, level: number): number {
+  if (level <= 2) return curve.early;
+  if (level >= 15) return curve.late;
+  if (level <= 8) {
+    const t = (level - 2) / 6;
+    return curve.early + (curve.mid - curve.early) * t;
+  }
+  const t = (level - 8) / 7;
+  return curve.mid + (curve.late - curve.mid) * t;
+}
+
+type PlanCategory = "dominant" | "strong" | "even" | "careful" | "weak" | "hard-weak";
+
+interface LevelPlanEntry {
+  level: number;
+  advantage: number;         // signed, typically [-3, +3]
+  category: PlanCategory;
+  action: string;            // 2-3 word headline
+  detail: string;            // 1-sentence coach tip
+  isSpike: boolean;          // your spike
+  isEnemySpike: boolean;     // their spike (warning)
+  spikeIcon?: "sword" | "ult" | "crown";
+}
+
+function classifyAdvantage(adv: number): PlanCategory {
+  if (adv >= 2.2) return "dominant";
+  if (adv >= 1.0) return "strong";
+  if (adv > -1.0) return "even";
+  if (adv > -2.2) return "careful";
+  if (adv > -3.5) return "weak";
+  return "hard-weak";
+}
+
+type PositionRole = "top" | "jungle" | "middle" | "bottom" | "utility" | "unknown";
+
+function normalizePosition(pos?: string): PositionRole {
+  if (!pos) return "unknown";
+  const p = pos.toLowerCase();
+  if (p.startsWith("top")) return "top";
+  if (p.startsWith("jun")) return "jungle";
+  if (p.startsWith("mid")) return "middle";
+  if (p.startsWith("bot") || p === "adc") return "bottom";
+  if (p.startsWith("uti") || p.startsWith("sup")) return "utility";
+  return "unknown";
+}
+
+function evenActionByPhase(level: number, role: PositionRole, bothSpike: boolean): { action: string; detail: string } {
+  if (bothSpike) {
+    return { action: "Trade mutuo", detail: "Ambos tenéis spike aquí — comprometer sólo con cooldowns enemigos fuera o jungla cerca." };
+  }
+  if (role === "jungle") {
+    if (level <= 3) return { action: "Full clear", detail: "Clear limpio hasta lvl 3 — prepara gank al carril con prio." };
+    if (level <= 5) return { action: "Scuttle + track", detail: "Contesta scuttle, track al jungla rival por wards." };
+    if (level === 6) return { action: "Ult ready + obj", detail: "Usa ult en el primer fight. Setup para primer dragón/heraldo." };
+    if (level <= 10) return { action: "Obj o dive", detail: "Rotate a objetivos. Si hay prio de carril, mira dives." };
+    if (level <= 13) return { action: "Agrupar obj", detail: "Mid-game: baron, dragón elemental, pings de agrupar." };
+    return { action: "Setup fights", detail: "Controla vision del objetivo grande, busca pick previo." };
+  }
+  if (role === "utility") {
+    if (level <= 2) return { action: "Pathing + ward", detail: "Tri-bush / bush río según side. Control de visión desde min 2." };
+    if (level === 3) return { action: "Primer trade", detail: "Con lvl 3 ambos, busca trade corto si el enemigo falla skill." };
+    if (level <= 5) return { action: "Poke + wave", detail: "Poke seguro, controla wave para evitar dives de jungla." };
+    if (level === 6) return { action: "Ults listas", detail: "Todos tenemos ult — setup engage coordinado con el ADC." };
+    if (level <= 8) return { action: "Roam mid", detail: "Si la wave está pusheada, roam mid para ayudar con ult." };
+    if (level <= 10) return { action: "Dragón prep", detail: "Ward río, prep para primer dragón. No mueras en visión." };
+    if (level === 11) return { action: "Ult +1 punto", detail: "Segundo punto de ult — busca fights 5v5 alrededor de objs." };
+    if (level <= 14) return { action: "Visión obj", detail: "Baron/dragón elemental cerca — controla pink + wards." };
+    return { action: "Peel teamfight", detail: "Late game: peel el ADC, reacciona al frontline enemigo." };
+  }
+  // Lane (top / mid / bot carry)
+  if (level <= 2) return { action: "Farm + safe", detail: "Nivel 1-2 sin compromiso — respeta cooldowns enemigos." };
+  if (level === 3) return { action: "Lvl 3 spike", detail: "Primera ventana de trade con kit completo. Punish bad positioning." };
+  if (level <= 5) return { action: "Farm + prio", detail: "Last-hit limpio, gana la push a primer item si puedes." };
+  if (level === 6) return { action: "Ult ready", detail: "Ambos tenéis ult — juega reactivo hasta usar la suya primero." };
+  if (level <= 9) return { action: "Wave + roam", detail: "Primer item completado — prio wave y mira roams a otros carriles." };
+  if (level === 10) return { action: "Segundo ítem", detail: "Llegas a segundo item — powerspike importante, busca ventana." };
+  if (level === 11) return { action: "R 2º punto", detail: "Segundo rank de ult y item2 — fuerza un fight si obj cerca." };
+  if (level <= 14) return { action: "Agrupar obj", detail: "Mid-game: agrupa con equipo para objs, no te aísles." };
+  if (level === 16) return { action: "R 3º punto", detail: "Ult maxeada. Full build — busca teamfight decisiva." };
+  return { action: "Teamfight", detail: "Late game: posicionamiento determina todo. No te separes." };
+}
+
+function actionForLane(level: number, cat: PlanCategory, role: PositionRole, isUltLevel: boolean, yourUltStronger: boolean, bothSpike: boolean): { action: string; detail: string } {
+  if (cat === "even") return evenActionByPhase(level, role, bothSpike);
+
+  if (role === "jungle") {
+    if (cat === "dominant") {
+      if (level <= 3) return { action: "Invadir", detail: "Full clear invadiendo el lado enemigo — tienes tempo y stats." };
+      if (level <= 6) return { action: "Gank + contest", detail: "Gank carril con prio, contesta scuttle con ventaja." };
+      if (level <= 10) return { action: "Dive + obj", detail: "Dive torres donde el carril esté adelantado, asegura dragón." };
+      if (level <= 14) return { action: "Force baron", detail: "Controla visión baron, fuerza obj — tu ventaja escala." };
+      return { action: "Force elder", detail: "Elder/baron — comprométete, tu ventaja decide el late." };
+    }
+    if (cat === "strong") {
+      if (level <= 3) return { action: "Full clear +", detail: "Clear rápido, scuttle prio, setup primer gank." };
+      if (level <= 5) return { action: "Gank lado fuerte", detail: "Busca gank en el carril con más prio — tu tempo es mejor." };
+      if (level === 6) return { action: "Gank con ult", detail: "Usa tu ult para cerrar un gank en el carril favorable." };
+      if (level <= 10) return { action: "Rotar obj", detail: "Prio dragón/heraldo. Ganks oportunos con wave bloqueada." };
+      if (level <= 14) return { action: "Setup baron", detail: "Control de visión del baron, ping agrupar al equipo." };
+      return { action: "Pick + obj", detail: "Late: busca pick antes del obj grande." };
+    }
+    if (cat === "careful") {
+      if (level <= 3) return { action: "Clear defensivo", detail: "Clear sin invadir — no des first blood al counter-jungler." };
+      if (level <= 6) return { action: "Counter-gank", detail: "Farm + espera ganks rivales para reaccionar." };
+      if (level <= 10) return { action: "Track + vision", detail: "Ward profundas, trackea al jungla rival, evita skirmish." };
+      if (level <= 14) return { action: "Ward obj", detail: "Visión del obj rival — no contestes sin equipo reunido." };
+      return { action: "Peel + flank", detail: "Espera engage rival, flanco reactivo — no abras." };
+    }
+    if (cat === "weak") {
+      if (level <= 6) return { action: "Powerfarm", detail: "Clear rápido — no contestes scuttle sin prio." };
+      if (level <= 10) return { action: "Cede obj menor", detail: "No fuerces dragón sin equipo, farm para items core." };
+      if (level <= 14) return { action: "Farm + split", detail: "Llega a items core, espera error del rival." };
+      return { action: "Pick reactivo", detail: "Sólo fights con ventaja numérica o obj decisivo." };
+    }
+    // hard-weak
+    if (level <= 10) return { action: "Farm invisible", detail: "Muy atrás — farm jungla segura, no des muertes." };
+    return { action: "Sólo teamfight", detail: "Sólo aparece para fights cruciales — fuera es riesgo." };
+  }
+
+  if (role === "utility") {
+    if (cat === "dominant") {
+      if (level <= 2) return { action: "Engage lvl 2", detail: "Llega primero a lvl 2 — busca all-in con tu ADC." };
+      if (level <= 5) return { action: "All-in bot", detail: "Trade largo con el ADC — dominas la ventana." };
+      if (level === 6) return { action: "ENGAGE + R", detail: "Abre con ult — tu kit domina esta ventana." };
+      if (level <= 10) return { action: "Roam + pick", detail: "Roam mid tras push para forzar otra kill." };
+      if (level === 11) return { action: "Force 5v5", detail: "R2 — busca teamfight alrededor de obj." };
+      if (level <= 14) return { action: "Abre obj", detail: "Inicia fights en dragón/baron — tu damage decide." };
+      return { action: "Pick teamfight", detail: "Late: pick antes del fight, aprovecha frontline." };
+    }
+    if (cat === "strong") {
+      if (level <= 2) return { action: "Poke + wave", detail: "Trades cortos — ganas intercambios de HP." };
+      if (level <= 5) return { action: "Presionar bot", detail: "Pick o engage cuando ADC tenga full cooldowns." };
+      if (level === 6) return { action: "Engage con ult", detail: "Ventaja + ulti — all-in coordinado con el ADC." };
+      if (level <= 10) return { action: "Roam + visión", detail: "Prio wave y roam mid — controla obj siguiente." };
+      if (level === 11) return { action: "Fight obj", detail: "R2 + item — fuerza fight alrededor de dragón/herald." };
+      if (level <= 14) return { action: "Engage + peel", detail: "Abre fights si flanco safe, peel al carry si enganchan." };
+      return { action: "Pick + peel", detail: "Late: pick previo al fight, peel backline." };
+    }
+    if (cat === "careful") {
+      if (level <= 2) return { action: "Ward defensivo", detail: "Tri-bush / río — no te adelantes en el bush enemigo." };
+      if (level <= 5) return { action: "Proteger ADC", detail: "Juega backline, espera que su soporte gaste CC." };
+      if (level === 6) return { action: "Respeta su R", detail: "Deja que gasten ulti antes de comprometerte." };
+      if (level <= 10) return { action: "Ward + peel", detail: "Visión defensiva, reacciona al engage rival." };
+      if (level <= 14) return { action: "Backline peel", detail: "Detrás del carry, engage solo reactivo." };
+      return { action: "Peel teamfight", detail: "Protege al ADC late game — no abras fights." };
+    }
+    if (cat === "weak") {
+      if (level <= 5) return { action: "Peel total", detail: "No vayas a trades, protege al ADC en wave." };
+      if (level <= 10) return { action: "Ward safe", detail: "Sólo wards defensivas, evita skirmishes." };
+      if (level <= 14) return { action: "Kitear + peel", detail: "Detrás del ADC, reacciona al engage — no abras." };
+      return { action: "Sólo peel", detail: "Tu rol es mantener vivo al carry, no iniciar." };
+    }
+    // hard-weak
+    if (level <= 10) return { action: "Ultra-safe", detail: "Wards defensivas, cede prio, no mueras." };
+    return { action: "Backline total", detail: "Detrás del carry, sólo peel reactivo." };
+  }
+
+  // Lane (top / mid / bot carry)
+  if (cat === "dominant") {
+    if (level <= 2) return { action: "Lvl 2 all-in", detail: "Llega primero a lvl 2 — busca all-in con ventaja de stats." };
+    if (level === 3) return { action: "Lvl 3 kill", detail: "Kit completo — trade largo sale ganador." };
+    if (level <= 5) return { action: "Push + trade", detail: "Presiona wave, busca trades hasta ventaja de items." };
+    if (level === 6) return { action: isUltLevel && yourUltStronger ? "ALL-IN con R" : "Solokill", detail: isUltLevel && yourUltStronger ? "Tu ulti gana el 1v1 — comprométete si cooldowns fuera." : "Busca all-in cuando tenga habilidades en cooldown." };
+    if (level <= 10) return { action: "Solokill + roam", detail: "Ventaja grande — busca kills, roam mid tras push." };
+    if (level === 11) return { action: "Force 2v2", detail: "R2 + item — fuerza fight, gana mapa." };
+    if (level <= 14) return { action: "Split o dive", detail: "Empuja side lane o dive torres si hay ventaja de equipo." };
+    return { action: "End game", detail: "Full build y ventaja — cierra fights decisivos." };
+  }
+  if (cat === "strong") {
+    if (level <= 2) return { action: "Lvl 2 spike", detail: "Primera ventana — trade con stats superiores." };
+    if (level === 3) return { action: "Trade lvl 3", detail: "Kit completo — punish cooldowns enemigos." };
+    if (level <= 5) return { action: "Push prio", detail: "Push wave, gana la primera torre si obj seguro." };
+    if (level === 6) return { action: "All-in con R", detail: "Tu ventaja + ulti — fuerza all-in cuando tenga cooldowns fuera." };
+    if (level <= 9) return { action: "Push + roam", detail: "Prio wave, roam mid/jungla con tu ventaja." };
+    if (level === 10) return { action: "Item2 spike", detail: "Segundo item completo — busca fight antes que él llegue." };
+    if (level === 11) return { action: "R2 + obj", detail: "Fuerza fight alrededor de dragón/heraldo." };
+    if (level <= 14) return { action: "Side lane prio", detail: "Empuja side, rotate a obj cuando TP ready." };
+    return { action: "Teamfight", detail: "Late: posicionamiento — tu ventaja decide el fight." };
+  }
+  if (cat === "careful") {
+    if (level <= 2) return { action: "Last-hit safe", detail: "Sin trades — solo farm hasta ventaja." };
+    if (level === 3) return { action: "Respeta lvl 3", detail: "Su kit + lvl 3 puede punir — no te acerques." };
+    if (level <= 5) return { action: "Farm defensivo", detail: "No trades extensos. Espera jungla o su cooldown clave." };
+    if (level === 6) return { action: "Cuidado con R", detail: "Respeta su ult — juega bajo torre." };
+    if (level <= 10) return { action: "Espera jungla", detail: "Pide prio, no reveles cooldowns sin apoyo." };
+    if (level <= 14) return { action: "Agrupar safe", detail: "Sólo fight con equipo, no te aísles." };
+    return { action: "Backline + peel", detail: "Juega safe, deja que el equipo inicie." };
+  }
+  if (cat === "weak") {
+    if (level <= 5) return { action: "Freeze + farm", detail: "Freeze cerca de torre, pide gank." };
+    if (level === 6) return { action: "Evita su ult", detail: "No te comprometas — cede si amenaza." };
+    if (level <= 10) return { action: "Farm lado opuesto", detail: "Farm la wave más lejana del rival." };
+    if (level <= 14) return { action: "Agrupar obj", detail: "No solo — sólo fights con números favorables." };
+    return { action: "Peel / kitear", detail: "Tu rival domina — kit a distancia, juega reactivo." };
+  }
+  // hard-weak
+  if (level <= 5) return { action: "Freeze + ward", detail: "Ward profundo, cede wave, espera jungla — no mueras." };
+  if (level <= 10) return { action: "Cede prio", detail: "Muy atrás — no empujes, no arrisques, farm mínimo." };
+  return { action: "Sólo teamfight", detail: "Fuera de fights — espera el engage del equipo." };
+}
+
+function hasStrongUlt(championId: number): boolean {
+  // Champions whose ultimate is a definitive fight-winner in the 1v1
+  const strongUlts = new Set([
+    122, 157, 777, 39, 92, 114, 23, 266, 238, 91, 84, 105, 131, 55, 245, 121, 107, 28,
+    54, 555, 7, 4, 246, 64, 76, 60, 11, 19, 67, 96, 29, 30, 45, 222, 18,
+    // Mages with decisive ults
+    268, 101, 112, 134, 61, 69, 99, 161, 136, 142, 103,
+    // Tanks/engage
+    89, 12, 111, 57, 31, 516, 113,
+    // New additions
+    800, 893, 910, 517,
+  ]);
+  return strongUlts.has(championId);
+}
+
+function buildLevelPlan(yourId: number, enemyId: number, position?: string): LevelPlanEntry[] {
+  const your = getCurve(yourId);
+  const enemy = getCurve(enemyId);
+  const role = normalizePosition(position);
+  const yourUltWins = hasStrongUlt(yourId) && !hasStrongUlt(enemyId);
+  const enemyUltWins = hasStrongUlt(enemyId) && !hasStrongUlt(yourId);
+
+  const plan: LevelPlanEntry[] = [];
+  for (let level = 1; level <= 18; level++) {
+    const base = interpolateCurve(your, level) - interpolateCurve(enemy, level);
+    const yourSpike = your.spikes.includes(level);
+    const enemySpike = enemy.spikes.includes(level);
+    const bothSpike = yourSpike && enemySpike;
+    let advantage = base;
+    if (yourSpike) advantage += 1.3;
+    if (enemySpike) advantage -= 1.3;
+    const isUlt = level === 6 || level === 11 || level === 16;
+    if (isUlt) {
+      if (yourUltWins) advantage += 0.8;
+      if (enemyUltWins) advantage -= 0.8;
+    }
+    const cat = classifyAdvantage(advantage);
+    const { action, detail } = actionForLane(level, cat, role, isUlt, yourUltWins, bothSpike);
+
+    let spikeIcon: LevelPlanEntry["spikeIcon"] | undefined;
+    if (isUlt && yourUltWins) spikeIcon = "ult";
+    else if (yourSpike) spikeIcon = "sword";
+    else if (level === 16) spikeIcon = "crown";
+
+    plan.push({
+      level,
+      advantage: Math.round(advantage * 10) / 10,
+      category: cat,
+      action,
+      detail,
+      isSpike: yourSpike,
+      isEnemySpike: enemySpike && !yourSpike,
+      spikeIcon: yourSpike ? spikeIcon : (enemySpike ? "sword" : spikeIcon),
+    });
+  }
+  return plan;
 }
 
 interface MatchupPhase { range: string; advantage: "you" | "enemy" | "even"; tip: string; }
@@ -1497,22 +1862,25 @@ function App() {
               const wr = state.counters[laneOpponent.champion_id.toString()];
               const analysis = analyzeMatchup(myId, laneOpponent.champion_id, wr);
               return (
-                <div className="matchup-panel">
-                  <div className="matchup-header">
-                    <ChampionIcon championId={myId} size={24} />
-                    <span className="matchup-vs">vs</span>
-                    <ChampionIcon championId={laneOpponent.champion_id} size={24} />
-                    <span className="matchup-summary">{analysis.summary}</span>
+                <>
+                  <div className="matchup-panel">
+                    <div className="matchup-header">
+                      <ChampionIcon championId={myId} size={24} />
+                      <span className="matchup-vs">vs</span>
+                      <ChampionIcon championId={laneOpponent.champion_id} size={24} />
+                      <span className="matchup-summary">{analysis.summary}</span>
+                    </div>
+                    <div className="matchup-phases">
+                      {analysis.phases.map((p, i) => (
+                        <div key={i} className={`matchup-phase matchup-${p.advantage}`}>
+                          <span className="matchup-range">{p.range}</span>
+                          <span className="matchup-tip">{p.tip}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="matchup-phases">
-                    {analysis.phases.map((p, i) => (
-                      <div key={i} className={`matchup-phase matchup-${p.advantage}`}>
-                        <span className="matchup-range">{p.range}</span>
-                        <span className="matchup-tip">{p.tip}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                  <LevelPlanTimeline yourId={myId} enemyId={laneOpponent.champion_id} position={myPos ?? undefined} />
+                </>
               );
             })()}
           </div>
@@ -1967,6 +2335,119 @@ function ObjectiveTimers({ events, gameTime }: { events: GameEvent[]; gameTime: 
           {b.remaining < Infinity && ` ${formatGameTime(b.remaining)}`}
         </span>
       ))}
+    </div>
+  );
+}
+
+function SpikeIcon({ kind }: { kind: "sword" | "ult" | "crown" }) {
+  if (kind === "sword") {
+    return (
+      <svg className="lp-spike-icon" viewBox="0 0 24 24" width="10" height="10" aria-hidden>
+        <path d="M14.5 2.5 L21.5 9.5 L18 13 L11 6 Z M11 6 L3 14 L3 18 L7 18 L15 10 Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (kind === "ult") {
+    return (
+      <svg className="lp-spike-icon" viewBox="0 0 24 24" width="10" height="10" aria-hidden>
+        <path d="M12 2 L14.5 9 L22 9 L16 13.5 L18.3 21 L12 16.5 L5.7 21 L8 13.5 L2 9 L9.5 9 Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="lp-spike-icon" viewBox="0 0 24 24" width="10" height="10" aria-hidden>
+      <path d="M3 19 L5 7 L9.5 11 L12 4 L14.5 11 L19 7 L21 19 Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function LevelPlanTimeline({ yourId, enemyId, position }: { yourId: number; enemyId: number; position?: string }) {
+  const plan = useMemo(() => buildLevelPlan(yourId, enemyId, position), [yourId, enemyId, position]);
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  // Pre-select "most interesting" level for default view: biggest your-spike or strongest advantage
+  const defaultLevel = useMemo(() => {
+    const sorted = [...plan].sort((a, b) => {
+      const priA = (a.isSpike ? 10 : 0) + a.advantage;
+      const priB = (b.isSpike ? 10 : 0) + b.advantage;
+      return priB - priA;
+    });
+    return sorted[0]?.level ?? 6;
+  }, [plan]);
+
+  const focused = plan.find(p => p.level === (hovered ?? defaultLevel)) ?? plan[5];
+  const maxAbs = Math.max(1, ...plan.map(e => Math.abs(e.advantage)));
+
+  return (
+    <div className="level-plan">
+      <div className="level-plan-header">
+        <span className="level-plan-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden><path d="M12 2 L14.5 9 L22 9 L16 13.5 L18.3 21 L12 16.5 L5.7 21 L8 13.5 L2 9 L9.5 9 Z" fill="currentColor"/></svg>
+          Plan por niveles
+        </span>
+        <span className="level-plan-vs">
+          <ChampionIcon championId={yourId} size={18} />
+          <span className="lp-vs-label">vs</span>
+          <ChampionIcon championId={enemyId} size={18} />
+        </span>
+      </div>
+      <div className="level-plan-body">
+        <div className="level-plan-timeline">
+          {plan.map((entry, idx) => {
+            const prev = idx > 0 ? plan[idx - 1] : null;
+            const connectorCat = prev ? (entry.category === prev.category ? entry.category : entry.category) : entry.category;
+            const isFocus = (hovered ?? defaultLevel) === entry.level;
+            const advRatio = Math.min(1, Math.abs(entry.advantage) / maxAbs);
+            return (
+              <div
+                key={entry.level}
+                className={`lp-row lp-cat-${entry.category} ${isFocus ? "lp-focus" : ""} ${entry.isSpike ? "lp-spike" : ""} ${entry.isEnemySpike ? "lp-enemy-spike" : ""}`}
+                onMouseEnter={() => setHovered(entry.level)}
+                onMouseLeave={() => setHovered(null)}
+              >
+                {prev && <div className={`lp-connector lp-cat-${connectorCat}`} />}
+                <div className="lp-node-wrap">
+                  <div className={`lp-node ${entry.isSpike || entry.isEnemySpike ? "lp-node-hex" : ""}`}>
+                    <span className="lp-level-num">{entry.level}</span>
+                    {entry.spikeIcon && <span className="lp-node-icon"><SpikeIcon kind={entry.spikeIcon} /></span>}
+                  </div>
+                </div>
+                <span className="lp-action">{entry.action}</span>
+                <div className="lp-adv-track">
+                  <div className="lp-adv-center" />
+                  <div
+                    className="lp-adv-fill"
+                    style={{
+                      width: `${advRatio * 50}%`,
+                      left: entry.advantage >= 0 ? "50%" : `${50 - advRatio * 50}%`,
+                    }}
+                  />
+                </div>
+                <span className="lp-adv-num">
+                  {entry.advantage > 0 ? "+" : ""}
+                  {entry.advantage.toFixed(1)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="level-plan-detail">
+          <div className={`lp-detail-card lp-cat-${focused.category}`}>
+            <div className="lp-detail-head">
+              <span className="lp-detail-level">Nivel {focused.level}</span>
+              <span className={`lp-detail-adv lp-cat-${focused.category}`}>
+                {focused.advantage > 0 ? "+" : ""}
+                {focused.advantage.toFixed(1)}
+              </span>
+            </div>
+            <div className="lp-detail-action">{focused.action}</div>
+            <p className="lp-detail-text">{focused.detail}</p>
+            {focused.isEnemySpike && !focused.isSpike && (
+              <div className="lp-detail-warn">⚠ Ventana de spike enemigo</div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2982,6 +3463,37 @@ function OverlayApp() {
   const ovObjState = ld ? getObjectiveState(ld.events, ld.game_time) : null;
   const ovWinProb = ld && ovObjState ? estimateWinProbability(totalDiff, ld.game_time, ovObjState.allyDragons, ovObjState.enemyDragons, ovObjState.allyBaronActive, ovObjState.enemyBaronActive) : 0.5;
 
+  // Compact level plan (local player vs lane opponent)
+  let me: LiveGamePlayer | null = null;
+  if (state.summoner_name && game.allies.length > 0) {
+    const target = state.summoner_name.toLowerCase();
+    const targetShort = target.split("#")[0];
+    me = game.allies.find(a => {
+      const n = a.summoner_name.toLowerCase();
+      return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
+    }) ?? null;
+  }
+  // Fallback: if we can't identify the local player, don't block the plan — use the first ally.
+  // This keeps the feature visible even when the name matching fails (logs/debug).
+  if (!me && game.allies.length > 0) me = game.allies[0];
+
+  let myEnemy: LiveGamePlayer | null = null;
+  if (me) {
+    const matched = matchups.find(m => m.ally === me);
+    myEnemy = matched ? matched.enemy : (game.enemies[0] ?? null);
+  }
+
+  const myPlan = me && myEnemy && me.champion_id > 0 && myEnemy.champion_id > 0
+    ? buildLevelPlan(me.champion_id, myEnemy.champion_id, me.position)
+    : null;
+  const currentLevel = Math.max(1, me?.live?.level ?? 1);
+  const currentEntry = myPlan
+    ? myPlan[Math.max(0, Math.min(17, currentLevel - 1))]
+    : null;
+  const nextSpike = myPlan
+    ? myPlan.slice(currentLevel).find(e => (e.isSpike || e.isEnemySpike) && e.level - currentLevel <= 4)
+    : null;
+
   return (
     <div className="overlay">
       {/* Header: ally kills + win prob + gold diff + enemy kills */}
@@ -3025,6 +3537,38 @@ function OverlayApp() {
           </div>
         ))}
       </div>
+
+      {/* Compact level plan — current + next 4 levels */}
+      {myPlan && currentEntry && (
+        <div className="ov-plan">
+          <div className="ov-plan-header">
+            <span className="ov-plan-header-title">PLAN</span>
+            {nextSpike && (
+              <span className={`ov-plan-next ${nextSpike.isSpike ? "ov-plan-next-you" : "ov-plan-next-enemy"}`}>
+                ⚡ Lv {nextSpike.level}
+              </span>
+            )}
+          </div>
+          {myPlan.slice(currentLevel - 1, currentLevel - 1 + 5).map((entry) => {
+            const isNow = entry.level === currentLevel;
+            return (
+              <div
+                key={entry.level}
+                className={`ov-plan-row ov-plan-cat-${entry.category} ${isNow ? "ov-plan-row-now" : ""} ${entry.isSpike ? "ov-plan-row-spike" : ""} ${entry.isEnemySpike ? "ov-plan-row-espike" : ""}`}
+              >
+                <span className="ov-plan-lvl">{entry.level}</span>
+                <span className="ov-plan-action">{entry.action}</span>
+                {(entry.isSpike || entry.isEnemySpike) && (
+                  <span className="ov-plan-bolt">⚡</span>
+                )}
+                <span className="ov-plan-adv">
+                  {entry.advantage > 0 ? "+" : ""}{entry.advantage.toFixed(1)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Objective timers */}
       {ld && <ObjectiveTimers events={ld.events} gameTime={ld.game_time} />}
