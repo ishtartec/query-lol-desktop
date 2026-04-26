@@ -967,6 +967,21 @@ function hasStrongUlt(championId: number): boolean {
   return strongUlts.has(championId);
 }
 
+// Level plan only applies to standard Summoner's Rift queues
+// (ranked solo/dúo, ranked flex, normal draft/blind, quickplay).
+// Excluded: ARAM, Arena, TFT, URF, One for All, Nexus Blitz, tutorials, events.
+function isStandardSR(queueName: string): boolean {
+  const q = queueName.toLowerCase();
+  if (!q) return false;
+  if (q.includes("aram") || q.includes("howling") || q.includes("arena")
+      || q.includes("tft") || q.includes("urf") || q.includes("one for all")
+      || q.includes("nexus") || q.includes("tutorial") || q.includes("ultra rapid")) {
+    return false;
+  }
+  return q.includes("ranked") || q.includes("draft") || q.includes("normal")
+      || q.includes("quickplay") || q.includes("summoner");
+}
+
 function buildLevelPlan(yourId: number, enemyId: number, position?: string): LevelPlanEntry[] {
   const your = getCurve(yourId);
   const enemy = getCurve(enemyId);
@@ -1879,7 +1894,9 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  <LevelPlanTimeline yourId={myId} enemyId={laneOpponent.champion_id} position={myPos ?? undefined} />
+                  {state.game_mode === "classic" && (
+                    <LevelPlanTimeline yourId={myId} enemyId={laneOpponent.champion_id} position={myPos ?? undefined} />
+                  )}
                 </>
               );
             })()}
@@ -3483,7 +3500,7 @@ function OverlayApp() {
     myEnemy = matched ? matched.enemy : (game.enemies[0] ?? null);
   }
 
-  const myPlan = me && myEnemy && me.champion_id > 0 && myEnemy.champion_id > 0
+  const myPlan = me && myEnemy && me.champion_id > 0 && myEnemy.champion_id > 0 && isStandardSR(game.queue_name)
     ? buildLevelPlan(me.champion_id, myEnemy.champion_id, me.position)
     : null;
   const currentLevel = Math.max(1, me?.live?.level ?? 1);
