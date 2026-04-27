@@ -30,19 +30,19 @@ Closes the learning loop. The data is there — we just need richer synthesis.
 
 ## Champion Select
 
-- [ ] **Synergy/comp callouts** — explicit summary of team strengths and gaps: "Strong engage (Maokai + Yone), missing sustain, consider Karma or Lulu".
-- [ ] **Skill matchup for ALL lanes** — predict each lane's matchup outcome, not just yours, with simple verdicts (favored / even / unfavored).
-- [ ] **Trinket recommendation** — yellow vs sweeping vs blue ward based on role + matchup + typical swap minute.
-- [ ] **Build alternatives by style** — show "most popular", "highest WR", and "off-meta strong" side-by-side instead of a single recommended build.
-- [ ] **Ward placement preview** — first-3-min ward placements per role and against the specific jungler (Mobalytics-style).
+- [x] **Synergy/comp callouts** — strengths and gaps from trait analysis (engage, frontline, peel, scaling, burst). Color-coded list under the damage comp bar.
+- [x] **Skill matchup for ALL lanes** — predicts each ally-vs-enemy lane outcome from power curves with FAVORED/EVEN/UNFAVORED verdicts and early/late deltas.
+- [x] **Trinket recommendation** — yellow / sweeping / blue based on role + invisible threat detection + ranged poke matchup heuristics.
+- [x] **Build alternatives by style** — runes/spells/items pickers now label each option with "Popular" or "Best WR" by comparing pick_rate and win_rate across alternatives.
+- [x] **Ward placement preview** — text-based timeline tips per role and enemy jungler archetype (ganker/farmer/invader). Map-based visual deferred — diminishing returns vs effort.
 
 ## Lobby / Profile
 
-- [ ] **Daily / weekly summary** — winrate of the day, net LP, MVP count, KDA peaks. Shown when the app opens. Engagement + motivation.
-- [ ] **Champion-specific improvement** — for top 3 champions, compare your CS/min, vision/min, KP against the Gold average for *that specific champion* (not aggregate role).
-- [ ] **Tilt / streak gate** — after 3 ranked losses in <2h, soft prompt with personal data: "your historical winrate drops from 48% to 31% on games after a 3-loss streak — consider a break".
-- [ ] **Game time tracker** — "you've played 4h today". Optional ceiling notification.
-- [ ] **Ban frequency tracker** — "you should ban X based on your loss patterns".
+- [x] **Daily summary** — games played, W/L, winrate, streak, LP net, best KDA of the day, total time played. Shown at the top of lobby.
+- [x] **Champion-specific improvement** — for top 3 most-played champions (≥3 games), compares KDA/CS-min/Gold-min/WR against the user's overall baseline with color-coded deltas.
+- [x] **Tilt gate** — after 3+ ranked losses in <2h, soft banner with personal historic post-streak winrate.
+- [x] **Game time tracker** — total time played today shown in daily summary, colored yellow above 3h, red above 5h with "consider a break" hint.
+- [?] **Ban frequency tracker** — "you should ban X based on your loss patterns". **Deferred:** requires backend changes (match_history doesn't currently store enemy champion IDs; we'd need to fetch participants per past match — 5-50 extra HTTP calls on initial load). Could revisit if local data proves insufficient.
 
 ## Cross-feature / Quality of life
 
@@ -70,6 +70,9 @@ These are my opinion on the highest leverage next steps:
 
 ## Done (recent)
 
+- [x] **Lobby + Profile suite** — daily summary, tilt gate, champion-specific improvement (vs personal baseline), game time threshold warnings
+- [x] **Champ select polish** — comp callouts (engage / frontline / peel / scaling / burst), all-lanes matchup predictions, trinket recommendation, build alternatives style labels (Popular / Best WR), ward placement tips per role + jungler archetype
+- [x] **English localization** — translated all level plan strings (champ select + overlay) and TTS messages from Spanish to English for app-wide consistency
 - [x] **Live coaching engine** — full live-game suite shipped (MIA tracker, death timer, recall optimizer, wave advisor, jungle tracker, vision targets) with TTS audio cues on macOS/Windows
 - [x] **Level-by-level plan** in champ select (timeline + actions + spike highlights, 18 levels, 172 champ coverage)
 - [x] **Compact 5-level plan** in overlay (current + next 4)

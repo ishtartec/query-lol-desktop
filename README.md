@@ -28,7 +28,12 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 ### Champion Select — Drafting Intelligence
 - **Pick recommendations** — scrollable carousel of suggested champions scored 0-100, factoring in enemy counters, ally synergies, and meta strength
 - **Ban suggestions** — top ban candidates for your position with win rate and pick rate, one-click ban
-- **Matchup win rates** — per-enemy win rate badges (green = favorable, red = unfavorable)
+- **Matchup win rates** — per-enemy win rate badges (green = favorable, red = unfavorable). Falls back to a curve-based estimate (italic, dashed border, `~XX%`) when OP.GG has no per-matchup data
+- **Team composition callouts** — analyzes your team's traits (engage / frontline / peel / scaling / burst) and surfaces strengths and gaps as color-coded callouts
+- **All-lanes matchup prediction** — per-position FAVORED/EVEN/UNFAVORED verdict for every ally-vs-enemy pairing with early/late game deltas
+- **Trinket recommendation** — yellow / sweeping / blue ward suggested by your role + invisible threats + ranged poke detection
+- **Build style labels** — runes/spells/items alternative tabs labeled `Popular` (highest pick rate) or `Best WR` (highest win rate) so you can pick by style
+- **Ward placement tips** — timeline of suggested ward spots (0:30, 3:00, 5:30…) for your role, adjusted by the enemy jungler's archetype (ganker / farmer / invader)
 - **Matchup analysis by level** — phase-by-phase power comparison (early/mid/late) with actionable tips like "avoid trades level 1-3" or "power spike at level 6"
 - **Level-by-level plan** — 18-level timeline vs your lane opponent with a contextual action per level (e.g. "Lvl 3 trade", "All-in con R", "Farm lado opuesto", "R2 + obj"). Calculates per-level advantage from power curves + spike bonuses + ult-strength comparison, with hexagonal nodes pulsing on spike levels and color-coded categories (dominant / strong / even / careful / weak). Full coverage for all 172 champions. Hover any level to see a coach-style tip in the detail card
 - **Damage composition** — AD/AP split bar for both teams, with warnings for heavy one-type compositions
@@ -40,6 +45,9 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **ARAM bench** — shows available bench champions sorted by ARAM win rate, click to swap
 
 ### Lobby
+- **Daily summary** — games played today, W/L, winrate, current streak, LP net, best KDA of the day, and total time played. Time turns yellow >3h and red >5h with a "consider a break" hint
+- **Tilt gate** — after 3+ ranked losses in under 2 hours, a soft banner shows your personal historic winrate after a 3-loss streak (e.g. "drops from 48% to 31%") to encourage a break
+- **Champion-specific improvement** — for your top 3 most-played champions, compares KDA / CS-min / Gold-min / Winrate against your overall baseline with color-coded deltas (≥+5% green, ≤-5% red)
 - **Improvement priorities** — top 3 areas to improve based on your ranked history vs elo benchmarks, with visual bars and actionable advice
 - **Match history** — recent games with champion icon, result, KDA, duration, and relative timestamps
 - **Mode filters** — filter by All, Ranked, Normal, or ARAM
