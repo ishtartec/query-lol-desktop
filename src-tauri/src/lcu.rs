@@ -1481,6 +1481,7 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
             let deaths = scores.get("deaths").and_then(|v| v.as_i64()).unwrap_or(0);
             let assists = scores.get("assists").and_then(|v| v.as_i64()).unwrap_or(0);
             let cs = scores.get("creepScore").and_then(|v| v.as_i64()).unwrap_or(0);
+            let ward_score = scores.get("wardScore").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
             let level = p.get("level").and_then(|v| v.as_i64()).unwrap_or(1);
             let current_gold = p.get("currentGold").and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -1526,6 +1527,7 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
                 kills, deaths, assists, cs, level, current_gold, total_gold, items,
                 spell1_id: s1,
                 spell2_id: s2,
+                ward_score,
             });
             player_teams.insert(name.clone(), team);
             if !resolved_pos.is_empty() {

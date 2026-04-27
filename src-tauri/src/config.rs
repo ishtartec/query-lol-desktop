@@ -10,6 +10,8 @@ pub struct UserConfig {
     #[serde(default)]
     pub auto_accept: bool,
     #[serde(default)]
+    pub tts_enabled: bool,
+    #[serde(default)]
     pub lp_history: Vec<LpEntry>,
 }
 
@@ -28,6 +30,7 @@ impl Default for UserConfig {
             auto_apply: true,
             auto_lock: false,
             auto_accept: false,
+            tts_enabled: false,
             lp_history: vec![],
         }
     }

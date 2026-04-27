@@ -444,6 +444,12 @@
 }
 .matchup-good { color: var(--accent-green); background: rgba(31, 173, 79, 0.12); }
 .matchup-bad { color: var(--accent-red); background: rgba(232, 64, 87, 0.12); }
+.matchup-estimated {
+  opacity: 0.7;
+  font-style: italic;
+  border: 1px dashed currentColor;
+  cursor: help;
+}
 
 .champ-icon { border-radius: 5px; display: block; border: 1px solid var(--border); }
 .champ-icon-empty {
@@ -1957,6 +1963,92 @@
   .level-plan-body { grid-template-columns: 1fr; }
   .level-plan-detail { position: relative; }
 }
+
+/* ==== Overlay: missing enemies tracker ==== */
+.ov-missing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 4px;
+  margin: 2px 4px 0;
+}
+.ov-missing-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: rgba(232, 64, 87, 0.18);
+  border: 1px solid rgba(232, 64, 87, 0.4);
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #ff6b7d;
+  letter-spacing: 0.4px;
+  animation: ovMiaPulse 1.2s ease-in-out infinite;
+}
+@keyframes ovMiaPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(232, 64, 87, 0); }
+  50%      { box-shadow: 0 0 6px rgba(232, 64, 87, 0.5); }
+}
+.ov-missing-icon { font-size: 11px; }
+.ov-missing-pos { color: var(--accent-gold); }
+.ov-missing-label { font-size: 9px; opacity: 0.85; }
+.ov-missing-dur {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  padding-left: 4px;
+  border-left: 1px solid rgba(232, 64, 87, 0.3);
+}
+.ov-dead-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: rgba(74, 85, 104, 0.25);
+  border: 1px solid rgba(74, 85, 104, 0.5);
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #b9c0cb;
+  letter-spacing: 0.4px;
+}
+.ov-dead-tag .ov-missing-pos { color: var(--accent-gold); }
+
+/* ==== Overlay: tactical chips (recall / wave / jungle / vision) ==== */
+.ov-tactical {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 4px;
+  margin: 2px 4px 0;
+}
+.ov-tac-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(200, 155, 60, 0.18);
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-tac-recall { border-color: rgba(200, 155, 60, 0.4); color: var(--accent-gold); }
+.ov-tac-recall.ov-tac-ready {
+  background: rgba(200, 155, 60, 0.18);
+  animation: ovMiaPulse 1.6s ease-in-out infinite;
+}
+.ov-tac-good { border-color: rgba(42, 222, 106, 0.4); color: #4be38a; }
+.ov-tac-bad { border-color: rgba(232, 64, 87, 0.4); color: #ff6b7d; }
+.ov-tac-neutral { border-color: rgba(74, 85, 104, 0.6); color: #b9c0cb; }
+.ov-tac-jgl { border-color: rgba(3, 151, 171, 0.4); color: #56c8d9; }
+.ov-tac-vision { border-color: rgba(232, 64, 87, 0.4); color: #ff6b7d; }
 
 /* ==== Overlay: compact level plan (multi-row) ==== */
 .ov-plan {

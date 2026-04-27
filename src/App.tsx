@@ -129,6 +129,7 @@ interface LivePlayerStats {
   items: number[];
   spell1_id: number;
   spell2_id: number;
+  ward_score: number;
 }
 
 interface LiveGameData {
@@ -274,6 +275,7 @@ interface AppState {
   auto_apply: boolean;
   auto_lock: boolean;
   auto_accept: boolean;
+  tts_enabled: boolean;
   region: string;
 }
 
@@ -332,6 +334,23 @@ const POSITION_ICON_KEYS: Record<string, string> = {
 };
 
 const POS_ICON_BASE = "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/";
+
+// Canonical position order: top → jungle → middle → bottom → utility
+const POSITION_ORDER: Record<string, number> = {
+  top: 0, TOP: 0,
+  jungle: 1, JUNGLE: 1, jng: 1, JNG: 1,
+  middle: 2, MIDDLE: 2, mid: 2, MID: 2,
+  bottom: 3, BOTTOM: 3, adc: 3, ADC: 3, bot: 3, BOT: 3,
+  utility: 4, UTILITY: 4, support: 4, SUPPORT: 4, sup: 4, SUP: 4,
+};
+
+function sortByPosition<T extends { position: string }>(players: T[]): T[] {
+  return [...players].sort((a, b) => {
+    const ra = POSITION_ORDER[a.position] ?? POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
+    const rb = POSITION_ORDER[b.position] ?? POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
+    return ra - rb;
+  });
+}
 
 // --- Champion traits for adaptive item recommendations ---
 
@@ -748,6 +767,19 @@ function getCurve(id: number): PowerCurve {
   return POWER_CURVES[id] || DEFAULT_CURVE;
 }
 
+// Rough estimate when OP.GG has no counter data for a matchup.
+// Maps weighted curve deltas into a [38%, 62%] WR range.
+function estimateWinRate(myId: number, enemyId: number): number {
+  const my = getCurve(myId);
+  const en = getCurve(enemyId);
+  const earlyDiff = my.early - en.early;
+  const midDiff = my.mid - en.mid;
+  const lateDiff = my.late - en.late;
+  const avg = (earlyDiff + midDiff + lateDiff * 1.1) / 3.1;
+  const wr = 0.5 + 0.04 * avg;
+  return Math.max(0.38, Math.min(0.62, wr));
+}
+
 // --- Level-by-level plan ---
 
 // Smooth curve interpolation using 3 anchor points: lv2=early, lv8=mid, lv15=late
@@ -967,19 +999,29 @@ function hasStrongUlt(championId: number): boolean {
   return strongUlts.has(championId);
 }
 
-// Level plan only applies to standard Summoner's Rift queues
-// (ranked solo/dúo, ranked flex, normal draft/blind, quickplay).
-// Excluded: ARAM, Arena, TFT, URF, One for All, Nexus Blitz, tutorials, events.
-function isStandardSR(queueName: string): boolean {
+// Level plan doesn't apply to ARAM (no real lane matchup).
+// Other rotating modes (Arena, TFT, URF) don't surface this overlay anyway.
+function isAramQueue(queueName: string): boolean {
   const q = queueName.toLowerCase();
-  if (!q) return false;
-  if (q.includes("aram") || q.includes("howling") || q.includes("arena")
-      || q.includes("tft") || q.includes("urf") || q.includes("one for all")
-      || q.includes("nexus") || q.includes("tutorial") || q.includes("ultra rapid")) {
-    return false;
+  return q.includes("aram") || q.includes("howling abyss") || q.includes("all random");
+}
+
+// Predict champion respawn delay from the wiki formula:
+// BRW (base respawn wait) by level × time factor that ramps after minute 15.
+function predictRespawn(level: number, gameTime: number): number {
+  const brw = [10, 10, 10, 12, 12, 14, 16, 20, 25, 28, 32.5, 35, 37.5, 40, 42.5, 45, 47.5, 50, 52.5];
+  const idx = Math.max(1, Math.min(18, level));
+  const base = brw[idx - 1];
+  let factor = 0;
+  if (gameTime > 15 * 60) {
+    if (gameTime <= 25 * 60) {
+      factor = ((gameTime - 15 * 60) / 30) * 0.00425;
+    } else {
+      factor = 0.1425 + ((gameTime - 25 * 60) / 30) * 0.003;
+    }
+    factor = Math.min(0.5, factor);
   }
-  return q.includes("ranked") || q.includes("draft") || q.includes("normal")
-      || q.includes("quickplay") || q.includes("summoner");
+  return base * (1 + factor);
 }
 
 function buildLevelPlan(yourId: number, enemyId: number, position?: string): LevelPlanEntry[] {
@@ -1339,7 +1381,7 @@ function App() {
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
-    auto_apply: true, auto_lock: false, auto_accept: false, region: "euw",
+    auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, region: "euw",
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1504,6 +1546,12 @@ function App() {
                 onChange={() => invoke("set_auto_accept", { enabled: !state.auto_accept })} />
               <span className="toggle-slider" />
               Auto-accept
+            </label>
+            <label className="toggle-label" title="Voice alerts during the game (Flash up, recall ready, enemy missing)">
+              <input type="checkbox" checked={state.tts_enabled}
+                onChange={() => invoke("set_tts_enabled", { enabled: !state.tts_enabled })} />
+              <span className="toggle-slider" />
+              Voice cues
             </label>
             <select className="select select-sm overlay-pos-select"
               defaultValue="top-left"
@@ -1894,7 +1942,7 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  {state.game_mode === "classic" && (
+                  {state.game_mode !== "aram" && (
                     <LevelPlanTimeline yourId={myId} enemyId={laneOpponent.champion_id} position={myPos ?? undefined} />
                   )}
                 </>
@@ -1908,7 +1956,11 @@ function App() {
               <div className="cs-team">
                 <h4 className="cs-team-label cs-team-enemy">Enemy Team</h4>
                 {state.draft.enemies.length > 0 ? state.draft.enemies.map((p, i) => {
-                  const wr = hasChampion && p.champion_id > 0 ? state.counters[p.champion_id.toString()] : undefined;
+                  const realWr = hasChampion && p.champion_id > 0 ? state.counters[p.champion_id.toString()] : undefined;
+                  const wr = realWr;
+                  const estimated = realWr === undefined && hasChampion && p.champion_id > 0
+                    ? estimateWinRate(state.champion_id!, p.champion_id)
+                    : undefined;
                   return (
                     <div key={i} className="cs-player">
                       <ChampionIcon championId={p.champion_id} size={36} />
@@ -1919,6 +1971,14 @@ function App() {
                       {wr !== undefined && (
                         <span className={`matchup-badge ${wr > 0.5 ? "matchup-good" : "matchup-bad"}`}>
                           {(wr * 100).toFixed(1)}%
+                        </span>
+                      )}
+                      {wr === undefined && estimated !== undefined && (
+                        <span
+                          className={`matchup-badge matchup-estimated ${estimated > 0.5 ? "matchup-good" : "matchup-bad"}`}
+                          title="Estimación basada en curvas de poder — OP.GG no tiene datos suficientes para este matchup"
+                        >
+                          ~{(estimated * 100).toFixed(0)}%
                         </span>
                       )}
                     </div>
@@ -2713,6 +2773,38 @@ function LaneMatchups({ allies, enemies }: { allies: LiveGamePlayer[]; enemies: 
   );
 }
 
+// Alert dispatch with cooldown-based dedup and optional TTS audio cue.
+// Same `key` won't re-fire visually or audibly within `cooldownMs` (default 30s).
+interface AlertOptions {
+  type?: "info" | "warning";
+  cooldownMs?: number;
+  speak?: string; // text to read aloud (defaults to `text`)
+  noSpeak?: boolean; // visual only
+}
+function useAlertManager(
+  setAlerts: React.Dispatch<React.SetStateAction<{ id: string; text: string; type: "info" | "warning"; time: number }[]>>,
+) {
+  const cooldowns = useRef<Map<string, number>>(new Map());
+  return useMemo(() => ({
+    push(key: string, text: string, gameTime: number, opts: AlertOptions = {}) {
+      const cdMs = opts.cooldownMs ?? 30_000;
+      const now = Date.now();
+      const last = cooldowns.current.get(key) ?? 0;
+      if (now - last < cdMs) return;
+      cooldowns.current.set(key, now);
+      setAlerts(prev => [{
+        id: `${key}_${gameTime}`,
+        text,
+        type: opts.type ?? "info",
+        time: gameTime,
+      }, ...prev].slice(0, 5));
+      if (!opts.noSpeak) {
+        invoke("speak", { text: opts.speak ?? text }).catch(() => {});
+      }
+    },
+  }), [setAlerts]);
+}
+
 function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlayer?: (puuid: string) => void }) {
   const ld = game.live_data;
   // Calculate total gold from players (unspent + items) instead of backend values
@@ -2736,6 +2828,7 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
   // Power spike alerts
   const prevEnemyItems = useRef<Map<string, Set<number>>>(new Map());
   const [alerts, setAlerts] = useState<{ id: string; text: string; type: "info" | "warning"; time: number }[]>([]);
+  const alertManager = useAlertManager(setAlerts);
 
   // Find local player
   const localPlayer = game.allies.find(p => p.live != null) ?? game.allies[0];
@@ -2764,7 +2857,6 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
   // Detect enemy item completions
   useEffect(() => {
     if (!ld) return;
-    const newAlerts: typeof alerts = [];
     for (const enemy of game.enemies) {
       if (!enemy.live) continue;
       const key = enemy.summoner_name;
@@ -2774,23 +2866,25 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
         if (!prev.has(id)) {
           const item = getItemData(id);
           if (item && item.gold >= 2500) {
-            newAlerts.push({
-              id: `${key}_${id}_${gameTime}`,
-              text: `${enemy.summoner_name} completed ${item.name}`,
-              type: "warning",
-              time: gameTime,
-            });
+            const champName = championCache?.[enemy.champion_id.toString()]?.name || enemy.summoner_name;
+            alertManager.push(
+              `item_${key}_${id}`,
+              `${champName} completed ${item.name}`,
+              gameTime,
+              {
+                type: "warning",
+                cooldownMs: 60_000,
+                speak: `${champName} completed ${item.name}`,
+              },
+            );
           }
         }
       }
       prevEnemyItems.current.set(key, current);
     }
-    if (newAlerts.length > 0) {
-      setAlerts(prev => [...newAlerts, ...prev].slice(0, 5));
-    }
     // Auto-dismiss alerts older than 15 seconds
     setAlerts(prev => prev.filter(a => gameTime - a.time < 15));
-  }, [gameTime, game.enemies, ld]);
+  }, [gameTime, game.enemies, ld, alertManager]);
 
   return (
     <div className="lg-layout">
@@ -2839,7 +2933,7 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
         <div className="lg-team">
           <h4 className="draft-team-label" style={{ color: "var(--accent-blue)" }}>Your Team</h4>
           <div className="lg-players">
-            {game.allies.map((p, i) => (
+            {sortByPosition(game.allies).map((p, i) => (
               <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} />
             ))}
           </div>
@@ -2848,7 +2942,7 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
         <div className="lg-team">
           <h4 className="draft-team-label" style={{ color: "var(--accent-red)" }}>Enemy Team</h4>
           <div className="lg-players">
-            {game.enemies.map((p, i) => (
+            {sortByPosition(game.enemies).map((p, i) => (
               <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} isEnemy spellCd={spellCd} />
             ))}
           </div>
@@ -3439,6 +3533,235 @@ function OverlayApp() {
     return () => { clearInterval(poll); unlisten.then(fn => fn()); };
   }, []);
 
+  // --- All hooks below this line MUST be called unconditionally on every render.
+  //     Effects guard internally on missing state instead of using an early return. ---
+
+  // Roam / missing tracker
+  const enemyTrack = useRef<Map<string, {
+    csHistory: { t: number; cs: number }[];
+    lastDeath: number;
+    prevDeaths: number;
+    missingSince: number | null;
+  }>>(new Map());
+  const missingTtsCd = useRef<Map<string, number>>(new Map());
+  const [missing, setMissing] = useState<Array<{ key: string; pos: string; champId: number; durationSec: number }>>([]);
+
+  useEffect(() => {
+    const game = state?.live_game;
+    const ld = game?.live_data;
+    if (!game || !ld || isAramQueue(game.queue_name)) {
+      setMissing([]);
+      return;
+    }
+    const gameTime = ld.game_time;
+    if (gameTime < 90) return;
+    const updates: Array<{ key: string; pos: string; champId: number; durationSec: number }> = [];
+
+    for (const enemy of game.enemies) {
+      if (!enemy.live || !enemy.position) continue;
+      const posLower = enemy.position.toLowerCase();
+      const trackable = posLower.startsWith("top") || posLower.startsWith("mid")
+        || posLower.startsWith("bot") || posLower === "adc" || posLower === "middle";
+      if (!trackable) continue;
+
+      const key = enemy.summoner_name || `${posLower}_${enemy.champion_id}`;
+      let track = enemyTrack.current.get(key);
+      if (!track) {
+        track = { csHistory: [], lastDeath: -100, prevDeaths: enemy.live.deaths, missingSince: null };
+        enemyTrack.current.set(key, track);
+      }
+      if (enemy.live.deaths > track.prevDeaths) track.lastDeath = gameTime;
+      track.prevDeaths = enemy.live.deaths;
+
+      track.csHistory.push({ t: gameTime, cs: enemy.live.cs });
+      track.csHistory = track.csHistory.filter(s => s.t > gameTime - 60);
+
+      const past = track.csHistory.find(s => s.t <= gameTime - 25);
+      if (!past) continue;
+
+      const csDelta = enemy.live.cs - past.cs;
+      const recentlyDead = gameTime - track.lastDeath < 25;
+      const isMissing = csDelta < 1 && !recentlyDead;
+      const posLabel = posLower.startsWith("top") ? "TOP"
+        : (posLower.startsWith("mid") || posLower === "middle") ? "MID"
+        : "BOT";
+
+      if (isMissing) {
+        if (track.missingSince === null) track.missingSince = gameTime - 25;
+        const duration = Math.round(gameTime - track.missingSince);
+        if (duration >= 8) {
+          updates.push({ key, pos: posLabel, champId: enemy.champion_id, durationSec: duration });
+          const lastTts = missingTtsCd.current.get(key) ?? -100;
+          if (gameTime - lastTts > 45) {
+            missingTtsCd.current.set(key, gameTime);
+            const champName = championCache?.[enemy.champion_id.toString()]?.name;
+            const text = champName ? `${champName} missing` : `${posLabel} missing`;
+            invoke("speak", { text }).catch(() => {});
+          }
+        }
+      } else {
+        track.missingSince = null;
+      }
+    }
+    setMissing(updates);
+  }, [state]);
+
+  // Death timer prediction
+  const deathTrack = useRef<Map<string, { prevDeaths: number; deathTime: number; level: number; deathLevel: number }>>(new Map());
+  const [deadEnemies, setDeadEnemies] = useState<Array<{ key: string; pos: string; champId: number; remaining: number }>>([]);
+
+  useEffect(() => {
+    const game = state?.live_game;
+    const ld = game?.live_data;
+    if (!game || !ld || isAramQueue(game.queue_name)) {
+      setDeadEnemies([]);
+      return;
+    }
+    const gameTime = ld.game_time;
+    const dead: Array<{ key: string; pos: string; champId: number; remaining: number }> = [];
+
+    for (const enemy of game.enemies) {
+      if (!enemy.live) continue;
+      const key = enemy.summoner_name || `${enemy.position}_${enemy.champion_id}`;
+      let track = deathTrack.current.get(key);
+      if (!track) {
+        track = { prevDeaths: enemy.live.deaths, deathTime: -1000, level: enemy.live.level, deathLevel: 1 };
+        deathTrack.current.set(key, track);
+      }
+      if (enemy.live.deaths > track.prevDeaths) {
+        track.deathTime = gameTime;
+        track.deathLevel = enemy.live.level;
+      }
+      track.prevDeaths = enemy.live.deaths;
+      track.level = enemy.live.level;
+
+      const respawn = predictRespawn(track.deathLevel, track.deathTime);
+      const remaining = (track.deathTime + respawn) - gameTime;
+      if (remaining > 0 && remaining < respawn + 1) {
+        const posLower = (enemy.position || "").toLowerCase();
+        const posLabel = posLower.startsWith("top") ? "TOP"
+          : (posLower.startsWith("mid") || posLower === "middle") ? "MID"
+          : posLower.startsWith("jun") ? "JNG"
+          : (posLower.startsWith("uti") || posLower.startsWith("sup")) ? "SUP"
+          : "BOT";
+        dead.push({ key, pos: posLabel, champId: enemy.champion_id, remaining: Math.ceil(remaining) });
+      }
+    }
+    setDeadEnemies(dead);
+  }, [state]);
+
+  // Recall TTS & jungler tracking refs
+  const recallTtsCd = useRef<number>(-100);
+  const jglLastSeenRef = useRef<{ time: number; reason: string; kdaSum: number }>({ time: 0, reason: "spawn", kdaSum: 0 });
+
+  useEffect(() => {
+    const game = state?.live_game;
+    const ld = game?.live_data;
+    if (!game || !ld) return;
+    const enemyJgl = game.enemies.find(e => (e.position || "").toLowerCase().startsWith("jun"));
+    if (!enemyJgl?.live) return;
+    const k = enemyJgl.live.kills + enemyJgl.live.assists + enemyJgl.live.deaths;
+    if (k > jglLastSeenRef.current.kdaSum) {
+      jglLastSeenRef.current = {
+        time: ld.game_time,
+        reason: enemyJgl.live.deaths > 0 ? "muerto" : "kill/assist",
+        kdaSum: k,
+      };
+    } else {
+      jglLastSeenRef.current.kdaSum = k;
+    }
+  }, [state]);
+
+  // Recall TTS — fire once per session when an item becomes affordable.
+  useEffect(() => {
+    const game = state?.live_game;
+    const ld = game?.live_data;
+    if (!game || !ld || !state?.summoner_name) return;
+    const target = state.summoner_name.toLowerCase();
+    const targetShort = target.split("#")[0];
+    const me = game.allies.find(a => {
+      const n = a.summoner_name.toLowerCase();
+      return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
+    });
+    if (!me?.live || !game.recommended_build) return;
+    const owned = new Set(me.live.items);
+    const targets = [...game.recommended_build.boots.slice(0, 1), ...game.recommended_build.core_items].filter(id => !owned.has(id));
+    for (const id of targets) {
+      const item = getItemData(id);
+      if (item && item.gold > 0 && item.gold < 4500) {
+        const need = item.gold - me.live.current_gold;
+        if (need <= 0) {
+          const gameTime = ld.game_time;
+          if (gameTime - recallTtsCd.current >= 90) {
+            recallTtsCd.current = gameTime;
+            invoke("speak", { text: `Recall ready, ${item.name}` }).catch(() => {});
+          }
+        }
+        break;
+      }
+    }
+  }, [state]);
+
+  // Jungle TTS — speak on guess transitions and after long absence
+  const jglPrevGuess = useRef<string>("");
+  const jglUnknownTtsCd = useRef<number>(-100);
+  useEffect(() => {
+    const game = state?.live_game;
+    const ld = game?.live_data;
+    if (!game || !ld || isAramQueue(game.queue_name)) return;
+    const enemyJgl = game.enemies.find(e => (e.position || "").toLowerCase().startsWith("jun"));
+    if (!enemyJgl) return;
+    const gameTime = ld.game_time;
+    const lastSeen = jglLastSeenRef.current.time || 0;
+    const elapsed = Math.max(0, gameTime - lastSeen);
+
+    let guess = "farm";
+    if (gameTime < 3 * 60) guess = "first-clear";
+    else if (elapsed >= 60) guess = "unknown-long";
+    else if (elapsed >= 30) guess = "moving";
+    else guess = "farm";
+
+    // Transition: farm/first-clear → moving (likely setup gank or obj)
+    if (jglPrevGuess.current === "farm" && guess === "moving") {
+      invoke("speak", { text: "Watch for ganks, jungla rotando" }).catch(() => {});
+    }
+    // Long absence — say once per 90s
+    if (guess === "unknown-long" && gameTime - jglUnknownTtsCd.current > 90) {
+      jglUnknownTtsCd.current = gameTime;
+      invoke("speak", { text: "Enemy jungla unknown, place wards" }).catch(() => {});
+    }
+    jglPrevGuess.current = guess;
+  }, [state]);
+
+  // Vision target TTS — periodic reminder when far below benchmark
+  const visionTtsCd = useRef<number>(-100);
+  useEffect(() => {
+    const game = state?.live_game;
+    const ld = game?.live_data;
+    if (!game || !ld || !state?.summoner_name || isAramQueue(game.queue_name)) return;
+    const gameTime = ld.game_time;
+    if (gameTime < 6 * 60) return;
+    const target = state.summoner_name.toLowerCase();
+    const targetShort = target.split("#")[0];
+    const me = game.allies.find(a => {
+      const n = a.summoner_name.toLowerCase();
+      return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
+    });
+    if (!me?.live) return;
+    const minutes = gameTime / 60;
+    const posLower = (me.position || "").toLowerCase();
+    const benchmark = (posLower.startsWith("uti") || posLower.startsWith("sup")) ? 1.5
+      : posLower.startsWith("jun") ? 0.9
+      : 0.6;
+    const targetVision = minutes * benchmark;
+    if (targetVision < 5) return;
+    const ratio = me.live.ward_score / targetVision;
+    if (ratio < 0.5 && gameTime - visionTtsCd.current > 180) {
+      visionTtsCd.current = gameTime;
+      invoke("speak", { text: "Place wards" }).catch(() => {});
+    }
+  }, [state]);
+
   if (!state || !state.live_game) return <div className="overlay"><span style={{ color: "var(--text-muted)", fontSize: 11 }}>Waiting for game data...</span></div>;
   const game = state.live_game;
   const ld = game.live_data;
@@ -3500,7 +3823,7 @@ function OverlayApp() {
     myEnemy = matched ? matched.enemy : (game.enemies[0] ?? null);
   }
 
-  const myPlan = me && myEnemy && me.champion_id > 0 && myEnemy.champion_id > 0 && isStandardSR(game.queue_name)
+  const myPlan = me && myEnemy && me.champion_id > 0 && myEnemy.champion_id > 0 && !isAramQueue(game.queue_name)
     ? buildLevelPlan(me.champion_id, myEnemy.champion_id, me.position)
     : null;
   const currentLevel = Math.max(1, me?.live?.level ?? 1);
@@ -3510,6 +3833,70 @@ function OverlayApp() {
   const nextSpike = myPlan
     ? myPlan.slice(currentLevel).find(e => (e.isSpike || e.isEnemySpike) && e.level - currentLevel <= 4)
     : null;
+
+  // --- Recall optimizer (computed values, no hooks) ---
+  const recall: { item: string; gold: number; affordable: boolean } | null = (() => {
+    if (!me?.live || !game.recommended_build) return null;
+    const owned = new Set(me.live.items);
+    const targets = [...game.recommended_build.boots.slice(0, 1), ...game.recommended_build.core_items].filter(id => !owned.has(id));
+    for (const id of targets) {
+      const item = getItemData(id);
+      if (item && item.gold > 0 && item.gold < 4500) {
+        const need = item.gold - me.live.current_gold;
+        return { item: item.name, gold: Math.ceil(need), affordable: need <= 0 };
+      }
+    }
+    return null;
+  })();
+
+  // Recall TTS effect was moved above the early return (see top of OverlayApp).
+
+  // --- Wave state advisor ---
+  const waveAdvice: { text: string; tone: "good" | "bad" | "neutral" } | null = (() => {
+    if (!ld || isAramQueue(game.queue_name)) return null;
+    const gameTime = ld.game_time;
+    if (gameTime < 120 || gameTime > 14 * 60) return null; // lane phase only
+    if (!me?.live || !myEnemy?.live) return null;
+    const csDiff = me.live.cs - myEnemy.live.cs;
+    if (csDiff >= 18) return { text: "Push prio · roam", tone: "good" };
+    if (csDiff >= 8) return { text: "Push wave", tone: "good" };
+    if (csDiff <= -18) return { text: "Freeze cerca torre", tone: "bad" };
+    if (csDiff <= -8) return { text: "Last-hit safe", tone: "bad" };
+    return { text: "Hold wave", tone: "neutral" };
+  })();
+
+  // --- Vision target advisor ---
+  const visionAdvice: { current: number; target: number; lagging: boolean } | null = (() => {
+    if (!ld || !me?.live || isAramQueue(game.queue_name)) return null;
+    const gameTime = ld.game_time;
+    if (gameTime < 5 * 60) return null;
+    const minutes = gameTime / 60;
+    const posLower = (me.position || "").toLowerCase();
+    // Gold elo benchmarks (vision/min): SUP 1.5, JNG 0.9, others 0.6
+    const benchmark = (posLower.startsWith("uti") || posLower.startsWith("sup")) ? 1.5
+      : posLower.startsWith("jun") ? 0.9
+      : 0.6;
+    const target = Math.round(minutes * benchmark);
+    const current = Math.round(me.live.ward_score);
+    return { current, target, lagging: current < target * 0.7 && target >= 5 };
+  })();
+
+  // --- Jungle tracker (computed only — ref + tracking effect live above the early return) ---
+  const enemyJungler = game.enemies.find(e => (e.position || "").toLowerCase().startsWith("jun"));
+  const jglInfo: { lastSeenSec: number; guess: string } | null = (() => {
+    if (!enemyJungler || !ld || isAramQueue(game.queue_name)) return null;
+    const gameTime = ld.game_time;
+    const lastSeen = jglLastSeenRef.current.time || 0;
+    const elapsed = Math.max(0, Math.round(gameTime - lastSeen));
+    let guess = "farmeando";
+    // Heuristics by minute: dragon/herald spawn at 5:00, scuttle 3:30
+    if (gameTime < 3 * 60) guess = "primer clear";
+    else if (gameTime < 4 * 60) guess = "scuttle";
+    else if (gameTime > 5 * 60 && gameTime < 18 * 60 && elapsed < 30) guess = "farmeando";
+    else if (elapsed >= 30 && elapsed < 60) guess = "posible gank o obj";
+    else if (elapsed >= 60) guess = "obj/invadiendo";
+    return { lastSeenSec: elapsed, guess };
+  })();
 
   return (
     <div className="overlay">
@@ -3554,6 +3941,55 @@ function OverlayApp() {
           </div>
         ))}
       </div>
+
+      {/* Missing enemy laners + dead enemies */}
+      {(missing.length > 0 || deadEnemies.length > 0) && (
+        <div className="ov-missing">
+          {missing.map(m => (
+            <span key={`mia_${m.key}`} className="ov-missing-tag">
+              <span className="ov-missing-icon">⚠</span>
+              <span className="ov-missing-pos">{m.pos}</span>
+              <span className="ov-missing-label">MIA</span>
+              <span className="ov-missing-dur">{Math.floor(m.durationSec / 60)}:{(m.durationSec % 60).toString().padStart(2, "0")}</span>
+            </span>
+          ))}
+          {deadEnemies.map(d => (
+            <span key={`dead_${d.key}`} className="ov-dead-tag">
+              <span className="ov-missing-icon">💀</span>
+              <span className="ov-missing-pos">{d.pos}</span>
+              <span className="ov-missing-dur">{d.remaining}s</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Tactical line: recall + wave + jungle + vision (compact) */}
+      {(recall || waveAdvice || jglInfo || (visionAdvice && visionAdvice.lagging)) && (
+        <div className="ov-tactical">
+          {recall && (
+            <span className={`ov-tac-chip ov-tac-recall ${recall.affordable ? "ov-tac-ready" : ""}`}
+                  title={recall.affordable ? `Recall ready · ${recall.item}` : `${recall.gold}g a ${recall.item}`}>
+              {recall.affordable ? "B" : `${recall.gold}g`} {recall.item}
+            </span>
+          )}
+          {waveAdvice && (
+            <span className={`ov-tac-chip ov-tac-${waveAdvice.tone}`} title="Wave state advisor">
+              {waveAdvice.text}
+            </span>
+          )}
+          {jglInfo && enemyJungler && (
+            <span className="ov-tac-chip ov-tac-jgl"
+                  title={`Last seen ${jglInfo.lastSeenSec}s ago`}>
+              JGL: {jglInfo.guess}
+            </span>
+          )}
+          {visionAdvice && visionAdvice.lagging && (
+            <span className="ov-tac-chip ov-tac-vision" title={`Vision ${visionAdvice.current} / target ${visionAdvice.target}`}>
+              Ward · {visionAdvice.current}/{visionAdvice.target}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Compact level plan — current + next 4 levels */}
       {myPlan && currentEntry && (

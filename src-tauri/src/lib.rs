@@ -2,6 +2,7 @@ mod config;
 mod lcu;
 mod models;
 mod opgg;
+mod tts;
 
 use models::{AppState, ConnectionStatus};
 use std::sync::Arc;
@@ -16,6 +17,7 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
         auto_apply: s.auto_apply,
         auto_lock: s.auto_lock,
         auto_accept: s.auto_accept,
+        tts_enabled: s.tts_enabled,
         lp_history: s.lp_history.clone(),
     });
 }
@@ -426,7 +428,12 @@ async fn poll_loop(
                     }
                     if !all_counters.is_empty() {
                         let mut s = state.lock().await;
-                        s.counters = all_counters;
+                        // Merge: only fill in entries we don't already have from the build's counter list.
+                        // The build's counters are real per-matchup OP.GG data; all_counters is a generic
+                        // "beatability" derivation. Real data should always win when available.
+                        for (k, v) in all_counters {
+                            s.counters.entry(k).or_insert(v);
+                        }
                         let _ = app_handle.emit("app-state-changed", s.clone());
                     }
 
@@ -708,6 +715,31 @@ async fn set_auto_accept(
 }
 
 #[tauri::command]
+async fn set_tts_enabled(
+    enabled: bool,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut s = state.lock().await;
+    s.tts_enabled = enabled;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    save_config(&app_handle, &s);
+    Ok(())
+}
+
+#[tauri::command]
+async fn speak(
+    text: String,
+    state: tauri::State<'_, SharedState>,
+) -> Result<(), String> {
+    let enabled = state.lock().await.tts_enabled;
+    if enabled {
+        tts::speak(&text);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn pick_champion(
     champion_id: i64,
     state: tauri::State<'_, SharedState>,
@@ -949,6 +981,8 @@ pub fn run() {
             back_to_lobby,
             swap_aram_bench,
             set_overlay_position,
+            set_tts_enabled,
+            speak,
         ])
         .setup(|app| {
             // Load persisted preferences
@@ -960,6 +994,7 @@ pub fn run() {
                 s.auto_apply = cfg.auto_apply;
                 s.auto_lock = cfg.auto_lock;
                 s.auto_accept = cfg.auto_accept;
+                s.tts_enabled = cfg.tts_enabled;
                 s.lp_history = cfg.lp_history;
             }
 

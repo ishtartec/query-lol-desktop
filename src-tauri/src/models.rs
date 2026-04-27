@@ -74,6 +74,7 @@ pub struct AppState {
     pub auto_apply: bool,
     pub auto_lock: bool,
     pub auto_accept: bool,
+    pub tts_enabled: bool,
     pub region: String,
     #[serde(skip)]
     pub overlay_position: String,
@@ -182,6 +183,7 @@ impl Default for AppState {
             auto_apply: true,
             auto_lock: false,
             auto_accept: false,
+            tts_enabled: false,
             region: "euw".to_string(),
             overlay_position: "top-left".to_string(),
         }
@@ -561,6 +563,8 @@ pub struct LivePlayerStats {
     pub items: Vec<i64>,
     pub spell1_id: i64,
     pub spell2_id: i64,
+    #[serde(default)]
+    pub ward_score: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

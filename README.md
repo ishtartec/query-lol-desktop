@@ -50,7 +50,7 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **Hero splash background** — dynamic background using your most-played champion's splash art
 
 ### Live Game
-- **Team compositions** — blue vs red side with champion icons and summoner names
+- **Team compositions** — blue vs red side with champion icons and summoner names, sorted by lane (top → jungle → mid → bot → support)
 - **Player ranks** — rank emblems and tier text for every player in the match
 - **Player labels** — automatic badges: OTP, Autofill/1st Time, Win Streak, Loss Streak, Tilted, High WR
 - **Ranked stats** — W/L record, win rate, and current win/loss streak
@@ -65,7 +65,20 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **Objective timers** — Baron buff (3:00), Elder Dragon buff (2:30), and Dragon Soul tracking with countdown and team indicator
 - **Objective feed** — dragons, baron, herald, turrets, inhibitors, and multikills with timestamps
 - **Win probability** — real-time win % estimate based on gold diff, game time, dragons, and baron (displayed in gold bar and overlay)
-- **In-game overlay** — hold TAB to show a compact overlay with win probability, lane gold diffs, objective timers, and a **5-level plan preview** (current level + next 4 with actions, advantage, and spike warnings for both you and the lane opponent). Borderless windowed mode, configurable position
+- **Roam / missing tracker** — detects when an enemy laner has stopped farming (CS hasn't progressed in ~25s and they're not dead). Shows `⚠ TOP MIA 0:32` badge in the overlay with a live countdown
+- **Death timer prediction** — when an enemy dies, computes expected respawn from the official BRW table per level + post-15min time factor. Shows `💀 MID 28s` countdown until they're back
+- **Recall optimizer** — checks your current gold against the next reachable item from your build. Shows `1300g Lost Chapter` or pulses gold with `B Lost Chapter` when you can afford it
+- **Wave state advisor** — during lane phase, recommends an action based on your CS diff vs lane opponent: *Push prio · roam* / *Push wave* / *Hold wave* / *Last-hit safe* / *Freeze cerca torre*
+- **Enemy jungle tracker** — infers jungler activity from kill/assist/death events. Shows `JGL: farmeando` / `JGL: posible gank o obj` / `JGL: obj/invadiendo` based on time since last seen + game minute heuristics
+- **Vision target advisor** — compares your ward score against the Gold-elo benchmark for your role (SUP 1.5/min, JNG 0.9/min, others 0.6/min). Soft red warning when you're <70% of target
+- **Voice cues (TTS)** — optional audio alerts for time-critical events that you can't see in the visual overlay during play. Uses macOS `say` (Samantha voice) or Windows SAPI (en-US). Toggle from the toolbar. Currently speaks:
+  - *"Caitlyn missing"* when an enemy laner has been MIA ≥8s (45s cooldown per enemy)
+  - *"Caitlyn completed Wit's End"* when an enemy buys a ≥2500g item (60s cooldown per item)
+  - *"Recall ready, Lost Chapter"* when you can afford a key item (90s cooldown)
+  - *"Watch for ganks, jungla rotando"* on jungle activity transitions
+  - *"Enemy jungla unknown, place wards"* when the jungler hasn't been seen for ≥60s (90s cooldown)
+  - *"Place wards"* every 3 minutes if your vision score is <50% of target
+- **In-game overlay** — hold TAB to show a compact overlay with all the above plus win probability, lane gold diffs, objective timers, and a **5-level plan preview** (current level + next 4 with actions, advantage, and spike warnings). Borderless windowed mode, configurable position
 - **Player profiles** — click any player to view their match history in an overlay
 
 ### Post-Game Analysis
@@ -92,6 +105,8 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - Auto-apply toggle
 - Auto-lock toggle
 - Auto-accept toggle
+- Voice cues toggle (TTS audio alerts during the game)
+- Overlay position selector (Off / Top-Left / Top-Right / Bottom-Left / Bottom-Right / Center)
 - All settings persisted across sessions
 
 ### Auto-Update
@@ -188,10 +203,17 @@ pnpm tauri build
 3. **Build fetching** — when you pick a champion in champ select, it fetches the optimal build from OP.GG for your champion + position + region.
 4. **Auto-apply** — writes runes, summoner spells, and item sets directly to the League client via LCU endpoints.
 5. **Draft analysis** — as enemies are revealed, it calculates matchup win rates, power curves, damage composition, generates pick/ban recommendations, adaptive item suggestions, a game prediction, and an 18-level action plan against your lane opponent (combining interpolated power curves, per-champion spike levels, and ult-strength comparison).
-6. **Live game data** — during a match, polls the Live Client Data API (port 2999) every second for real-time KDA, CS, gold, items, and game events. Records snapshots every 30s for post-game phase analysis.
-7. **Overlay** — a second transparent window (hold TAB) shows compact live game info on top of the game (Windows borderless windowed).
-8. **Post-game analysis** — computes gold timeline, death impacts, per-phase stats, and elo comparison from collected snapshots.
-9. **State sync** — the backend emits `app-state-changed` events to the React frontend, which re-renders reactively.
+6. **Live game data** — during a match, polls the Live Client Data API (port 2999) every second for real-time KDA, CS, gold, items, ward score, and game events. Records snapshots every 30s for post-game phase analysis.
+7. **Live coaching engine** — heuristics derived from the polled data:
+   - **MIA detection**: a laner whose CS hasn't increased in 25s and who isn't recently dead is flagged as missing.
+   - **Death timer**: official BRW (base respawn wait) table by level × post-15min time factor for accurate countdowns.
+   - **Recall optimizer**: compares current gold against the next unowned item from your fetched OP.GG build.
+   - **Jungle inference**: tracks kill/assist/death events involving the enemy jungler and combines with game-time heuristics (first clear, scuttle, drake/herald windows) to label their likely activity.
+   - **Vision benchmarks**: ward-score comparisons against role-specific Gold-elo averages.
+8. **Voice cues** — `say` on macOS or Windows SAPI for time-critical audio alerts (missing enemies, enemy item completions, recall ready, jungle rotations, vision reminders). Throttled with per-event cooldowns.
+9. **Overlay** — a second transparent window (hold TAB) shows compact live game info on top of the game (Windows borderless windowed).
+10. **Post-game analysis** — computes gold timeline, death impacts, per-phase stats, and elo comparison from collected snapshots.
+11. **State sync** — the backend emits `app-state-changed` events to the React frontend, which re-renders reactively.
 
 ---
 
