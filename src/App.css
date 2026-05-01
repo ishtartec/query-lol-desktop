@@ -1125,6 +1125,316 @@
   color: var(--text-primary); font-weight: 700;
 }
 
+/* ==== Recommended build sequence panel (live game view) ==== */
+.bs-panel {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px 10px;
+  margin-bottom: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(200, 155, 60, 0.22);
+  border-radius: 6px;
+}
+.bs-header {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.bs-title {
+  font-size: 9px; font-weight: 800; letter-spacing: 1.2px;
+  color: var(--accent-gold); opacity: 0.85;
+}
+.bs-gold {
+  font-size: 11px; font-weight: 700; color: #fbbf24;
+  font-variant-numeric: tabular-nums;
+}
+.bs-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.bs-slot {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  position: relative;
+  min-width: 0;
+}
+.bs-slot-owned {
+  background: rgba(42, 222, 106, 0.08);
+  border-color: rgba(42, 222, 106, 0.25);
+}
+.bs-slot-next {
+  background: rgba(200, 155, 60, 0.12);
+  border-color: rgba(200, 155, 60, 0.45);
+}
+.bs-slot-future {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(74, 85, 104, 0.3);
+  opacity: 0.65;
+}
+.bs-icon-wrap {
+  position: relative; width: 36px; height: 36px;
+}
+.bs-icon {
+  width: 36px; height: 36px; display: block; border-radius: 3px;
+}
+.bs-slot-future .bs-icon { filter: grayscale(0.6) brightness(0.7); }
+.bs-check {
+  position: absolute; top: -4px; right: -4px;
+  width: 16px; height: 16px;
+  background: #2ade6a; color: #0d1117;
+  font-size: 10px; font-weight: 900; line-height: 16px;
+  text-align: center; border-radius: 50%;
+  border: 1.5px solid var(--bg-primary);
+}
+.bs-progress-ring {
+  position: absolute; inset: -3px;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 60%, #000 62%);
+          mask: radial-gradient(circle, transparent 60%, #000 62%);
+  pointer-events: none;
+}
+.bs-name {
+  font-size: 10px; font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.1;
+}
+.bs-slot-next .bs-name { color: var(--text-primary); }
+.bs-slot-owned .bs-name { color: #4be38a; }
+.bs-need {
+  font-size: 10px; font-weight: 800;
+  color: #fbbf24;
+  font-variant-numeric: tabular-nums;
+}
+.bs-ready {
+  font-size: 9px; font-weight: 900;
+  color: #2ade6a; letter-spacing: 0.6px;
+  animation: bsReadyPulse 1.2s ease-in-out infinite;
+}
+@keyframes bsReadyPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.bs-progress-bar-wrap {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bs-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-gold), #fbbf24);
+  transition: width 0.4s ease;
+}
+
+/* Threat-response suggestion strip */
+.bs-threat {
+  display: flex; align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: rgba(232, 64, 87, 0.1);
+  border: 1px solid rgba(232, 64, 87, 0.3);
+  margin-top: 2px;
+}
+.bs-threat-antiheal { background: rgba(247, 173, 47, 0.1); border-color: rgba(247, 173, 47, 0.35); }
+.bs-threat-mr-squishy, .bs-threat-mr-bruiser { background: rgba(178, 92, 235, 0.1); border-color: rgba(178, 92, 235, 0.35); }
+.bs-threat-armor-squishy, .bs-threat-armor-bruiser { background: rgba(232, 64, 87, 0.1); border-color: rgba(232, 64, 87, 0.35); }
+.bs-threat-tenacity { background: rgba(56, 189, 248, 0.1); border-color: rgba(56, 189, 248, 0.35); }
+.bs-threat-anti-shield { background: rgba(132, 204, 22, 0.1); border-color: rgba(132, 204, 22, 0.35); }
+.bs-threat-icon {
+  width: 30px; height: 30px; border-radius: 3px; flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.bs-threat-text {
+  display: flex; flex-direction: column; gap: 1px;
+  min-width: 0;
+}
+.bs-threat-label {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.8px;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+.bs-threat-reason {
+  font-size: 10px; font-weight: 500;
+  color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Alternative core paths */
+.bs-alts {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(200, 155, 60, 0.18);
+}
+.bs-alts-label {
+  font-size: 8px; font-weight: 800; letter-spacing: 1.2px;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+.bs-alts-list {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.bs-alt {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(74, 85, 104, 0.25);
+}
+.bs-alt:hover { border-color: rgba(200, 155, 60, 0.35); }
+.bs-alt-icons {
+  display: flex; gap: 3px;
+}
+.bs-alt-icon {
+  width: 22px; height: 22px; border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.bs-alt-meta {
+  display: flex; align-items: center; gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.bs-alt-wr {
+  font-size: 11px; font-weight: 800;
+  color: var(--text-primary);
+}
+.bs-alt-wr-good { color: #4be38a; }
+.bs-alt-wr-bad  { color: #ff6b7d; }
+.bs-alt-games {
+  font-size: 9px; font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ==== Overlay: compact build strip ==== */
+.ov-build {
+  display: flex;
+  gap: 4px;
+  padding: 3px 4px 12px;
+  margin: 2px 4px 4px;
+  justify-content: flex-start;
+}
+.ov-build-slot {
+  position: relative;
+  width: 28px; height: 28px;
+  flex: 0 0 28px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+.ov-build-icon {
+  width: 100%; height: 100%; display: block; border-radius: 2px;
+}
+.ov-build-owned { border-color: rgba(42, 222, 106, 0.4); }
+.ov-build-next  { border-color: var(--accent-gold); box-shadow: 0 0 6px rgba(200, 155, 60, 0.4); }
+.ov-build-future .ov-build-icon { filter: grayscale(0.7) brightness(0.55); }
+.ov-build-check {
+  position: absolute; top: -3px; right: -3px;
+  width: 12px; height: 12px;
+  background: #2ade6a; color: #0d1117;
+  font-size: 8px; font-weight: 900; line-height: 12px;
+  text-align: center; border-radius: 50%;
+  border: 1px solid var(--bg-primary);
+}
+.ov-build-ring {
+  position: absolute; inset: -2px;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 64%, #000 66%);
+          mask: radial-gradient(circle, transparent 64%, #000 66%);
+  pointer-events: none;
+}
+.ov-build-need {
+  position: absolute;
+  bottom: -10px; left: 50%; transform: translateX(-50%);
+  font-size: 8px; font-weight: 800;
+  color: #fbbf24;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ov-build-ready {
+  position: absolute;
+  bottom: -10px; left: 50%; transform: translateX(-50%);
+  font-size: 8px; font-weight: 900;
+  color: #2ade6a; letter-spacing: 0.5px;
+  animation: bsReadyPulse 1.2s ease-in-out infinite;
+}
+.ov-build-threat {
+  position: relative;
+  width: 28px; height: 28px;
+  flex: 0 0 28px;
+  border-radius: 3px;
+  margin-left: 6px;
+  border: 1px solid rgba(232, 64, 87, 0.6);
+  box-shadow: 0 0 6px rgba(232, 64, 87, 0.3);
+  animation: ovThreatPulse 2.4s ease-in-out infinite;
+}
+
+/* ==== Overlay: upcoming objective spawns ==== */
+.ov-objs {
+  display: flex; gap: 4px;
+  padding: 2px 4px;
+  margin: 2px 4px;
+  flex-wrap: wrap;
+}
+.ov-obj-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 7px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(200, 155, 60, 0.25);
+  border-radius: 12px;
+  font-size: 10px; font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ov-obj-icon { font-size: 12px; line-height: 1; }
+.ov-obj-label { font-size: 9px; letter-spacing: 0.6px; opacity: 0.85; }
+.ov-obj-eta { font-weight: 800; }
+.ov-obj-dragon { border-color: rgba(247, 173, 47, 0.45); }
+.ov-obj-baron { border-color: rgba(178, 92, 235, 0.45); }
+.ov-obj-voidgrubs { border-color: rgba(132, 204, 22, 0.45); }
+.ov-obj-herald { border-color: rgba(56, 189, 248, 0.45); }
+.ov-obj-urgent {
+  border-color: var(--accent-red);
+  box-shadow: 0 0 8px rgba(232, 64, 87, 0.4);
+  animation: ovObjUrgent 1.2s ease-in-out infinite;
+}
+.ov-obj-live {
+  border-color: #2ade6a;
+  background: rgba(42, 222, 106, 0.15);
+  box-shadow: 0 0 8px rgba(42, 222, 106, 0.35);
+}
+.ov-obj-live .ov-obj-eta { color: #4be38a; }
+.ov-obj-ally-last { border-style: dashed; border-color: rgba(3, 151, 171, 0.55); }
+.ov-obj-enemy-last { border-style: dashed; border-color: rgba(232, 64, 87, 0.55); }
+@keyframes ovObjUrgent {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+.ov-threat-antiheal { border-color: rgba(247, 173, 47, 0.7); box-shadow: 0 0 6px rgba(247, 173, 47, 0.35); }
+.ov-threat-mr-squishy, .ov-threat-mr-bruiser { border-color: rgba(178, 92, 235, 0.7); box-shadow: 0 0 6px rgba(178, 92, 235, 0.35); }
+.ov-threat-armor-squishy, .ov-threat-armor-bruiser { border-color: rgba(232, 64, 87, 0.7); box-shadow: 0 0 6px rgba(232, 64, 87, 0.35); }
+.ov-threat-tenacity { border-color: rgba(56, 189, 248, 0.7); box-shadow: 0 0 6px rgba(56, 189, 248, 0.35); }
+.ov-threat-anti-shield { border-color: rgba(132, 204, 22, 0.7); box-shadow: 0 0 6px rgba(132, 204, 22, 0.35); }
+.ov-build-threat-tag {
+  position: absolute; top: -5px; right: -5px;
+  width: 14px; height: 14px;
+  background: var(--accent-red); color: #fff;
+  font-size: 9px; font-weight: 900; line-height: 14px;
+  text-align: center; border-radius: 50%;
+  border: 1.5px solid var(--bg-primary);
+}
+@keyframes ovThreatPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
 .spell-cd-wrap:hover { border-color: var(--text-secondary); }
 .spell-cd-img {
   width: 100%; height: 100%; display: block;

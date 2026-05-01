@@ -151,6 +151,7 @@ interface LiveGameState {
   enemies: LiveGamePlayer[];
   live_data: LiveGameData | null;
   recommended_build: ChampionBuild | null;
+  recommended_alternatives: BuildAlternatives | null;
 }
 
 interface SmurfAnalysis {
@@ -282,7 +283,7 @@ interface AppState {
 // --- Constants ---
 
 const DDRAGON = "https://ddragon.leagueoflegends.com/cdn";
-let DDRAGON_VERSION = "16.6.1"; // fallback, updated dynamically
+let DDRAGON_VERSION = "16.9.1"; // fallback, updated dynamically
 
 async function fetchLatestVersion() {
   try {
@@ -411,6 +412,7 @@ const TRAIT_HEALERS = new Set([
   119, // Draven
   498, // Xayah
   895, // Nilah
+  904, // Zaahen (Q heal on-attack + E damage→heal + passive revive)
 ]);
 
 // Champions with a hard, reliable engage tool (multi-target CC ult or long-range engage)
@@ -466,6 +468,13 @@ const TRAIT_SHIELDERS = new Set([
   147, // Seraphine
   350, // Bel'Veth
   427, // Ivern
+]);
+
+// Champions with reliable hard CC (stuns/knockups/roots ≥1.0s, multi-target preferred)
+const TRAIT_HARD_CC = new Set([
+  54, 79, 89, 12, 111, 57, 31, 516, 113, 526, 555, 412, 432, 53, 78, 154, 5,
+  64, 35, 60, 9, 20, 32, 121, 234, 254, 421, 39, 80, 240, 233, 799, 904, 36,
+  102, 161, 90, 25, 99, 30, 555, 142, 134, 3, 526, 555, 875, 19, 26, 14,
 ]);
 
 // Map champion ID to primary damage type: "ap" or "ad"
@@ -1177,6 +1186,85 @@ function estimateWinProbability(
   return 1 / (1 + Math.exp(-z * 10)); // scale for sharper curve
 }
 
+// --- Upcoming objective spawn windows ---
+type ObjectiveKind = "dragon" | "baron" | "voidgrubs" | "herald";
+interface ObjectiveSpawn {
+  kind: ObjectiveKind;
+  label: string;
+  eta: number;          // seconds until spawn (negative if spawned)
+  spawnTime: number;    // absolute spawn time (game seconds)
+  lastTeam?: "ally" | "enemy" | null;  // who took last instance (if any)
+}
+
+// Returns upcoming spawn windows sorted by ETA. Includes objectives whose ETA
+// is within ±15s of "spawned" (so we can flash a "LIVE" chip briefly).
+// Timings reflect Season 2026 patch:
+//   - Dragon: first 5:00, respawn 5:00 after kill
+//   - Voidgrubs: first 8:00, single spawn, despawn at 14:45
+//   - Rift Herald: first 15:00, single spawn, despawn at 19:45
+//   - Baron Nashor: first 20:00, respawn 6:00 after kill
+function computeObjectiveSpawns(events: GameEvent[], gameTime: number): ObjectiveSpawn[] {
+  const out: ObjectiveSpawn[] = [];
+
+  // Dragon
+  const dragonKills = events.filter(e => e.event_type === "DragonKill" && !e.label.includes("Elder"));
+  const elderKills = events.filter(e => e.event_type === "DragonKill" && e.label.includes("Elder"));
+  if (dragonKills.length === 0) {
+    out.push({ kind: "dragon", label: "Drake", eta: 300 - gameTime, spawnTime: 300 });
+  } else {
+    const last = dragonKills[dragonKills.length - 1];
+    const team = last.label.startsWith("Ally") ? "ally" : last.label.startsWith("Enemy") ? "enemy" : null;
+    const isElderTime = dragonKills.length >= 4 || elderKills.length > 0;
+    out.push({
+      kind: "dragon",
+      label: isElderTime ? "Elder" : "Drake",
+      eta: last.time + 300 - gameTime,
+      spawnTime: last.time + 300,
+      lastTeam: team,
+    });
+  }
+
+  // Baron: first 20:00, respawn 6:00 after kill
+  const baronKills = events.filter(e => e.event_type === "BaronKill");
+  if (baronKills.length === 0) {
+    if (gameTime < 1200 + 60) {
+      out.push({ kind: "baron", label: "Baron", eta: 1200 - gameTime, spawnTime: 1200 });
+    }
+  } else {
+    const last = baronKills[baronKills.length - 1];
+    const team = last.label.startsWith("Ally") ? "ally" : last.label.startsWith("Enemy") ? "enemy" : null;
+    out.push({
+      kind: "baron",
+      label: "Baron",
+      eta: last.time + 360 - gameTime,
+      spawnTime: last.time + 360,
+      lastTeam: team,
+    });
+  }
+
+  // Voidgrubs: single spawn at 8:00, despawn at 14:45 (only show window before despawn).
+  // We don't have a Voidgrub kill event from the live client — suppress once gameTime > 14:45.
+  if (gameTime < 885) {
+    const eta = 480 - gameTime;
+    if (eta > -15) {
+      out.push({ kind: "voidgrubs", label: "Voidgrubs", eta, spawnTime: 480 });
+    }
+  }
+
+  // Rift Herald: single spawn at 15:00, despawn at 19:45.
+  const heraldKills = events.filter(e => e.event_type === "HeraldKill");
+  if (heraldKills.length === 0 && gameTime < 1185) {
+    const eta = 900 - gameTime;
+    if (eta > -15) {
+      out.push({ kind: "herald", label: "Herald", eta, spawnTime: 900 });
+    }
+  }
+
+  return out
+    .filter(o => o.eta > -15 && o.eta < 600)
+    .sort((a, b) => a.eta - b.eta);
+}
+
 function getObjectiveState(events: GameEvent[], gameTime: number) {
   let allyDragons = 0, enemyDragons = 0;
   let allyBaronActive = false, enemyBaronActive = false;
@@ -1277,6 +1365,221 @@ function getItemData(id: number): ItemData | null {
   return itemCache?.[id.toString()] || null;
 }
 
+// --- Build sequence helper ---
+type BuildSlotState = "owned" | "next" | "future";
+type BuildSlotCategory = "starter" | "boots" | "core";
+interface BuildSlot {
+  id: number;
+  name: string;
+  goldCost: number;
+  state: BuildSlotState;
+  category: BuildSlotCategory;
+  progressPct?: number;  // 0-100 when state === "next"
+  goldNeeded?: number;   // remaining gold when state === "next"
+}
+
+// Builds the ordered display sequence: boots + core items (up to 4).
+// Starter is omitted — it's a transient phase-0 buy. Boots[0] is treated as
+// the typical primary boot pick. Core items keep OP.GG order.
+function computeBuildSequence(
+  build: ChampionBuild | null | undefined,
+  ownedItems: number[],
+  currentGold: number,
+): BuildSlot[] {
+  if (!build) return [];
+  const slots: { id: number; category: BuildSlotCategory }[] = [];
+  if (build.boots[0]) slots.push({ id: build.boots[0], category: "boots" });
+  for (const id of build.core_items.slice(0, 4)) {
+    slots.push({ id, category: "core" });
+  }
+  const owned = new Set(ownedItems);
+  let nextAssigned = false;
+  return slots.map(s => {
+    const item = getItemData(s.id);
+    const name = item?.name ?? "";
+    const goldCost = item?.gold ?? 0;
+    let state: BuildSlotState;
+    if (owned.has(s.id)) {
+      state = "owned";
+    } else if (!nextAssigned) {
+      state = "next";
+      nextAssigned = true;
+    } else {
+      state = "future";
+    }
+    const out: BuildSlot = { id: s.id, name, goldCost, state, category: s.category };
+    if (state === "next" && goldCost > 0) {
+      const need = Math.max(0, goldCost - currentGold);
+      out.goldNeeded = Math.ceil(need);
+      out.progressPct = Math.min(100, Math.round((currentGold / goldCost) * 100));
+    }
+    return out;
+  });
+}
+
+// --- Threat-response suggestion ---
+// Given enemy live stats + my role + my owned items, suggest one situational
+// defensive item that addresses the dominant threat. Returns null if none.
+
+type ThreatKind = "antiheal" | "mr-squishy" | "mr-bruiser" | "armor-squishy" | "armor-bruiser" | "tenacity" | "anti-shield";
+interface ThreatSuggestion {
+  kind: ThreatKind;
+  itemId: number;
+  itemName: string;
+  reason: string;
+  topEnemyChamp?: string;
+}
+
+// Item DB for situational pick by role/profile.
+// Squishy = ADC / mage. Bruiser = top/jungle fighter / tank.
+const THREAT_ITEMS = {
+  antiheal_ad: { id: 3033, name: "Mortal Reminder" },
+  antiheal_ap: { id: 3165, name: "Morellonomicon" },
+  antiheal_sup: { id: 3011, name: "Chemtech Putrifier" },
+  mr_squishy_ad: { id: 3156, name: "Maw of Malmortius" },
+  mr_squishy_ap: { id: 4645, name: "Shadowflame" },
+  mr_squishy_generic: { id: 3814, name: "Edge of Night" },
+  mr_bruiser: { id: 4401, name: "Force of Nature" },
+  mr_tank: { id: 3065, name: "Spirit Visage" },
+  mr_aphunt: { id: 6035, name: "Silvermere Dawn" },
+  armor_squishy: { id: 3814, name: "Edge of Night" },
+  armor_squishy_ad: { id: 3026, name: "Guardian Angel" },
+  armor_bruiser: { id: 3143, name: "Randuin's Omen" },
+  armor_tank: { id: 3110, name: "Frozen Heart" },
+  armor_thorns: { id: 3075, name: "Thornmail" },
+  tenacity_boots: { id: 3111, name: "Mercury's Treads" },
+  tenacity_squishy: { id: 6035, name: "Silvermere Dawn" },
+  anti_shield: { id: 6609, name: "Serpent's Fang" },
+};
+
+// Items the user might already own that satisfy a threat category.
+// Used to skip suggestions when player already has coverage.
+const OWNED_COVERAGE: Record<ThreatKind, number[]> = {
+  "antiheal": [3033, 3165, 3011, 6664, 6675, 8001 /* Executioner's */ , 3123, 3036],
+  "mr-squishy": [3156, 4645, 3814, 6035, 3157 /* Zhonya — counts as panic but not MR */],
+  "mr-bruiser": [4401, 3065, 3001 /* Abyssal Mask */, 3194 /* Adaptive Helm */, 6035],
+  "armor-squishy": [3026, 3814, 3047, 6035],
+  "armor-bruiser": [3143, 3110, 3075, 3742 /* Dead Man's */, 3193 /* Gargoyle */],
+  "tenacity": [3111, 6035, 3742, 3194],
+  "anti-shield": [6609],
+};
+
+function isCarryRole(pos: string): boolean {
+  const p = pos.toLowerCase();
+  return p.startsWith("bot") || p.startsWith("ad") || p.startsWith("mid");
+}
+function isBruiserRole(pos: string): boolean {
+  const p = pos.toLowerCase();
+  return p.startsWith("top") || p.startsWith("jun");
+}
+function isSupportRole(pos: string): boolean {
+  const p = pos.toLowerCase();
+  return p.startsWith("uti") || p.startsWith("sup");
+}
+
+function suggestThreatResponse(
+  enemies: LiveGamePlayer[],
+  myItems: number[],
+  myPosition: string,
+  myChampionId: number,
+  gameTime: number,
+): ThreatSuggestion | null {
+  if (gameTime < 8 * 60) return null;
+  const enemiesWithLive = enemies.filter(e => e.live != null);
+  if (enemiesWithLive.length < 3) return null;
+  const owned = new Set(myItems);
+
+  // Threat score per enemy: weighted KDA × level. Caps at level/18 = 1.
+  const scored = enemiesWithLive.map(e => {
+    const l = e.live!;
+    const kda = l.kills + l.assists * 0.5 - l.deaths * 0.6;
+    const lvlFactor = 0.5 + (l.level / 18) * 0.5;
+    const goldFactor = Math.max(0.5, Math.min(1.6, l.total_gold / Math.max(1, gameTime / 60 * 380)));
+    return { player: e, score: Math.max(0.1, kda * lvlFactor * goldFactor), apMain: CHAMP_DAMAGE_TYPE[e.champion_id] === "ap" };
+  });
+  const totalScore = scored.reduce((a, b) => a + b.score, 0) || 1;
+  const apThreat = scored.filter(s => s.apMain).reduce((a, b) => a + b.score, 0) / totalScore;
+  const adThreat = 1 - apThreat;
+  const topEnemy = scored.slice().sort((a, b) => b.score - a.score)[0];
+  const topEnemyName = championCache?.[topEnemy.player.champion_id.toString()]?.name || "enemy";
+
+  // 1) Antiheal — high priority, needed once enemies have items
+  const healers = enemies.filter(e => TRAIT_HEALERS.has(e.champion_id));
+  if (healers.length >= 1 && !owned.has(THREAT_ITEMS.antiheal_ad.id)
+    && !OWNED_COVERAGE.antiheal.some(id => owned.has(id))) {
+    const myIsAp = CHAMP_DAMAGE_TYPE[myChampionId] === "ap";
+    const isSup = isSupportRole(myPosition);
+    const pick = isSup ? THREAT_ITEMS.antiheal_sup : (myIsAp ? THREAT_ITEMS.antiheal_ap : THREAT_ITEMS.antiheal_ad);
+    const names = healers.slice(0, 2).map(e => championCache?.[e.champion_id.toString()]?.name || "?").join(", ");
+    return { kind: "antiheal", itemId: pick.id, itemName: pick.name, reason: `Heavy healing (${names})` };
+  }
+
+  // 2) Heavy AP threat
+  if (apThreat >= 0.55 && !OWNED_COVERAGE["mr-squishy"].some(id => owned.has(id))
+    && !OWNED_COVERAGE["mr-bruiser"].some(id => owned.has(id))) {
+    let pick;
+    if (isCarryRole(myPosition)) {
+      pick = CHAMP_DAMAGE_TYPE[myChampionId] === "ap" ? THREAT_ITEMS.mr_squishy_ap : THREAT_ITEMS.mr_squishy_ad;
+    } else if (isBruiserRole(myPosition)) {
+      pick = THREAT_ITEMS.mr_bruiser;
+    } else {
+      pick = THREAT_ITEMS.mr_squishy_generic;
+    }
+    const kind = isBruiserRole(myPosition) ? "mr-bruiser" : "mr-squishy";
+    return {
+      kind: kind as ThreatKind,
+      itemId: pick.id, itemName: pick.name,
+      reason: `${Math.round(apThreat * 100)}% AP threat · ${topEnemyName} carrying`,
+      topEnemyChamp: topEnemyName,
+    };
+  }
+
+  // 3) Heavy AD threat
+  if (adThreat >= 0.65 && !OWNED_COVERAGE["armor-squishy"].some(id => owned.has(id))
+    && !OWNED_COVERAGE["armor-bruiser"].some(id => owned.has(id))) {
+    let pick;
+    if (isCarryRole(myPosition)) {
+      pick = CHAMP_DAMAGE_TYPE[myChampionId] === "ap" ? THREAT_ITEMS.armor_squishy : THREAT_ITEMS.armor_squishy_ad;
+    } else if (isBruiserRole(myPosition)) {
+      pick = THREAT_ITEMS.armor_bruiser;
+    } else {
+      pick = THREAT_ITEMS.armor_squishy;
+    }
+    const kind = isBruiserRole(myPosition) ? "armor-bruiser" : "armor-squishy";
+    return {
+      kind: kind as ThreatKind,
+      itemId: pick.id, itemName: pick.name,
+      reason: `${Math.round(adThreat * 100)}% AD threat · ${topEnemyName} carrying`,
+      topEnemyChamp: topEnemyName,
+    };
+  }
+
+  // 4) Heavy hard CC
+  const ccCount = enemies.filter(e => TRAIT_HARD_CC.has(e.champion_id)).length;
+  if (ccCount >= 3 && !OWNED_COVERAGE.tenacity.some(id => owned.has(id))) {
+    return {
+      kind: "tenacity",
+      itemId: THREAT_ITEMS.tenacity_boots.id,
+      itemName: THREAT_ITEMS.tenacity_boots.name,
+      reason: `${ccCount} hard-CC champs — get tenacity`,
+    };
+  }
+
+  // 5) Heavy shielding
+  const shielders = enemies.filter(e => TRAIT_SHIELDERS.has(e.champion_id)).length;
+  if (shielders >= 2 && !owned.has(THREAT_ITEMS.anti_shield.id)
+    && (isCarryRole(myPosition) || isSupportRole(myPosition))) {
+    return {
+      kind: "anti-shield",
+      itemId: THREAT_ITEMS.anti_shield.id,
+      itemName: THREAT_ITEMS.anti_shield.name,
+      reason: `${shielders} shielders enemy team`,
+    };
+  }
+
+  return null;
+}
+
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
 }
@@ -1346,6 +1649,88 @@ function ItemIcon({ id, size = 32, className }: { id: number; size?: number; cla
     }>
       {img}
     </Tooltip>
+  );
+}
+
+function BuildSequencePanel({ slots, nextSlot, currentGold, threat, alternatives, currentCoreIds }: {
+  slots: BuildSlot[];
+  nextSlot: BuildSlot | undefined;
+  currentGold: number;
+  threat?: ThreatSuggestion | null;
+  alternatives?: ItemOption[];
+  currentCoreIds?: number[];
+}) {
+  // Top-3 alternative core paths sorted by WR, hide options matching the current build exactly.
+  const currentSig = (currentCoreIds ?? []).slice(0, 3).join(",");
+  const altList = (alternatives ?? [])
+    .filter(a => a.games >= 50)
+    .map(a => ({ ...a, sig: a.ids.slice(0, 3).join(",") }))
+    .sort((a, b) => b.win_rate - a.win_rate)
+    .slice(0, 4);
+  const visibleAlts = altList.filter(a => a.sig !== currentSig).slice(0, 3);
+  return (
+    <div className="bs-panel">
+      <div className="bs-header">
+        <span className="bs-title">RECOMMENDED BUILD</span>
+        <span className="bs-gold">{Math.round(currentGold).toLocaleString()}g</span>
+      </div>
+      <div className="bs-strip">
+        {slots.map((slot, i) => (
+          <div key={slot.id + "_" + i} className={`bs-slot bs-slot-${slot.state} bs-slot-${slot.category}`}>
+            <div className="bs-icon-wrap">
+              <img src={itemIconUrl(slot.id)} alt={slot.name} className="bs-icon" />
+              {slot.state === "owned" && <span className="bs-check">✓</span>}
+              {slot.state === "next" && (
+                <span className="bs-progress-ring" style={{ background: `conic-gradient(var(--accent-gold) ${(slot.progressPct ?? 0) * 3.6}deg, transparent 0deg)` }} />
+              )}
+            </div>
+            <span className="bs-name" title={slot.name}>{slot.name || `#${slot.id}`}</span>
+            {slot.state === "next" && slot.goldNeeded != null && slot.goldNeeded > 0 && (
+              <span className="bs-need">{slot.goldNeeded}g</span>
+            )}
+            {slot.state === "next" && slot.goldNeeded === 0 && (
+              <span className="bs-ready">READY</span>
+            )}
+          </div>
+        ))}
+      </div>
+      {nextSlot && nextSlot.goldCost > 0 && (
+        <div className="bs-progress-bar-wrap">
+          <div className="bs-progress-bar" style={{ width: `${nextSlot.progressPct ?? 0}%` }} />
+        </div>
+      )}
+      {threat && (
+        <div className={`bs-threat bs-threat-${threat.kind}`}>
+          <img src={itemIconUrl(threat.itemId)} alt={threat.itemName} className="bs-threat-icon" />
+          <div className="bs-threat-text">
+            <span className="bs-threat-label">CONSIDER · {threat.itemName}</span>
+            <span className="bs-threat-reason">{threat.reason}</span>
+          </div>
+        </div>
+      )}
+      {visibleAlts.length > 0 && (
+        <div className="bs-alts">
+          <span className="bs-alts-label">ALT PATHS</span>
+          <div className="bs-alts-list">
+            {visibleAlts.map((alt, i) => (
+              <div key={i} className="bs-alt">
+                <div className="bs-alt-icons">
+                  {alt.ids.slice(0, 3).map((id, j) => (
+                    <img key={j} src={itemIconUrl(id)} alt="" className="bs-alt-icon" title={getItemData(id)?.name} />
+                  ))}
+                </div>
+                <div className="bs-alt-meta">
+                  <span className={`bs-alt-wr ${alt.win_rate >= 0.52 ? "bs-alt-wr-good" : alt.win_rate < 0.48 ? "bs-alt-wr-bad" : ""}`}>
+                    {(alt.win_rate * 100).toFixed(1)}%
+                  </span>
+                  <span className="bs-alt-games">{alt.games >= 1000 ? `${(alt.games / 1000).toFixed(1)}k` : alt.games}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3410,24 +3795,14 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
   const localLive = localPlayer?.live;
   const build = game.recommended_build;
 
-  // Compute gold-to-next-item for local player
-  const goldToItem: { name: string; gold: number; itemId: number } | null = (() => {
-    if (!localLive || !build) return null;
-    const ownedIds = new Set(localLive.items);
-    const coreIds = [...build.core_items, ...build.boots];
-    for (const id of coreIds) {
-      if (!ownedIds.has(id)) {
-        const item = getItemData(id);
-        if (item && item.gold > 0) {
-          const remaining = item.gold - localLive.current_gold;
-          if (remaining > 0 && remaining < 1500) {
-            return { name: item.name, gold: Math.round(remaining), itemId: id };
-          }
-        }
-      }
-    }
-    return null;
-  })();
+  // Build the full recommended sequence for local player
+  const buildSlots = localLive ? computeBuildSequence(build, localLive.items, localLive.current_gold) : [];
+  const nextSlot = buildSlots.find(s => s.state === "next");
+
+  // Threat-response suggestion (situational defensive item)
+  const threatSuggestion = (localLive && localPlayer && ld)
+    ? suggestThreatResponse(game.enemies, localLive.items, localPlayer.position || "", localPlayer.champion_id, ld.game_time)
+    : null;
 
   // Detect enemy item completions
   useEffect(() => {
@@ -3489,13 +3864,19 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
 
       {ld && <LaneMatchups allies={game.allies} enemies={game.enemies} />}
 
-      {(goldToItem || alerts.length > 0) && (
+      {buildSlots.length > 0 && (
+        <BuildSequencePanel
+          slots={buildSlots}
+          nextSlot={nextSlot}
+          currentGold={localLive?.current_gold ?? 0}
+          threat={threatSuggestion}
+          alternatives={game.recommended_alternatives?.core_items ?? []}
+          currentCoreIds={build?.core_items ?? []}
+        />
+      )}
+
+      {alerts.length > 0 && (
         <div className="lg-alerts">
-          {goldToItem && (
-            <div className="lg-alert lg-alert-info">
-              <span className="lg-alert-gold">{goldToItem.gold}g</span> to <span className="lg-alert-item">{goldToItem.name}</span>
-            </div>
-          )}
           {alerts.map(a => (
             <div key={a.id} className={`lg-alert lg-alert-${a.type}`}>
               {a.text}
@@ -4355,6 +4736,25 @@ function OverlayApp() {
     }
   }, [state]);
 
+  // Objective spawn TTS — fire once per cycle when ETA crosses 30s.
+  // Keyed by spawnTime so each individual respawn instance triggers exactly once.
+  const objSpoken = useRef<Set<number>>(new Set()).current;
+  useEffect(() => {
+    const game = state?.live_game;
+    const ld = game?.live_data;
+    if (!game || !ld || isAramQueue(game.queue_name)) return;
+    const spawns = computeObjectiveSpawns(ld.events, ld.game_time);
+    for (const s of spawns) {
+      if (s.eta > 0 && s.eta <= 30 && !objSpoken.has(s.spawnTime)) {
+        objSpoken.add(s.spawnTime);
+        // Inject jungler context
+        const jglElapsed = Math.max(0, ld.game_time - (jglLastSeenRef.current.time || 0));
+        const ctx = jglElapsed >= 45 ? `, enemy jungler unseen ${Math.round(jglElapsed)} seconds` : "";
+        invoke("speak", { text: `${s.label} spawning in 30 seconds${ctx}` }).catch(() => {});
+      }
+    }
+  }, [state]);
+
   if (!state || !state.live_game) return <div className="overlay"><span style={{ color: "var(--text-muted)", fontSize: 11 }}>Waiting for game data...</span></div>;
   const game = state.live_game;
   const ld = game.live_data;
@@ -4441,6 +4841,19 @@ function OverlayApp() {
     }
     return null;
   })();
+
+  // --- Build sequence strip (overlay) ---
+  const ovBuildSlots = me?.live ? computeBuildSequence(game.recommended_build, me.live.items, me.live.current_gold) : [];
+
+  // --- Threat-response suggestion (overlay) ---
+  const ovThreat = (me?.live && ld)
+    ? suggestThreatResponse(game.enemies, me.live.items, me.position || "", me.champion_id, ld.game_time)
+    : null;
+
+  // --- Upcoming objective spawns ---
+  const ovSpawns = ld ? computeObjectiveSpawns(ld.events, ld.game_time) : [];
+  // Show only the next 2 (current LIVE, next imminent) and only when relevant (≤90s or just spawned)
+  const ovSpawnsVisible = ovSpawns.filter(s => s.eta <= 90).slice(0, 2);
 
   // Recall TTS effect was moved above the early return (see top of OverlayApp).
 
@@ -4580,6 +4993,57 @@ function OverlayApp() {
             <span className="ov-tac-chip ov-tac-vision" title={`Vision ${visionAdvice.current} / target ${visionAdvice.target}`}>
               Ward · {visionAdvice.current}/{visionAdvice.target}
             </span>
+          )}
+        </div>
+      )}
+
+      {/* Upcoming objective spawns */}
+      {ovSpawnsVisible.length > 0 && (
+        <div className="ov-objs">
+          {ovSpawnsVisible.map((s, i) => {
+            const live = s.eta <= 0;
+            const urgent = s.eta > 0 && s.eta <= 30;
+            const remaining = live
+              ? "LIVE"
+              : `${Math.floor(s.eta / 60)}:${(Math.round(s.eta) % 60).toString().padStart(2, "0")}`;
+            const icon = s.kind === "dragon" ? "🐉" : s.kind === "baron" ? "👹" : s.kind === "voidgrubs" ? "🐛" : "👁";
+            const teamCls = s.lastTeam === "ally" ? "ov-obj-ally-last" : s.lastTeam === "enemy" ? "ov-obj-enemy-last" : "";
+            return (
+              <span key={`${s.kind}_${i}`}
+                className={`ov-obj-chip ov-obj-${s.kind} ${live ? "ov-obj-live" : ""} ${urgent ? "ov-obj-urgent" : ""} ${teamCls}`}
+                title={s.lastTeam ? `Last taken by ${s.lastTeam === "ally" ? "your team" : "enemy"}` : `Next ${s.label}`}>
+                <span className="ov-obj-icon">{icon}</span>
+                <span className="ov-obj-label">{s.label}</span>
+                <span className="ov-obj-eta">{remaining}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Compact build strip */}
+      {ovBuildSlots.length > 0 && (
+        <div className="ov-build">
+          {ovBuildSlots.map((slot, i) => (
+            <div key={slot.id + "_" + i} className={`ov-build-slot ov-build-${slot.state}`} title={slot.name}>
+              <img src={itemIconUrl(slot.id)} alt="" className="ov-build-icon" />
+              {slot.state === "owned" && <span className="ov-build-check">✓</span>}
+              {slot.state === "next" && (
+                <span className="ov-build-ring" style={{ background: `conic-gradient(var(--accent-gold) ${(slot.progressPct ?? 0) * 3.6}deg, transparent 0deg)` }} />
+              )}
+              {slot.state === "next" && slot.goldNeeded != null && slot.goldNeeded > 0 && (
+                <span className="ov-build-need">{slot.goldNeeded}g</span>
+              )}
+              {slot.state === "next" && slot.goldNeeded === 0 && (
+                <span className="ov-build-ready">B</span>
+              )}
+            </div>
+          ))}
+          {ovThreat && (
+            <div className={`ov-build-threat ov-threat-${ovThreat.kind}`} title={`${ovThreat.itemName} · ${ovThreat.reason}`}>
+              <img src={itemIconUrl(ovThreat.itemId)} alt="" className="ov-build-icon" />
+              <span className="ov-build-threat-tag">!</span>
+            </div>
           )}
         </div>
       )}

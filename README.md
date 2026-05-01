@@ -69,8 +69,12 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 - **Lane matchup gold diff** — per-position gold comparison between matched lane opponents
 - **Summoner spell display** — all 10 players show their summoner spells (Flash, Ignite, TP, etc.). Localized LoL clients supported via internal spell-key matching
 - **Spell cooldown tracker** — click enemy summoner spells to start countdown timers (Flash 5:00, TP 6:00, etc.), click again to cancel
-- **Power spike alerts** — "400g to [item]" for your next core item, and "Enemy completed [item]" when enemies buy key items
+- **Power spike alerts** — "Enemy completed [item]" when enemies buy key items
+- **Real-time recommended build panel** — full build sequence (boots + 4 core items) with owned/next/future states, conic-gradient progress ring on the next item, gold-needed counter, and a "READY" pulse when affordable. The same strip is mirrored compactly in the overlay
+- **Threat-response suggestion** — after 8:00 game time, weighs each enemy's threat (KDA × level × gold-vs-baseline) and surfaces one situational defensive item per role (Maw, Force of Nature, Randuin's Omen, Mercury's Treads, Mortal Reminder, Serpent's Fang…). Skips the suggestion when you already own coverage
+- **Build alternatives with WR labels** — top-3 alternative core paths (≥50 games), sorted by WR%, with item icons + game count. Hides the path that matches your current recommendation
 - **Objective timers** — Baron buff (3:00), Elder Dragon buff (2:30), and Dragon Soul tracking with countdown and team indicator
+- **Objective spawn windows** — Drake / Voidgrubs / Herald / Baron next-spawn chips when ≤90s, urgent pulse at ≤30s, dashed border indicating the team that took the last instance. Season 2026 timings (Drake 5:00, Voidgrubs 8:00 single, Herald 15:00 single, Baron 20:00 with 6:00 respawn)
 - **Objective feed** — dragons, baron, herald, turrets, inhibitors, and multikills with timestamps
 - **Win probability** — real-time win % estimate based on gold diff, game time, dragons, and baron (displayed in gold bar and overlay)
 - **Roam / missing tracker** — detects when an enemy laner has stopped farming (CS hasn't progressed in ~25s and they're not dead). Shows `⚠ TOP MIA 0:32` badge in the overlay with a live countdown
@@ -86,6 +90,7 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
   - *"Watch for ganks, jungla rotando"* on jungle activity transitions
   - *"Enemy jungla unknown, place wards"* when the jungler hasn't been seen for ≥60s (90s cooldown)
   - *"Place wards"* every 3 minutes if your vision score is <50% of target
+  - *"Drake spawning in 30 seconds, enemy jungler unseen 50 seconds"* — once per spawn instance for Drake / Voidgrubs / Herald / Baron, with jungler-context injection
 - **In-game overlay** — hold TAB to show a compact overlay with all the above plus win probability, lane gold diffs, objective timers, and a **5-level plan preview** (current level + next 4 with actions, advantage, and spike warnings). Borderless windowed mode, configurable position
 - **Player profiles** — click any player to view their match history in an overlay
 

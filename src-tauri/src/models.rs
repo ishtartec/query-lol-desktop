@@ -527,6 +527,8 @@ pub struct LiveGameState {
     pub enemies: Vec<LiveGamePlayer>,
     pub live_data: Option<LiveGameData>,
     pub recommended_build: Option<ChampionBuild>,
+    #[serde(default)]
+    pub recommended_alternatives: Option<BuildAlternatives>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

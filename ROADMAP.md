@@ -18,6 +18,10 @@ In-match features. Highest-impact area because the user is actively playing and 
 - [x] **Roam/missing tracker** — CS-delta inference (<1 cs in 25s + not dead = missing). Shows `⚠ TOP MIA 0:32` with live countdown + TTS by champion name.
 - [x] **Death timer prediction** — official BRW table by level + post-15min time factor. Shows `💀 MID 28s` countdown.
 - [x] **Vision score targets** — role-based Gold-elo benchmarks (SUP 1.5/min, JNG 0.9/min, others 0.6/min). Visual chip when <70% of target + TTS reminder when <50% (3min cooldown).
+- [x] **Real-time recommended build panel** — full sequence (boots + 4 core items) with owned/next/future states, conic-gradient progress ring on the next item, gold-needed counter, and "READY" pulse when affordable. Compact 5-slot strip mirrored in the overlay.
+- [x] **Threat-response suggestion** — after 8:00 game time, computes weighted enemy threat (KDA × level × gold-vs-baseline), detects dominant damage type / heavy CC / healing / shielding, and suggests one situational defensive item per role (Maw, Force of Nature, Randuin's, Mercury's, Mortal Reminder, Serpent's Fang…). Skips when user already owns coverage.
+- [x] **Build alternatives with WR labels** — top-3 alternative core paths (≥50 games) sorted by WR, hides the currently-recommended path, shows item icons + WR% + game count.
+- [x] **Objective spawn windows + TTS** — Drake / Voidgrubs / Herald / Baron spawn timers (Season 2026 timings: Drake 5:00, Voidgrubs 8:00 single, Herald 15:00 single, Baron 20:00). Overlay chips when ≤90s with urgent pulse at ≤30s and dashed border indicating last-taken team. TTS at -30s with enemy-jungler context ("Drake spawning in 30 seconds, enemy jungler unseen 50 seconds").
 
 ## Post-Game
 
@@ -70,6 +74,9 @@ These are my opinion on the highest leverage next steps:
 
 ## Done (recent)
 
+- [x] **Adaptive live build engine** — full real-time recommended build panel with progress ring + threat-response situational suggestion + 3-path alternatives with WR labels, plus compact mirror in the overlay
+- [x] **Objective spawn windows** — Season 2026 timings (Drake / Voidgrubs / Herald / Baron) with overlay chips, last-taken team indicator, and TTS alert at -30s with enemy-jungler context
+- [x] **Roster sync — Yunara + Zaahen** — added missing 2025 champions to power curves and trait sets (Zaahen → healers/engage/burst/hard-CC; Yunara → scaling); Data Dragon fallback bumped to 16.9.1
 - [x] **Lobby + Profile suite** — daily summary, tilt gate, champion-specific improvement (vs personal baseline), game time threshold warnings
 - [x] **Champ select polish** — comp callouts (engage / frontline / peel / scaling / burst), all-lanes matchup predictions, trinket recommendation, build alternatives style labels (Popular / Best WR), ward placement tips per role + jungler archetype
 - [x] **English localization** — translated all level plan strings (champ select + overlay) and TTS messages from Spanish to English for app-wide consistency

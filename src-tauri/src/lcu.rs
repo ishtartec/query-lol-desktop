@@ -1427,7 +1427,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
     }
 
     info!("Live game: {} allies, {} enemies with ranks", allies.len(), enemies.len());
-    Ok(LiveGameState { queue_name, allies, enemies, live_data: None, recommended_build: None })
+    Ok(LiveGameState { queue_name, allies, enemies, live_data: None, recommended_build: None, recommended_alternatives: None })
 }
 
 // ============================================================
