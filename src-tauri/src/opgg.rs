@@ -1,11 +1,53 @@
 use crate::models::*;
-use log::info;
+use log::{info, warn};
+use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+use std::time::Duration;
 
 const OPGG_API_BASE: &str = "https://lol-api-champion.op.gg/api";
 
 fn http_client() -> reqwest::Client {
     reqwest::Client::new()
+}
+
+/// GET + JSON parse with bounded retries. OP.GG occasionally returns HTML/empty
+/// bodies under load — a short backoff fixes most transient failures without
+/// surfacing them to the user.
+async fn fetch_json_with_retry<T: DeserializeOwned>(url: &str) -> Result<T, String> {
+    const MAX_ATTEMPTS: u32 = 3;
+    let backoffs_ms = [600u64, 1500, 3000];
+    let mut last_err = String::new();
+    for attempt in 0..MAX_ATTEMPTS {
+        let res: Result<T, String> = async {
+            let resp = http_client()
+                .get(url)
+                .header("User-Agent", "QueryLoLDesktop/0.1")
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {}", e))?;
+            resp.json::<T>()
+                .await
+                .map_err(|e| format!("Failed to parse OP.GG response: {}", e))
+        }
+        .await;
+        match res {
+            Ok(v) => {
+                if attempt > 0 {
+                    info!("OP.GG fetch succeeded on attempt {} for {}", attempt + 1, url);
+                }
+                return Ok(v);
+            }
+            Err(e) => {
+                last_err = e;
+                if attempt + 1 < MAX_ATTEMPTS {
+                    let delay = backoffs_ms[attempt as usize];
+                    warn!("OP.GG fetch attempt {} failed: {} — retrying in {}ms", attempt + 1, last_err, delay);
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                }
+            }
+        }
+    }
+    Err(last_err)
 }
 
 /// Fetch champion build, counters, and alternatives in a single API call.
@@ -21,15 +63,7 @@ pub async fn fetch_champion_data(
     };
     info!("Fetching champion data from OP.GG: {}", url);
 
-    let data: OpggResponse = http_client()
-        .get(&url)
-        .header("User-Agent", "QueryLoLDesktop/0.1")
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse OP.GG response: {}", e))?;
+    let data: OpggResponse = fetch_json_with_retry(&url).await?;
 
     // Build (first option)
     let runes = data.data.runes.first().map(|r| RuneBuild {
