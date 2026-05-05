@@ -808,6 +808,80 @@ function getCurve(id: number): PowerCurve {
   return POWER_CURVES[id] || DEFAULT_CURVE;
 }
 
+// --- Primary-role hints for pairing lane opponents in champ select ---
+// Riot's draft API leaves enemy `position` empty until lock-in, so when the
+// user is in pick phase we infer roles from champion identity. Each champion
+// lists its 1-2 most common positions (popular flex picks include both).
+type Role = "top" | "jungle" | "middle" | "bottom" | "utility";
+const CHAMP_ROLES: Record<number, Role[]> = {
+  // Top
+  266: ["top"], 122: ["top"], 86: ["top"], 39: ["top", "middle"], 114: ["top"],
+  150: ["top"], 92: ["top", "middle"], 41: ["top"], 240: ["top"], 24: ["top", "jungle"],
+  98: ["top"], 14: ["top"], 23: ["top"], 8: ["top", "middle"], 67: ["top", "bottom"],
+  516: ["top"], 6: ["top"], 887: ["top", "middle"], 102: ["top", "jungle"],
+  17: ["top", "middle"], 78: ["top", "utility"], 420: ["top"], 13: ["middle", "top"],
+  126: ["top", "middle"], 27: ["top"], 36: ["top"], 58: ["top"], 54: ["top", "utility"],
+  31: ["top", "jungle"], 75: ["top", "jungle"], 82: ["top"], 83: ["top"], 56: ["top", "middle"],
+  897: ["top"], 50: ["top", "middle", "utility"], 875: ["top"], 60: ["top", "jungle"],
+  // Jungle
+  121: ["jungle"], 64: ["jungle"], 19: ["jungle"], 11: ["jungle"], 2: ["jungle", "top"],
+  421: ["jungle"], 79: ["jungle"], 5: ["jungle"], 113: ["jungle"], 76: ["jungle"],
+  77: ["jungle", "top"], 33: ["jungle", "top"], 9: ["jungle", "middle"], 28: ["jungle"],
+  104: ["jungle"], 107: ["jungle"], 141: ["jungle"], 234: ["jungle"], 35: ["jungle"],
+  154: ["jungle"], 254: ["jungle"], 203: ["jungle"], 200: ["jungle"],
+  62: ["jungle", "top"], 245: ["jungle", "middle"], 32: ["jungle", "utility"],
+  876: ["jungle"], 427: ["jungle"], 120: ["jungle"], 72: ["jungle", "middle"], 233: ["jungle"],
+  // Mid
+  1: ["middle"], 4: ["middle"], 7: ["middle"], 38: ["middle"], 45: ["middle"],
+  55: ["middle"], 61: ["middle"], 84: ["middle"], 91: ["middle"], 99: ["middle", "utility"],
+  101: ["middle"], 103: ["middle"], 105: ["middle"], 112: ["middle"], 115: ["middle"],
+  131: ["middle"], 134: ["middle"], 142: ["middle"], 143: ["middle", "utility"], 157: ["middle", "top"],
+  161: ["middle"], 163: ["middle"], 238: ["middle"], 246: ["middle"], 268: ["middle"],
+  517: ["middle"], 518: ["middle", "top"], 711: ["middle"],
+  777: ["middle", "top"], 800: ["middle"], 901: ["middle"], 950: ["middle", "jungle"],
+  136: ["middle"], 893: ["middle", "top"], 910: ["middle"], 25: ["middle", "utility"],
+  // Bottom (ADC)
+  18: ["bottom"], 22: ["bottom"], 29: ["bottom"], 51: ["bottom"], 81: ["bottom"],
+  96: ["bottom"], 110: ["bottom"], 119: ["bottom"], 145: ["bottom", "middle"],
+  202: ["bottom"], 222: ["bottom"], 236: ["bottom"], 360: ["bottom", "middle"],
+  429: ["bottom"], 498: ["bottom"], 523: ["bottom"],
+  21: ["bottom"], 42: ["bottom", "middle"], 15: ["bottom"], 895: ["bottom"], 904: ["bottom", "top"],
+  // Support (utility)
+  12: ["utility"], 16: ["utility"], 37: ["utility", "middle"], 40: ["utility"],
+  43: ["utility", "middle"], 53: ["utility"], 89: ["utility"], 111: ["utility", "jungle"],
+  117: ["utility"], 201: ["utility"], 223: ["utility", "top"], 267: ["utility"],
+  412: ["utility"], 432: ["utility"], 497: ["utility"], 526: ["utility"], 555: ["utility", "middle"],
+  147: ["utility", "middle"], 685: ["utility"], 902: ["utility"], 888: ["utility"],
+  44: ["utility"], 90: ["utility", "middle"], 235: ["utility", "bottom"], 350: ["utility"],
+  3: ["middle", "utility"], 30: ["utility", "middle"], 80: ["utility", "top", "middle"],
+};
+
+function getChampRoles(id: number): Role[] {
+  return CHAMP_ROLES[id] || [];
+}
+
+// Pick the most-likely lane opponent for a given ally. Strategy:
+//   1. exact position match (works once enemy locks in or LCU exposes role)
+//   2. infer enemy roles from champion identity, prefer those whose role list
+//      contains the ally's position
+//   3. fallback to first visible enemy
+function pickLaneOpponent(myPos: string | null | undefined, enemies: DraftPlayer[]): DraftPlayer | null {
+  const visible = enemies.filter(e => e.champion_id > 0);
+  if (visible.length === 0) return null;
+  const pos = (myPos || "").toLowerCase();
+  if (pos) {
+    const direct = visible.find(e => (e.position || "").toLowerCase() === pos);
+    if (direct) return direct;
+    // Prefer enemies whose primary champion role matches the lane
+    const byPrimary = visible.find(e => getChampRoles(e.champion_id)[0] === pos);
+    if (byPrimary) return byPrimary;
+    // Fall back to any role match
+    const bySecondary = visible.find(e => getChampRoles(e.champion_id).includes(pos as Role));
+    if (bySecondary) return bySecondary;
+  }
+  return visible[0];
+}
+
 // Rough estimate when OP.GG has no counter data for a matchup.
 // Maps weighted curve deltas into a [38%, 62%] WR range.
 function estimateWinRate(myId: number, enemyId: number): number {
@@ -2345,11 +2419,9 @@ function App() {
               const myId = state.champion_id!;
               const visibleEnemies = state.draft.enemies.filter(e => e.champion_id > 0);
               if (visibleEnemies.length === 0) return null;
-              // Show analysis for the lane opponent (same position) or first visible enemy
               const myPos = state.assigned_position;
-              const laneOpponent = myPos
-                ? visibleEnemies.find(e => e.position === myPos) || visibleEnemies[0]
-                : visibleEnemies[0];
+              const laneOpponent = pickLaneOpponent(myPos, state.draft.enemies);
+              if (!laneOpponent) return null;
               const wr = state.counters[laneOpponent.champion_id.toString()];
               const analysis = analyzeMatchup(myId, laneOpponent.champion_id, wr);
               return (
@@ -3401,12 +3473,28 @@ function TrinketRecommendation({ myPos, enemies }: { myPos: string; enemies: Dra
 }
 
 function pairLanes(allies: DraftPlayer[], enemies: DraftPlayer[]): LaneMatchup[] {
-  const positions = ["top", "jungle", "middle", "bottom", "utility"];
+  const positions: Role[] = ["top", "jungle", "middle", "bottom", "utility"];
   const pairs: LaneMatchup[] = [];
+  // Track which enemies have been paired so we don't double-assign.
+  const usedEnemyIds = new Set<number>();
+  // Helper: pick best enemy for a given ally pos, skipping already-used.
+  const pickForPos = (pos: Role): DraftPlayer | null => {
+    const visible = enemies.filter(p => p.champion_id > 0 && !usedEnemyIds.has(p.champion_id));
+    if (visible.length === 0) return null;
+    const direct = visible.find(p => (p.position || "").toLowerCase() === pos);
+    if (direct) return direct;
+    const byPrimary = visible.find(p => getChampRoles(p.champion_id)[0] === pos);
+    if (byPrimary) return byPrimary;
+    const bySecondary = visible.find(p => getChampRoles(p.champion_id).includes(pos));
+    if (bySecondary) return bySecondary;
+    return null;
+  };
   for (const pos of positions) {
     const a = allies.find(p => p.champion_id > 0 && (p.position || "").toLowerCase() === pos);
-    const e = enemies.find(p => p.champion_id > 0 && (p.position || "").toLowerCase() === pos);
-    if (!a || !e) continue;
+    if (!a) continue;
+    const e = pickForPos(pos);
+    if (!e) continue;
+    usedEnemyIds.add(e.champion_id);
     const ac = getCurve(a.champion_id);
     const ec = getCurve(e.champion_id);
     const earlyDelta = ac.early - ec.early;
