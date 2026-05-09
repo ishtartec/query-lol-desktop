@@ -1,7 +1,7 @@
 {
   "name": "query-lol-desktop",
   "private": true,
-  "version": "0.14.0",
+  "version": "0.14.1",
   "type": "module",
   "packageManager": "pnpm@11.0.9",
   "scripts": {
