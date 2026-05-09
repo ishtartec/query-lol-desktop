@@ -464,7 +464,7 @@ async fn poll_loop(
             };
             if !already_in_game {
                 // Fetch live game info once on transition
-                match lcu::get_live_game(&creds, sid).await {
+                match lcu::get_live_game(&creds, sid, &my_name).await {
                     Ok(mut live) => {
                         let mut s = state.lock().await;
                         // Preserve build into live game state for power spike alerts

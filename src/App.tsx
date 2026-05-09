@@ -116,6 +116,7 @@ interface MatchHistoryEntry {
   vision_score: number;
   gold_earned: number;
   total_damage: number;
+  position?: string;
 }
 
 interface LivePlayerStats {
@@ -2856,16 +2857,103 @@ function TiltGate({ history }: { history: MatchHistoryEntry[] }) {
 
 // --- Improvement Priorities ---
 
+// Tips per role + metric. Generic tips fall back to the global bucket.
+const ROLE_TIPS: Record<string, Record<string, string>> = {
+  TOP: {
+    "CS/min": "Trade efficiently between waves so you can last-hit on cooldown",
+    "Vision/min": "Ward tri/river before lvl 6, deep ward after Herald",
+    "KDA": "Avoid all-ins without flash up — top deaths cost dragon tempo",
+    "Gold/min": "Plate gold + lane prio is your biggest income lever",
+    "Deaths": "Track enemy jungler — most top deaths come from missed gank tracking",
+  },
+  JUNGLE: {
+    "CS/min": "Full-clear before ganking unless lane is shoving in — don't power-farm camps off cooldown",
+    "Vision/min": "Buy a control ward every back, ward objectives 30s before spawn",
+    "KDA": "Don't 1v1 lanes when behind — path to scuttle and reset tempo",
+    "Gold/min": "Counter-jungle when lanes have prio, take scuttle and rift Herald",
+    "Deaths": "Track enemy jungler — invades cost games more than missed ganks",
+  },
+  MIDDLE: {
+    "CS/min": "Practice mid-wave management — push for plates / jungle invade with prio",
+    "Vision/min": "Pixel ward + side-river bushes after lvl 6 to track jungler",
+    "KDA": "Pick safer trades when down — mid spikes hard with first item",
+    "Gold/min": "Side-roams + plate gold compound — don't overstay for last cs",
+    "Deaths": "Don't fight without summs/ult unless you have prio + jungle nearby",
+  },
+  BOTTOM: {
+    "CS/min": "Focus on last-hitting under tower — top ADCs have 9+ CS/min by 14m",
+    "Vision/min": "Drop yellow ward in tri/river while support roams",
+    "KDA": "Position behind frontline — being alive in fights > getting kills",
+    "Gold/min": "First two items break the matchup — race the enemy ADC's spike",
+    "Deaths": "Don't auto-attack into enemy engage range without flash up",
+  },
+  UTILITY: {
+    "Vision/min": "Buy a control ward every recall, oracle lens after 9, sweep before objectives",
+    "KDA": "Engage only when ADC has resources — selfless deaths still lose tempo",
+    "Gold/min": "Take support quest items, don't steal lane farm — your gold/min is normal",
+    "KP": "Roam mid when bot wave is shoved — your impact is map-wide",
+    "Deaths": "Vision saves lives — wards block hooks and engage",
+  },
+};
+
+function getTip(role: string, metric: string, fallback: string): string {
+  return ROLE_TIPS[role.toUpperCase()]?.[metric] ?? fallback;
+}
+
+function inferMainRole(games: MatchHistoryEntry[]): { role: string | null; confidence: number } {
+  const counts: Record<string, number> = { TOP: 0, JUNGLE: 0, MIDDLE: 0, BOTTOM: 0, UTILITY: 0 };
+  let resolved = 0;
+  for (const m of games) {
+    const pos = (m.position || "").toUpperCase();
+    if (pos in counts) {
+      counts[pos]++;
+      resolved++;
+    }
+  }
+  // Fallback: infer from champion identity for older matches missing position
+  if (resolved < games.length * 0.4) {
+    for (const m of games) {
+      const pos = (m.position || "").toUpperCase();
+      if (pos in counts) continue; // already counted
+      const champRoles = getChampRoles(m.champion_id);
+      if (champRoles.length > 0) {
+        const primary = champRoles[0].toUpperCase();
+        if (primary in counts) {
+          counts[primary]++;
+          resolved++;
+        }
+      }
+    }
+  }
+  if (resolved === 0) return { role: null, confidence: 0 };
+  const sorted = Object.entries(counts).sort(([, a], [, b]) => b - a);
+  const [topRole, topCount] = sorted[0];
+  if (topCount === 0) return { role: null, confidence: 0 };
+  return { role: topRole, confidence: topCount / resolved };
+}
+
 function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; ranked: RankedInfo }) {
   const tierKey = ranked.tier.toUpperCase();
   const tierLabel = ranked.tier.charAt(0).toUpperCase() + ranked.tier.slice(1).toLowerCase();
-  const bench = ELO_BENCHMARKS[tierKey] || ELO_BENCHMARKS.GOLD;
 
   // Filter ranked games with enough data (must have gold > 0 to ensure stats were populated)
   const games = history.filter(m =>
     (m.queue_id === 420 || m.queue_id === 440) && m.duration_secs > 300 && m.gold_earned > 0
   );
   if (games.length < 5) return null;
+
+  // Infer main role and adjust the benchmark accordingly. Confidence ≥0.5 (50%
+  // of games on one role) to avoid mislabeling a true autofill / split player.
+  const { role, confidence } = inferMainRole(games);
+  const useRole = role && confidence >= 0.5 ? role : null;
+  const bench = useRole
+    ? getRoleAdjustedBenchmark(ranked.tier, useRole)
+    : (ELO_BENCHMARKS[tierKey] || ELO_BENCHMARKS.GOLD);
+  const roleLabel = useRole ?? null;
+
+  // For supports, deprioritize CS/min — it's not a real lever and the benchmark
+  // gap dwarfs other actionable metrics.
+  const isSupport = useRole === "UTILITY";
 
   const n = games.length;
   const totalMins = games.reduce((s, m) => s + m.duration_secs / 60, 0);
@@ -2881,29 +2969,63 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
 
   type Priority = { metric: string; gap: number; yours: string; target: string; tip: string };
   const priorities: Priority[] = [];
+  const r = roleLabel ?? "";
 
-  const check = (val: number, ref_val: number, metric: string, yourFmt: string, refFmt: string, tip: string) => {
+  const check = (val: number, ref_val: number, metric: string, yourFmt: string, refFmt: string, fallback: string) => {
     const gap = (ref_val - val) / ref_val;
-    if (gap > 0.05) priorities.push({ metric, gap, yours: yourFmt, target: refFmt, tip });
+    if (gap > 0.05) priorities.push({ metric, gap, yours: yourFmt, target: refFmt, tip: getTip(r, metric, fallback) });
   };
 
-  check(avgCsMin, bench.cs_min, "CS/min", avgCsMin.toFixed(1), bench.cs_min.toString(), "Practice last-hitting in practice tool");
-  check(avgVisionMin, bench.vision_min, "Vision/min", avgVisionMin.toFixed(2), bench.vision_min.toString(), "Buy control wards, use trinket on cooldown");
-  check(avgKda, bench.kda, "KDA", avgKda.toFixed(1), bench.kda.toString(), "Focus on dying less in trades and teamfights");
-  check(avgGoldMin, bench.gold_min, "Gold/min", Math.round(avgGoldMin).toString(), bench.gold_min.toString(), "Improve CS and look for plate gold");
+  if (!isSupport) {
+    check(avgCsMin, bench.cs_min, "CS/min", avgCsMin.toFixed(1), bench.cs_min.toFixed(1), "Practice last-hitting in practice tool");
+  }
+  check(avgVisionMin, bench.vision_min, "Vision/min", avgVisionMin.toFixed(2), bench.vision_min.toFixed(2), "Buy control wards, use trinket on cooldown");
+  check(avgKda, bench.kda, "KDA", avgKda.toFixed(1), bench.kda.toFixed(1), "Focus on dying less in trades and teamfights");
+  check(avgGoldMin, bench.gold_min, "Gold/min", Math.round(avgGoldMin).toString(), Math.round(bench.gold_min).toString(), "Improve CS and look for plate gold");
 
   if (avgDeaths > 5.5) {
-    priorities.push({ metric: "Deaths", gap: (avgDeaths - 4.5) / 4.5, yours: avgDeaths.toFixed(1) + "/game", target: "<5", tip: "Review positioning and map awareness" });
+    priorities.push({ metric: "Deaths", gap: (avgDeaths - 4.5) / 4.5, yours: avgDeaths.toFixed(1) + "/game", target: "<5", tip: getTip(r, "Deaths", "Review positioning and map awareness") });
   }
 
   priorities.sort((a, b) => b.gap - a.gap);
   const top3 = priorities.slice(0, 3);
 
-  if (top3.length === 0) return null;
+  const subText = roleLabel
+    ? `vs ${tierLabel} ${roleLabel} avg · ${n} ranked games`
+    : `vs ${tierLabel} avg · ${n} ranked games`;
+
+  // Empty state: every flagged metric is at or above the role-adjusted target.
+  // Surface the closest-to-target metric instead of hiding the panel entirely
+  // so the user always has feedback on what's happening.
+  if (top3.length === 0) {
+    const allMetrics = [
+      { metric: "Vision/min", val: avgVisionMin, ref: bench.vision_min, fmt: (v: number) => v.toFixed(2) },
+      { metric: "KDA", val: avgKda, ref: bench.kda, fmt: (v: number) => v.toFixed(1) },
+      { metric: "Gold/min", val: avgGoldMin, ref: bench.gold_min, fmt: (v: number) => Math.round(v).toString() },
+    ];
+    const closest = allMetrics
+      .map(m => ({ ...m, lead: (m.val - m.ref) / m.ref }))
+      .sort((a, b) => a.lead - b.lead)[0];
+    return (
+      <div className="improve-panel">
+        <h4 className="improve-title">Areas to Improve <span className="improve-sub">{subText}</span></h4>
+        <div className="improve-empty">
+          <div className="improve-empty-title">
+            <span className="improve-empty-check">✓</span>
+            On track across the board for {tierLabel}{roleLabel ? ` ${roleLabel}` : ""}
+          </div>
+          <div className="improve-empty-body">
+            Closest to baseline: <strong>{closest.metric}</strong> at {closest.fmt(closest.val)} (target {closest.fmt(closest.ref)}, +{(closest.lead * 100).toFixed(0)}%).
+            Focus on macro: objective tempo, warding before fights, and teamfight positioning.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="improve-panel">
-      <h4 className="improve-title">Areas to Improve <span className="improve-sub">vs {tierLabel} avg · {n} ranked games</span></h4>
+      <h4 className="improve-title">Areas to Improve <span className="improve-sub">{subText}</span></h4>
       {top3.map((p, i) => (
         <div key={i} className="improve-row">
           <span className="improve-metric">{p.metric}</span>
@@ -4133,88 +4255,145 @@ const ELO_BENCHMARKS: Record<string, { cs_min: number; vision_min: number; kda: 
   CHALLENGER:   { cs_min: 8.0, vision_min: 0.85, kda: 3.7, dmg_share: 0.20, kp: 0.62, gold_min: 440 },
 };
 
-function EloComparison({ player, duration, tier }: { player: PostGamePlayer; duration: number; tier: string }) {
-  const bench = ELO_BENCHMARKS[tier.toUpperCase()] || ELO_BENCHMARKS.GOLD;
-  const mins = Math.max(duration / 60, 1);
+// Role multipliers applied on top of the tier benchmark. The tier values above
+// are role-averaged; a Yuumi SUP with 3 vision/min compared against the raw
+// gold-tier 0.48 produces a misleading +500% — supports should be compared
+// against the support baseline (~1.7 vision/min in Gold).
+type RoleKey = "TOP" | "JUNGLE" | "MIDDLE" | "BOTTOM" | "UTILITY";
+const ROLE_MULTIPLIERS: Record<RoleKey, { cs_min: number; vision_min: number; kda: number; dmg_share: number; kp: number; gold_min: number }> = {
+  TOP:     { cs_min: 1.20, vision_min: 0.95, kda: 0.95, dmg_share: 1.10, kp: 0.92, gold_min: 1.05 },
+  JUNGLE:  { cs_min: 0.85, vision_min: 1.45, kda: 1.05, dmg_share: 1.00, kp: 1.20, gold_min: 1.00 },
+  MIDDLE:  { cs_min: 1.30, vision_min: 1.00, kda: 1.10, dmg_share: 1.30, kp: 1.05, gold_min: 1.12 },
+  BOTTOM:  { cs_min: 1.45, vision_min: 0.95, kda: 1.15, dmg_share: 1.55, kp: 1.05, gold_min: 1.22 },
+  UTILITY: { cs_min: 0.18, vision_min: 3.50, kda: 1.00, dmg_share: 0.40, kp: 1.20, gold_min: 0.78 },
+};
 
-  const metrics = [
-    { label: "CS/min", value: player.cs / mins, avg: bench.cs_min, fmt: (v: number) => v.toFixed(1) },
-    { label: "Vision/min", value: player.vision_score / mins, avg: bench.vision_min, fmt: (v: number) => v.toFixed(2) },
-    { label: "KDA", value: player.deaths === 0 ? (player.kills + player.assists) : (player.kills + player.assists) / player.deaths, avg: bench.kda, fmt: (v: number) => v.toFixed(1) },
-    { label: "DMG%", value: player.damage_share, avg: bench.dmg_share, fmt: (v: number) => `${(v * 100).toFixed(0)}%` },
-    { label: "KP", value: player.kill_participation, avg: bench.kp, fmt: (v: number) => `${(v * 100).toFixed(0)}%` },
-    { label: "Gold/min", value: player.gold_earned / mins, avg: bench.gold_min, fmt: (v: number) => Math.round(v).toString() },
-  ];
-
-  return (
-    <div className="elo-panel">
-      <h4 className="elo-title">Your Performance vs {tier} Average</h4>
-      <div className="elo-metrics">
-        {metrics.map((m, i) => {
-          const pct = m.avg > 0 ? m.value / m.avg : 1;
-          const diff = pct - 1;
-          const cls = diff > 0.1 ? "elo-above" : diff < -0.1 ? "elo-below" : "elo-even";
-          return (
-            <div key={i} className="elo-row">
-              <span className="elo-label">{m.label}</span>
-              <div className="elo-bar-track">
-                <div className={`elo-bar-fill ${cls}`} style={{ width: `${Math.min(pct * 100, 150)}%` }} />
-                <div className="elo-bar-avg" />
-              </div>
-              <span className={`elo-value ${cls}`}>{m.fmt(m.value)}</span>
-              <span className={`elo-diff ${cls}`}>
-                {diff > 0 ? "+" : ""}{(diff * 100).toFixed(0)}%
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+function normalizeRoleKey(position: string): RoleKey | null {
+  const p = position.toUpperCase();
+  if (p === "TOP") return "TOP";
+  if (p === "JUNGLE" || p === "JNG" || p === "JUN") return "JUNGLE";
+  if (p === "MIDDLE" || p === "MID") return "MIDDLE";
+  if (p === "BOTTOM" || p === "ADC" || p === "BOT") return "BOTTOM";
+  if (p === "UTILITY" || p === "SUPPORT" || p === "SUP") return "UTILITY";
+  return null;
 }
 
-function PhaseBreakdown({ phases }: { phases: PhaseStats[] }) {
-  if (phases.length === 0) return null;
-  const metrics: { label: string; values: number[]; fmt: (v: number) => string }[] = [
-    { label: "KDA", values: phases.map(p => p.deaths === 0 ? p.kills + p.assists : (p.kills + p.assists) / p.deaths), fmt: v => v.toFixed(1) },
-    { label: "K/D/A", values: phases.map(() => 0), fmt: () => "" }, // special row
-    { label: "CS/min", values: phases.map(p => p.cs_per_min), fmt: v => v.toFixed(1) },
-    { label: "Gold/min", values: phases.map(p => p.gold_per_min), fmt: v => Math.round(v).toString() },
+function getRoleAdjustedBenchmark(tier: string, position: string) {
+  const base = ELO_BENCHMARKS[tier.toUpperCase()] || ELO_BENCHMARKS.GOLD;
+  const role = normalizeRoleKey(position);
+  if (!role) return base;
+  const mult = ROLE_MULTIPLIERS[role];
+  return {
+    cs_min:     base.cs_min * mult.cs_min,
+    vision_min: base.vision_min * mult.vision_min,
+    kda:        base.kda * mult.kda,
+    dmg_share:  base.dmg_share * mult.dmg_share,
+    kp:         base.kp * mult.kp,
+    gold_min:   base.gold_min * mult.gold_min,
+  };
+}
+
+// --- Unified performance panel: vs-elo comparison + phase trend in one ---
+function PerformancePanel({ player, duration, tier, phases }: {
+  player: PostGamePlayer;
+  duration: number;
+  tier: string;
+  phases: PhaseStats[];
+}) {
+  const bench = getRoleAdjustedBenchmark(tier, player.position || "");
+  const roleLabel = (player.position || "").toUpperCase() || "ALL ROLES";
+  const mins = Math.max(duration / 60, 1);
+
+  // Per-phase derived series (used in tiles where data is available)
+  const phaseLabels = phases.map(p => p.phase);
+  const phaseKda = phases.map(p => p.deaths === 0 ? p.kills + p.assists : (p.kills + p.assists) / p.deaths);
+  const phaseCs = phases.map(p => p.cs_per_min);
+  const phaseGold = phases.map(p => p.gold_per_min);
+  const phaseKDAStr = phases.map(p => `${p.kills}/${p.deaths}/${p.assists}`);
+
+  type Tile = {
+    label: string;
+    value: number;
+    avg: number;
+    fmt: (v: number) => string;
+    phaseValues?: number[];
+    phaseFmt?: (v: number) => string;
+    phaseLabelOverride?: string[];
+  };
+
+  const tiles: Tile[] = [
+    { label: "KDA", value: player.deaths === 0 ? (player.kills + player.assists) : (player.kills + player.assists) / player.deaths,
+      avg: bench.kda, fmt: v => v.toFixed(1),
+      phaseValues: phaseKda, phaseFmt: v => v.toFixed(1), phaseLabelOverride: phaseKDAStr },
+    { label: "CS/min", value: player.cs / mins, avg: bench.cs_min, fmt: v => v.toFixed(1),
+      phaseValues: phaseCs, phaseFmt: v => v.toFixed(1) },
+    { label: "Gold/min", value: player.gold_earned / mins, avg: bench.gold_min, fmt: v => Math.round(v).toString(),
+      phaseValues: phaseGold, phaseFmt: v => Math.round(v).toString() },
+    { label: "Vision/min", value: player.vision_score / mins, avg: bench.vision_min, fmt: v => v.toFixed(2) },
+    { label: "DMG share", value: player.damage_share, avg: bench.dmg_share, fmt: v => `${(v * 100).toFixed(0)}%` },
+    { label: "KP", value: player.kill_participation, avg: bench.kp, fmt: v => `${(v * 100).toFixed(0)}%` },
   ];
 
+  // Diverging bar: width is |diff| capped at the visible side (50%).
+  // Cap range at ±100% — anything beyond shows an "off-scale" ▶▶ marker.
+  const CAP = 1.0;
+  const renderBar = (diff: number, cls: string) => {
+    const clipped = Math.max(-CAP, Math.min(CAP, diff));
+    const widthPct = Math.abs(clipped) * 50; // 50% of full track per side
+    const offScale = Math.abs(diff) > CAP;
+    const positive = diff >= 0;
+    const fillStyle = positive
+      ? { left: "50%", width: `${widthPct}%` }
+      : { right: "50%", width: `${widthPct}%` };
+    return (
+      <div className="perf-bar">
+        <div className="perf-bar-track">
+          <div className={`perf-bar-fill ${cls}`} style={fillStyle} />
+          <div className="perf-bar-axis" />
+        </div>
+        {offScale && <span className={`perf-bar-overflow ${positive ? "perf-overflow-right" : "perf-overflow-left"}`}>{positive ? "▶" : "◀"}</span>}
+      </div>
+    );
+  };
+
   return (
-    <div className="phase-panel">
-      <h4 className="phase-title">Performance by Phase</h4>
-      <div className="phase-grid">
-        <div className="phase-row phase-header-row">
-          <span className="phase-metric-label" />
-          {phases.map((p, i) => <span key={i} className="phase-col-header">{p.phase}</span>)}
-        </div>
-        {/* KDA row */}
-        <div className="phase-row">
-          <span className="phase-metric-label">KDA</span>
-          {phases.map((p, i) => (
-            <div key={i} className="phase-cell">
-              <span className="phase-kda">
-                <span className="lg-live-k">{p.kills}</span>/<span className="lg-live-d">{p.deaths}</span>/<span className="lg-live-a">{p.assists}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-        {/* Metric rows */}
-        {metrics.filter(m => m.label !== "KDA" && m.label !== "K/D/A").map((m, mi) => {
-          const max = Math.max(...m.values, 1);
+    <div className="perf-panel">
+      <h4 className="perf-title">
+        Performance · <span className="perf-title-tier">{tier} {roleLabel}</span>
+        <span className="perf-title-hint">vs role average</span>
+      </h4>
+      <div className="perf-grid">
+        {tiles.map((t, i) => {
+          const pct = t.avg > 0 ? t.value / t.avg : 1;
+          const diff = pct - 1;
+          const cls = diff > 0.1 ? "perf-above" : diff < -0.1 ? "perf-below" : "perf-even";
           return (
-            <div key={mi} className="phase-row">
-              <span className="phase-metric-label">{m.label}</span>
-              {m.values.map((v, vi) => (
-                <div key={vi} className="phase-cell">
-                  <div className="phase-bar-track">
-                    <div className="phase-bar-fill" style={{ width: `${(v / max) * 100}%` }} />
-                  </div>
-                  <span className="phase-val">{m.fmt(v)}</span>
+            <div key={i} className={`perf-tile ${cls}`}>
+              <div className="perf-tile-head">
+                <span className="perf-tile-label">{t.label}</span>
+                <span className={`perf-tile-delta ${cls}`}>
+                  {diff > 0 ? "+" : ""}{(diff * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="perf-tile-row">
+                <span className={`perf-tile-value ${cls}`}>{t.fmt(t.value)}</span>
+                <span className="perf-tile-avg">avg {t.fmt(t.avg)}</span>
+              </div>
+              {renderBar(diff, cls)}
+              {t.phaseValues && phaseLabels.length > 0 && (
+                <div className="perf-phase-row">
+                  {t.phaseValues.map((v, pi) => {
+                    const label = phaseLabels[pi]?.charAt(0) ?? "";
+                    const display = t.phaseLabelOverride ? t.phaseLabelOverride[pi] : t.phaseFmt!(v);
+                    return (
+                      <div key={pi} className="perf-phase-cell" title={phaseLabels[pi]}>
+                        <span className="perf-phase-tag">{label}</span>
+                        <span className="perf-phase-val">{display}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+              )}
             </div>
           );
         })}
@@ -4349,20 +4528,13 @@ function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats;
         <GoldDiffTimeline timeline={stats.gold_timeline} deaths={stats.death_events} duration={stats.game_duration_secs} />
       )}
 
-      {/* Elo comparison for local player */}
+      {/* Unified performance panel (vs role-elo benchmark + phase trends) */}
       {stats.game_duration_secs > 0 && (() => {
         const local = stats.teams.flatMap(t => t.players).find(p => p.is_local);
         if (!local || !local.rank) return null;
         const tier = local.rank.split(" ")[0];
         if (!tier || !ELO_BENCHMARKS[tier.toUpperCase()]) return null;
-        return <EloComparison player={local} duration={stats.game_duration_secs} tier={tier} />;
-      })()}
-
-      {/* Phase breakdown for local player */}
-      {(() => {
-        const local = stats.teams.flatMap(t => t.players).find(p => p.is_local);
-        if (!local || local.phase_stats.length === 0) return null;
-        return <PhaseBreakdown phases={local.phase_stats} />;
+        return <PerformancePanel player={local} duration={stats.game_duration_secs} tier={tier} phases={local.phase_stats} />;
       })()}
     </div>
   );

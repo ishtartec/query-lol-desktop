@@ -1696,52 +1696,152 @@
 .improve-tip {
   font-size: 10px; color: var(--text-muted); line-height: 1.3;
 }
+.improve-empty {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px;
+  background: rgba(42, 222, 106, 0.06);
+  border: 1px solid rgba(42, 222, 106, 0.22);
+  border-radius: 8px;
+}
+.improve-empty-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700;
+  color: #4be38a;
+}
+.improve-empty-check {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  background: #2ade6a; color: var(--bg-primary);
+  border-radius: 50%;
+  font-size: 11px; font-weight: 900;
+}
+.improve-empty-body {
+  font-size: 11px; color: var(--text-secondary); line-height: 1.4;
+}
+.improve-empty-body strong {
+  color: var(--text-primary); font-weight: 700;
+}
 
-/* === Elo Comparison === */
-.elo-panel {
+/* === Performance panel (vs role-elo benchmark + phase trends) === */
+.perf-panel {
   margin-top: 16px; padding: 14px 16px;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
 }
-.elo-title {
+.perf-title {
   font-size: 12px; font-weight: 700; color: var(--accent-gold);
-  margin-bottom: 10px; letter-spacing: 0.3px;
+  margin: 0 0 12px 0; letter-spacing: 0.3px;
+  display: flex; align-items: baseline; gap: 8px;
 }
-.elo-metrics {
+.perf-title-tier {
+  color: var(--text-primary); font-weight: 700;
+}
+.perf-title-hint {
+  font-size: 10px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.4px;
+}
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+.perf-tile {
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(74, 85, 104, 0.32);
+  border-radius: 8px;
   display: flex; flex-direction: column; gap: 6px;
+  transition: border-color 0.2s ease;
 }
-.elo-row {
-  display: flex; align-items: center; gap: 8px;
+.perf-tile.perf-above { border-color: rgba(42, 222, 106, 0.32); }
+.perf-tile.perf-below { border-color: rgba(232, 64, 87, 0.32); }
+.perf-tile-head {
+  display: flex; align-items: center; justify-content: space-between;
 }
-.elo-label {
-  font-size: 11px; font-weight: 600; color: var(--text-secondary);
-  min-width: 70px;
+.perf-tile-label {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.8px;
+  color: var(--text-muted); text-transform: uppercase;
 }
-.elo-bar-track {
-  flex: 1; height: 8px; background: var(--bg-primary);
-  border-radius: 4px; position: relative; overflow: hidden;
+.perf-tile-delta {
+  font-size: 11px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 6px; border-radius: 10px;
 }
-.elo-bar-fill {
-  height: 100%; border-radius: 4px; transition: width 0.4s ease;
-  max-width: 100%;
+.perf-tile-delta.perf-above { background: rgba(42, 222, 106, 0.16); color: #4be38a; }
+.perf-tile-delta.perf-below { background: rgba(232, 64, 87, 0.16); color: #ff6b7d; }
+.perf-tile-delta.perf-even { background: rgba(184, 192, 203, 0.12); color: var(--text-secondary); }
+.perf-tile-row {
+  display: flex; align-items: baseline; gap: 8px;
 }
-.elo-bar-avg {
-  position: absolute; left: 100%; top: 0; bottom: 0;
-  width: 2px; background: var(--text-muted); opacity: 0.5;
+.perf-tile-value {
+  font-size: 22px; font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
 }
-.elo-bar-fill.elo-above { background: var(--accent-green); }
-.elo-bar-fill.elo-below { background: var(--accent-red); }
-.elo-bar-fill.elo-even { background: var(--text-secondary); }
-.elo-value {
-  font-size: 12px; font-weight: 700; min-width: 45px; text-align: right;
+.perf-tile-value.perf-above { color: #4be38a; }
+.perf-tile-value.perf-below { color: #ff6b7d; }
+.perf-tile-value.perf-even { color: var(--text-primary); }
+.perf-tile-avg {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-.elo-diff {
-  font-size: 10px; font-weight: 700; min-width: 40px; text-align: right;
+
+/* Diverging bar — center axis is the role average */
+.perf-bar {
+  position: relative; height: 8px; margin-top: 2px;
+}
+.perf-bar-track {
+  position: relative; height: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 4px; overflow: hidden;
+}
+.perf-bar-axis {
+  position: absolute; left: 50%; top: -1px; bottom: -1px;
+  width: 1px; background: var(--text-muted); opacity: 0.45;
+  transform: translateX(-0.5px);
+}
+.perf-bar-fill {
+  position: absolute; top: 0; bottom: 0;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.perf-bar-fill.perf-above {
+  background: linear-gradient(90deg, rgba(42, 222, 106, 0.65), #2ade6a);
+}
+.perf-bar-fill.perf-below {
+  background: linear-gradient(270deg, rgba(232, 64, 87, 0.65), #e84057);
+}
+.perf-bar-fill.perf-even {
+  background: var(--text-muted); opacity: 0.5;
+}
+.perf-bar-overflow {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  font-size: 10px; font-weight: 800;
+  pointer-events: none;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+.perf-overflow-right { right: -12px; color: #4be38a; }
+.perf-overflow-left  { left: -12px; color: #ff6b7d; }
+
+/* Per-phase mini row (Early / Mid / Late) */
+.perf-phase-row {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(74, 85, 104, 0.35);
+}
+.perf-phase-cell {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+.perf-phase-tag {
+  font-size: 9px; font-weight: 800; color: var(--accent-gold);
+  letter-spacing: 0.5px; opacity: 0.85;
+}
+.perf-phase-val {
+  font-size: 11px; font-weight: 700; color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
-.elo-above { color: var(--accent-green); }
-.elo-below { color: var(--accent-red); }
-.elo-even { color: var(--text-secondary); }
 
 /* === Gold Diff Timeline === */
 .gold-timeline-panel {
@@ -1754,52 +1854,6 @@
 }
 .gold-timeline-svg {
   width: 100%; height: auto;
-}
-
-/* === Phase Breakdown === */
-.phase-panel {
-  margin-top: 16px; padding: 14px 16px;
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
-}
-.phase-title {
-  font-size: 12px; font-weight: 700; color: var(--accent-gold);
-  margin-bottom: 10px; letter-spacing: 0.3px;
-}
-.phase-grid {
-  display: flex; flex-direction: column; gap: 6px;
-}
-.phase-row {
-  display: flex; align-items: center; gap: 8px;
-}
-.phase-header-row {
-  margin-bottom: 2px;
-}
-.phase-metric-label {
-  font-size: 10px; font-weight: 600; color: var(--text-secondary);
-  min-width: 90px; flex-shrink: 0;
-}
-.phase-col-header {
-  flex: 1; font-size: 10px; font-weight: 700; color: var(--text-muted);
-  text-align: center; letter-spacing: 0.3px;
-}
-.phase-cell {
-  flex: 1; display: flex; align-items: center; gap: 6px;
-}
-.phase-bar-track {
-  flex: 1; height: 6px; background: var(--bg-primary);
-  border-radius: 3px; overflow: hidden;
-}
-.phase-bar-fill {
-  height: 100%; background: var(--accent-blue); border-radius: 3px;
-  transition: width 0.3s ease; opacity: 0.7;
-}
-.phase-val {
-  font-size: 10px; font-weight: 600; color: var(--text-primary);
-  min-width: 35px; text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.phase-kda {
-  font-size: 12px; font-weight: 700; letter-spacing: 0.3px;
 }
 
 /* === Post-Game === */

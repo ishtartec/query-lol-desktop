@@ -508,6 +508,8 @@ pub struct MatchHistoryEntry {
     pub vision_score: i64,
     pub gold_earned: i64,
     pub total_damage: i64,
+    #[serde(default)]
+    pub position: String, // TOP / JUNGLE / MIDDLE / BOTTOM / UTILITY (empty if unknown)
 }
 
 // --- ARAM bench ---

@@ -879,6 +879,34 @@ pub fn analyze_smurf(
 }
 
 /// Fetch match history for any player by puuid.
+// Derive a player position from a participant block in the match-history JSON.
+// Riot's `timeline.lane` is unreliable on its own (junglers report JUNGLE which
+// the LCU sometimes returns as TOP), so we cross-check with summoner spell 11
+// (Smite) and CS/vision heuristics — same pattern used in `get_match_details`.
+fn derive_position_from_history(participant: &serde_json::Value, stats: &serde_json::Value) -> String {
+    let timeline = participant.get("timeline").unwrap_or(&serde_json::Value::Null);
+    let lane = timeline.get("lane").and_then(|v| v.as_str()).unwrap_or("");
+    let role = timeline.get("role").and_then(|v| v.as_str()).unwrap_or("");
+    let s1 = participant.get("spell1Id").and_then(|v| v.as_i64()).unwrap_or(0);
+    let s2 = participant.get("spell2Id").and_then(|v| v.as_i64()).unwrap_or(0);
+    let has_smite = s1 == 11 || s2 == 11;
+    let cs = stats.get("totalMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0)
+        + stats.get("neutralMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0);
+    let vs = stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0);
+
+    if has_smite { return "JUNGLE".to_string(); }
+    let raw = match (lane, role) {
+        ("JUNGLE", _) => "TOP",
+        ("TOP", _) => "TOP",
+        ("MIDDLE", _) | ("MID", _) => "MIDDLE",
+        ("BOTTOM", "DUO_SUPPORT") | ("BOT", "DUO_SUPPORT") => "UTILITY",
+        ("BOTTOM", _) | ("BOT", _) if cs < 100 && vs > 15 => "UTILITY",
+        ("BOTTOM", _) | ("BOT", _) => "BOTTOM",
+        _ => lane,
+    };
+    raw.to_uppercase()
+}
+
 pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Result<Vec<MatchHistoryEntry>, String> {
     let client = lcu_client();
     let url = lcu_url(creds, &format!("/lol-match-history/v1/products/lol/{}/matches", puuid));
@@ -924,6 +952,7 @@ pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Re
                         vision_score: stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0),
                         gold_earned: stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0),
                         total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
+                        position: derive_position_from_history(me, stats),
                     });
                 }
             }
@@ -984,6 +1013,7 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
                         vision_score: stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0),
                         gold_earned: stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0),
                         total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
+                        position: derive_position_from_history(me, stats),
                     });
                 }
             }
@@ -1192,7 +1222,7 @@ pub async fn get_current_queue(creds: &LcuCredentials) -> Result<(i64, String), 
 }
 
 /// Get live game session info (players in current game).
-pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) -> Result<LiveGameState, String> {
+pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, my_name: &str) -> Result<LiveGameState, String> {
     let client = lcu_client();
     let resp = client
         .get(lcu_url(creds, "/lol-gameflow/v1/session"))
@@ -1275,23 +1305,43 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>) 
     let mut team_one_raw = vec![];
     let mut team_two_raw = vec![];
     let mut my_team_is_one = true;
+    let mut team_resolved = false;
 
     if let Some(arr) = raw.get("gameData").and_then(|g| g.get("teamOne")).and_then(|t| t.as_array()) {
         team_one_raw = parse_players_raw(arr);
-        if let Some(sid) = my_summoner_id {
-            if team_one_raw.iter().any(|r| r.summoner_id == sid) {
-                my_team_is_one = true;
-            }
-        }
     }
-
     if let Some(arr) = raw.get("gameData").and_then(|g| g.get("teamTwo")).and_then(|t| t.as_array()) {
         team_two_raw = parse_players_raw(arr);
-        if let Some(sid) = my_summoner_id {
-            if team_two_raw.iter().any(|r| r.summoner_id == sid) {
-                my_team_is_one = false;
-            }
+    }
+
+    // Resolve which team the local player is on. Try summoner_id first, then
+    // fall back to summoner-name matching (post-Riot-ID clients sometimes omit
+    // summoner_id entirely, leaving team detection inverted).
+    if let Some(sid) = my_summoner_id.filter(|s| *s > 0) {
+        if team_one_raw.iter().any(|r| r.summoner_id == sid) {
+            my_team_is_one = true;
+            team_resolved = true;
+        } else if team_two_raw.iter().any(|r| r.summoner_id == sid) {
+            my_team_is_one = false;
+            team_resolved = true;
         }
+    }
+    if !team_resolved && !my_name.is_empty() {
+        let target = my_name.split('#').next().unwrap_or(my_name).trim().to_lowercase();
+        let name_matches = |player: &LiveGamePlayer| {
+            let n = player.summoner_name.split('#').next().unwrap_or(&player.summoner_name).trim().to_lowercase();
+            !n.is_empty() && n == target
+        };
+        if team_one_raw.iter().any(|r| name_matches(&r.player)) {
+            my_team_is_one = true;
+            team_resolved = true;
+        } else if team_two_raw.iter().any(|r| name_matches(&r.player)) {
+            my_team_is_one = false;
+            team_resolved = true;
+        }
+    }
+    if !team_resolved {
+        log::warn!("get_live_game: could not resolve local player team (sid={:?}, name='{}') — defaulting to team_one", my_summoner_id, my_name);
     }
 
     // Mark enemy teams before merging
