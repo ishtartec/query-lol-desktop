@@ -179,14 +179,20 @@ During a match, hold **TAB** to show a compact overlay with gold diff, enemy KDA
 ## Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (LTS)
+- [Node.js 22](https://nodejs.org/) (current active LTS — ships with corepack)
 - [Rust](https://www.rust-lang.org/tools/install)
 - [Tauri prerequisites](https://tauri.app/start/prerequisites/)
+
+`pnpm` is managed automatically via [corepack](https://nodejs.org/api/corepack.html) — the version is pinned in `package.json` (`packageManager` field). Enable it once:
+
+```bash
+corepack enable
+```
 
 ### Development
 
 ```bash
-# Install dependencies
+# Install dependencies (corepack auto-pulls the pinned pnpm version)
 pnpm install
 
 # Run in development mode (launches Tauri + Vite dev server)
@@ -204,7 +210,7 @@ pnpm tauri build
 
 ```bash
 # Bump version, commit, tag, and push (triggers CI build + GitHub Release)
-./scripts/release.sh 0.5.0
+./scripts/release.sh 0.14.0
 ```
 
 ---
