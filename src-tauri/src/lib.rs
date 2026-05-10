@@ -12,14 +12,19 @@ use tokio::sync::Mutex;
 type SharedState = Arc<Mutex<AppState>>;
 
 fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
-    config::save(app, &config::UserConfig {
-        region: s.region.clone(),
-        auto_apply: s.auto_apply,
-        auto_lock: s.auto_lock,
-        auto_accept: s.auto_accept,
-        tts_enabled: s.tts_enabled,
-        lp_history: s.lp_history.clone(),
-    });
+    // Merge into the on-disk config so other accounts' buckets (and the
+    // active one) stay intact even if we don't yet know our puuid.
+    let mut cfg = config::load(app);
+    cfg.region = s.region.clone();
+    cfg.auto_apply = s.auto_apply;
+    cfg.auto_lock = s.auto_lock;
+    cfg.auto_accept = s.auto_accept;
+    cfg.tts_enabled = s.tts_enabled;
+    if let Some(puuid) = s.summoner_puuid.as_deref() {
+        cfg.set_lp_history(puuid, s.lp_history.clone());
+    }
+    // If puuid isn't known yet (rare: pre-connect save), don't touch lp buckets.
+    config::save(app, &cfg);
 }
 
 fn notify(title: &str, body: &str) {
@@ -94,6 +99,25 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
                     s.status = ConnectionStatus::Connected;
                     s.summoner_name = summoner.game_name.or(summoner.display_name);
                     s.summoner_id = summoner.summoner_id;
+                    let new_puuid = summoner.puuid.filter(|p| !p.is_empty());
+                    // Hydrate lp_history from the right bucket on first
+                    // connect or genuine account switch. We only treat
+                    // Some(other) as a switch — None means the LCU didn't
+                    // return puuid this poll, not that the account changed.
+                    if let Some(ref puuid) = new_puuid {
+                        let switched = s.summoner_puuid.as_ref() != Some(puuid);
+                        s.summoner_puuid = Some(puuid.clone());
+                        if switched {
+                            let cfg = config::load(&app_handle);
+                            let history = cfg.lp_history_for(puuid);
+                            s.lp_history = history;
+                            // Persist the migration so the next account
+                            // that logs in doesn't inherit the legacy bucket.
+                            if !cfg.legacy_lp_history.is_empty() && !cfg.accounts.contains_key(puuid) {
+                                save_config(&app_handle, &s);
+                            }
+                        }
+                    }
                     // Fetch match history and ranked stats
                     if let Ok(history) = lcu::get_match_history(&creds).await {
                         s.match_history = history;
@@ -996,7 +1020,9 @@ pub fn run() {
                 s.auto_lock = cfg.auto_lock;
                 s.auto_accept = cfg.auto_accept;
                 s.tts_enabled = cfg.tts_enabled;
-                s.lp_history = cfg.lp_history;
+                // lp_history stays empty until the watcher learns the active
+                // puuid; at that point we hydrate from the right bucket.
+                s.lp_history = vec![];
             }
 
             // Spawn auto-reconnect watcher

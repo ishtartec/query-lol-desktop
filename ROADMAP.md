@@ -53,7 +53,7 @@ Closes the learning loop. The data is there — we just need richer synthesis.
 - [ ] **System notifications** — native notifications for ready check, key in-game events.
 - [ ] **Discord integration** — share match results, LP changes.
 - [ ] **Stats over time** — charts of key metrics across weeks/months.
-- [ ] **Multi-account support** — track multiple summoner accounts.
+- [x] **Multi-account support** — LP history and per-account state are bucketed by Riot puuid in the persisted config. Auto-switches when the LoL client logs in as a different account; legacy single-account configs are migrated transparently on first connect. No UI changes — accounts share toggles (auto-apply, TTS) but get their own LP history / daily summary / champion baselines.
 - [ ] **Customizable dashboard** — let users hide/show widgets.
 - [ ] **Themes** — light theme, custom accent colors.
 - [ ] **Auto-mute LoL on app focus** — mute game audio when checking the app.
@@ -74,6 +74,7 @@ These are my opinion on the highest leverage next steps:
 
 ## Done (recent)
 
+- [x] **Multi-account support** — persisted LP history bucketed by Riot puuid; auto-switches on account change; legacy single-account configs migrate transparently on first connect
 - [x] **Adaptive live build engine** — full real-time recommended build panel with progress ring + threat-response situational suggestion + 3-path alternatives with WR labels, plus compact mirror in the overlay
 - [x] **Objective spawn windows** — Season 2026 timings (Drake / Voidgrubs / Herald / Baron) with overlay chips, last-taken team indicator, and TTS alert at -30s with enemy-jungler context
 - [x] **Roster sync — Yunara + Zaahen** — added missing 2025 champions to power curves and trait sets (Zaahen → healers/engage/burst/hard-CC; Yunara → scaling); Data Dragon fallback bumped to 16.9.1

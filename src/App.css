@@ -809,14 +809,14 @@
 /* LP Chart */
 .lp-chart-container {
   background: transparent; border: 1.5px solid rgba(30, 42, 56, 0.9);
-  border-radius: 10px; padding: 12px 16px; margin-bottom: 12px;
+  border-radius: 10px; padding: 8px 14px 6px; margin-bottom: 10px;
 }
 .lp-chart-header {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
-.lp-diff { font-size: 14px; font-weight: 800; }
-.lp-chart-svg { width: 100%; height: 80px; display: block; }
+.lp-diff { font-size: 13px; font-weight: 800; }
+.lp-chart-svg { width: 100%; height: 48px; display: block; }
 
 /* Lobby Background */
 .lobby-bg {
@@ -1660,12 +1660,12 @@
 /* === Improvement Priorities === */
 .improve-panel {
   position: relative; z-index: 2;
-  margin-bottom: 12px; padding: 12px 16px;
+  margin-bottom: 10px; padding: 10px 14px;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
 }
 .improve-title {
   font-size: 12px; font-weight: 700; color: var(--accent-gold);
-  margin-bottom: 10px; letter-spacing: 0.3px;
+  margin-bottom: 8px; letter-spacing: 0.3px;
 }
 .improve-sub {
   font-weight: 500; color: var(--text-muted); font-size: 10px; margin-left: 6px;
@@ -1697,15 +1697,15 @@
   font-size: 10px; color: var(--text-muted); line-height: 1.3;
 }
 .improve-empty {
-  display: flex; flex-direction: column; gap: 6px;
-  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 10px;
   background: rgba(42, 222, 106, 0.06);
   border: 1px solid rgba(42, 222, 106, 0.22);
   border-radius: 8px;
 }
 .improve-empty-title {
   display: flex; align-items: center; gap: 8px;
-  font-size: 12px; font-weight: 700;
+  font-size: 11px; font-weight: 700;
   color: #4be38a;
 }
 .improve-empty-check {
@@ -2543,14 +2543,15 @@
   background: linear-gradient(135deg, rgba(200, 155, 60, 0.08), rgba(3, 151, 171, 0.05));
   border: 1px solid rgba(200, 155, 60, 0.2);
   border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
 }
+
 .daily-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .daily-title {
   font-size: 11px;
@@ -2573,9 +2574,10 @@
 }
 .daily-stats {
   display: flex;
-  gap: 18px;
+  gap: 14px;
   align-items: center;
   flex-wrap: wrap;
+  row-gap: 10px;
 }
 .daily-stat {
   display: flex;
@@ -2616,15 +2618,15 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
+  padding: 10px 14px 12px;
+  margin-bottom: 10px;
 }
 .champ-improvement-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .champ-improvement-title {
@@ -2642,13 +2644,13 @@
 .champ-improvement-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .champ-improvement-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px;
+  padding: 6px 10px;
   background: var(--bg-primary);
   border-radius: 6px;
 }
@@ -2657,7 +2659,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .champ-improvement-name {
   display: flex;

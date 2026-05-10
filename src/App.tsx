@@ -2764,7 +2764,7 @@ function ChampionImprovement({ history }: { history: MatchHistoryEntry[] }) {
           const goldDelta = deltaPct(c.stats.goldPerMin, baseline.goldPerMin);
           return (
             <div key={c.id} className="champ-improvement-row">
-              <ChampionIcon championId={c.id} size={40} />
+              <ChampionIcon championId={c.id} size={34} />
               <div className="champ-improvement-info">
                 <div className="champ-improvement-name">
                   <ChampionNameLabel championId={c.id} fallback={`Champ ${c.id}`} />
@@ -2936,10 +2936,17 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
   const tierKey = ranked.tier.toUpperCase();
   const tierLabel = ranked.tier.charAt(0).toUpperCase() + ranked.tier.slice(1).toLowerCase();
 
-  // Filter ranked games with enough data (must have gold > 0 to ensure stats were populated)
-  const games = history.filter(m =>
-    (m.queue_id === 420 || m.queue_id === 440) && m.duration_secs > 300 && m.gold_earned > 0
-  );
+  // Prefer ranked (solo/duo + flex). If we have <5, fall back to ranked +
+  // normal draft / quickplay (still on Summoner's Rift) so players who don't
+  // grind ranked still get feedback.
+  const isRifted = (m: MatchHistoryEntry) =>
+    m.queue_id === 420 || m.queue_id === 440 ||
+    m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490;
+  const validBase = (m: MatchHistoryEntry) => m.duration_secs > 300 && m.gold_earned > 0;
+
+  const rankedOnly = history.filter(m => (m.queue_id === 420 || m.queue_id === 440) && validBase(m));
+  const games = rankedOnly.length >= 5 ? rankedOnly : history.filter(m => isRifted(m) && validBase(m));
+  const usingNormals = rankedOnly.length < 5;
   if (games.length < 5) return null;
 
   // Infer main role and adjust the benchmark accordingly. Confidence ≥0.5 (50%
@@ -2990,9 +2997,10 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
   priorities.sort((a, b) => b.gap - a.gap);
   const top3 = priorities.slice(0, 3);
 
+  const sampleLabel = usingNormals ? `${n} recent SR games` : `${n} ranked games`;
   const subText = roleLabel
-    ? `vs ${tierLabel} ${roleLabel} avg · ${n} ranked games`
-    : `vs ${tierLabel} avg · ${n} ranked games`;
+    ? `vs ${tierLabel} ${roleLabel} avg · ${sampleLabel}`
+    : `vs ${tierLabel} avg · ${sampleLabel}`;
 
   // Empty state: every flagged metric is at or above the role-adjusted target.
   // Surface the closest-to-target metric instead of hiding the panel entirely
@@ -3061,8 +3069,8 @@ function absoluteLp(tier: string, rank: string, lp: number): number {
 
 function LpChart({ history }: { history: LpEntry[] }) {
   const width = 400;
-  const height = 80;
-  const pad = { top: 8, bottom: 20, left: 8, right: 8 };
+  const height = 48;
+  const pad = { top: 6, bottom: 14, left: 8, right: 8 };
 
   const absLps = history.map(h => absoluteLp(h.tier, h.rank, h.lp));
   const minLp = Math.min(...absLps) - 15;
@@ -3103,14 +3111,14 @@ function LpChart({ history }: { history: LpEntry[] }) {
 
         {/* Dots */}
         {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 4 : 2.5}
+          <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 3 : 1.8}
             fill={i === points.length - 1 ? "var(--accent-gold)" : "var(--bg-card)"}
-            stroke="var(--accent-gold)" strokeWidth="1.5" />
+            stroke="var(--accent-gold)" strokeWidth="1.2" />
         ))}
 
         {/* Current LP label */}
-        <text x={width - pad.right} y={height - 4} textAnchor="end"
-          fill="var(--text-secondary)" fontSize="10" fontWeight="600">
+        <text x={width - pad.right} y={height - 2} textAnchor="end"
+          fill="var(--text-secondary)" fontSize="9" fontWeight="600">
           {last.lp} LP
         </text>
       </svg>

@@ -50,6 +50,8 @@ pub struct AppState {
     pub summoner_name: Option<String>,
     #[serde(skip)]
     pub summoner_id: Option<i64>,
+    #[serde(skip)]
+    pub summoner_puuid: Option<String>,
     pub champion_id: Option<i64>,
     pub champion_name: Option<String>,
     pub assigned_position: Option<String>,
@@ -160,6 +162,7 @@ impl Default for AppState {
             status: ConnectionStatus::Disconnected,
             summoner_name: None,
             summoner_id: None,
+            summoner_puuid: None,
             champion_id: None,
             champion_name: None,
             assigned_position: None,
@@ -457,6 +460,8 @@ pub struct LcuSummoner {
     pub game_name: Option<String>,
     #[allow(dead_code)]
     pub summoner_id: Option<i64>,
+    #[serde(default)]
+    pub puuid: Option<String>,
 }
 
 // --- Ranked info ---
