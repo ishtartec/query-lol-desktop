@@ -40,8 +40,31 @@ interface PickRecommendation {
   champion_id: number;
   score: number;
   win_rate: number;
+  meta_wr: number;
+  counter_bonus: number;
+  comfort_score: number;
+  comfort_games: number;
   counters_count: number;
   synergies_count: number;
+  top_counter_targets: number[];
+}
+
+type RecTier = "S" | "A" | "B" | "C" | "D";
+type RecCategory = "safe" | "counter" | "comfort" | "synergy";
+
+type RecReason =
+  | { kind: "counter"; championIds: number[] }
+  | { kind: "comfort"; games: number }
+  | { kind: "synergy"; trait: string }
+  | { kind: "meta"; tier: RecTier };
+
+interface RankedRecommendation extends PickRecommendation {
+  final_score: number;        // 0-100
+  tier: RecTier;
+  category: RecCategory;
+  synergy_bonus: number;      // signed, frontend-computed
+  missing_traits_filled: string[];
+  reasons: RecReason[];
 }
 
 interface PostGamePlayer {
@@ -881,6 +904,138 @@ function pickLaneOpponent(myPos: string | null | undefined, enemies: DraftPlayer
     if (bySecondary) return bySecondary;
   }
   return visible[0];
+}
+
+// Team-comp fit for a candidate pick. Looks at which traits the ally team is
+// missing and rewards candidates that fill them; penalises damage-type stacking
+// and redundancy with traits already over-represented.
+function computeTeamCompFit(
+  candidateId: number,
+  allyIds: number[],
+): { synergy_bonus: number; missing_traits_filled: string[] } {
+  if (allyIds.length === 0) {
+    return { synergy_bonus: 0, missing_traits_filled: [] };
+  }
+
+  const countTrait = (set: Set<number>, ids: number[]) => ids.filter(id => set.has(id)).length;
+
+  const allyAP = allyIds.filter(id => CHAMP_DAMAGE_TYPE[id] === "ap").length;
+  const allyAD = allyIds.filter(id => CHAMP_DAMAGE_TYPE[id] === "ad").length;
+  const candDmg = CHAMP_DAMAGE_TYPE[candidateId];
+
+  let bonus = 0;
+  const filled: string[] = [];
+
+  // Damage diversity: reward filling the minority side, penalise piling on
+  if (candDmg && allyIds.length >= 2) {
+    const diff = allyAP - allyAD;
+    if (candDmg === "ap" && diff <= -2) { bonus += 0.18; filled.push("AP diversity"); }
+    else if (candDmg === "ad" && diff >= 2) { bonus += 0.18; filled.push("AD diversity"); }
+    else if (candDmg === "ap" && diff >= 3) { bonus -= 0.15; }
+    else if (candDmg === "ad" && diff <= -3) { bonus -= 0.15; }
+  }
+
+  // Trait gap fills
+  const gaps: { set: Set<number>; label: string; weight: number; minAllies: number }[] = [
+    { set: TRAIT_FRONTLINE, label: "frontline", weight: 0.20, minAllies: 1 },
+    { set: TRAIT_ENGAGE,    label: "engage",    weight: 0.15, minAllies: 1 },
+    { set: TRAIT_PEEL,      label: "peel",      weight: 0.12, minAllies: 1 },
+    { set: TRAIT_HEALERS,   label: "sustain",   weight: 0.10, minAllies: 1 },
+    { set: TRAIT_HARD_CC,   label: "hard CC",   weight: 0.10, minAllies: 2 },
+  ];
+  for (const g of gaps) {
+    if (!g.set.has(candidateId)) continue;
+    const allyCoverage = countTrait(g.set, allyIds);
+    if (allyCoverage < g.minAllies) {
+      bonus += g.weight;
+      filled.push(g.label);
+    }
+  }
+
+  // Redundancy penalty for over-stacked burst comps
+  if (TRAIT_BURST.has(candidateId) && countTrait(TRAIT_BURST, allyIds) >= 3) {
+    bonus -= 0.10;
+  }
+
+  // Cap the signal so synergy can't dominate meta + counter
+  if (bonus > 0.45) bonus = 0.45;
+  if (bonus < -0.25) bonus = -0.25;
+
+  return { synergy_bonus: bonus, missing_traits_filled: filled.slice(0, 2) };
+}
+
+// Final score model. Anchored at 50; meta WR moves it ±20, signals add on top.
+// Tier thresholds chosen so a pure 52% meta pick lands in B (~64) and only
+// multi-signal alignment reaches S.
+function scoreToTier(score: number): RecTier {
+  if (score >= 85) return "S";
+  if (score >= 75) return "A";
+  if (score >= 65) return "B";
+  if (score >= 55) return "C";
+  return "D";
+}
+
+function finalizeRecommendations(
+  recs: PickRecommendation[],
+  allyIds: number[],
+  maxResults = 6,
+): RankedRecommendation[] {
+  const ranked: RankedRecommendation[] = recs.map(rec => {
+    const fit = computeTeamCompFit(rec.champion_id, allyIds);
+
+    const meta_contrib = (rec.meta_wr - 0.45) * 200;        // 50% → +10, 55% → +20
+    const counter_extra = rec.counter_bonus * 40;            // +0.1 → +4
+    const synergy_extra = fit.synergy_bonus * 30;            // +0.2 → +6
+    const comfort_extra = rec.comfort_score * 15;            // 1.0 → +15
+
+    const raw = 50 + meta_contrib + counter_extra + synergy_extra + comfort_extra;
+    const final_score = Math.max(0, Math.min(100, Math.round(raw)));
+    const tier = scoreToTier(final_score);
+
+    // Category = strongest non-meta signal if it's meaningful, else "safe"
+    let category: RecCategory = "safe";
+    const signals: { kind: RecCategory; value: number }[] = [
+      { kind: "counter", value: counter_extra },
+      { kind: "synergy", value: synergy_extra },
+      { kind: "comfort", value: comfort_extra },
+    ];
+    signals.sort((a, b) => b.value - a.value);
+    if (signals[0].value >= 4) category = signals[0].kind;
+
+    // Reasons (max 2 chips). Priority follows category, then a meta tag when there is room.
+    const reasons: RecReason[] = [];
+    if (rec.counters_count > 0 && rec.top_counter_targets.length > 0) {
+      reasons.push({ kind: "counter", championIds: rec.top_counter_targets });
+    }
+    if (fit.missing_traits_filled.length > 0 && reasons.length < 2) {
+      reasons.push({ kind: "synergy", trait: fit.missing_traits_filled[0] });
+    }
+    if (rec.comfort_games >= 2 && reasons.length < 2) {
+      reasons.push({ kind: "comfort", games: rec.comfort_games });
+    }
+    if (reasons.length === 0) {
+      reasons.push({ kind: "meta", tier });
+    }
+    // Re-prioritise so the chip that matches the category comes first
+    reasons.sort((a, b) => {
+      const aMatch = a.kind === category ? 0 : 1;
+      const bMatch = b.kind === category ? 0 : 1;
+      return aMatch - bMatch;
+    });
+
+    return {
+      ...rec,
+      final_score,
+      tier,
+      category,
+      synergy_bonus: fit.synergy_bonus,
+      missing_traits_filled: fit.missing_traits_filled,
+      reasons: reasons.slice(0, 2),
+    };
+  });
+
+  ranked.sort((a, b) => b.final_score - a.final_score);
+  return ranked.slice(0, maxResults);
 }
 
 // Rough estimate when OP.GG has no counter data for a matchup.
@@ -1939,6 +2094,14 @@ function App() {
   const hasChampion = state.champion_id && state.champion_id > 0 && championInfo;
   const hasBuild = state.build;
 
+  const rankedRecs = useMemo(() => {
+    if (state.recommendations.length === 0) return [];
+    const allyIds = state.draft?.allies
+      .filter(a => !a.is_local && a.champion_id > 0)
+      .map(a => a.champion_id) ?? [];
+    return finalizeRecommendations(state.recommendations, allyIds);
+  }, [state.recommendations, state.draft?.allies]);
+
   return (
     <main className="app">
       {updateAvailable && (
@@ -2113,19 +2276,12 @@ function App() {
                   ))}
               </div>
             </div>
-          ) : !hasChampion && state.recommendations.length > 0 && (
-            <div className="cs-recs-bar">
+          ) : !hasChampion && rankedRecs.length > 0 && (
+            <div className="cs-recs-bar cs-recs-bar-v2">
               <span className="cs-recs-label">Recommended</span>
               <div className="cs-recs-scroll">
-                {state.recommendations.map(rec => (
-                  <div key={rec.champion_id} className="cs-rec-chip rec-clickable"
-                    onClick={() => invoke("pick_champion", { championId: rec.champion_id })}>
-                    <ChampionIcon championId={rec.champion_id} size={32} />
-                    <div className="cs-rec-chip-info">
-                      <ChampionNameLabel championId={rec.champion_id} fallback="..." />
-                      <span className="cs-rec-chip-score">{(rec.score * 100).toFixed(0)}</span>
-                    </div>
-                  </div>
+                {rankedRecs.map(rec => (
+                  <RecommendationCard key={rec.champion_id} rec={rec} />
                 ))}
               </div>
             </div>
@@ -2575,6 +2731,53 @@ function ChampionNameLabel({ championId, fallback }: { championId: number; fallb
 
 // --- Recommendation Card ---
 
+function ReasonChip({ reason }: { reason: RecReason }) {
+  if (reason.kind === "counter") {
+    return <ReasonChipCounter ids={reason.championIds} />;
+  }
+  if (reason.kind === "comfort") {
+    return <span className="cs-rec-reason reason-comfort">Played {reason.games}×</span>;
+  }
+  if (reason.kind === "synergy") {
+    return <span className="cs-rec-reason reason-synergy">Fills {reason.trait}</span>;
+  }
+  return <span className="cs-rec-reason reason-meta">{reason.tier}-tier meta</span>;
+}
+
+function ReasonChipCounter({ ids }: { ids: number[] }) {
+  const first = useChampionName(ids[0]);
+  const name = first?.name ?? "enemy";
+  const more = ids.length > 1 ? ` +${ids.length - 1}` : "";
+  return <span className="cs-rec-reason reason-counter">Counters {name}{more}</span>;
+}
+
+function RecommendationCard({ rec }: { rec: RankedRecommendation }) {
+  return (
+    <button
+      className="cs-rec-card rec-clickable"
+      type="button"
+      title={`Meta ${(rec.meta_wr * 100).toFixed(1)}% · Counter ${rec.counter_bonus >= 0 ? "+" : ""}${(rec.counter_bonus * 100).toFixed(1)} · Synergy ${rec.synergy_bonus >= 0 ? "+" : ""}${(rec.synergy_bonus * 100).toFixed(0)} · Comfort ${rec.comfort_games}g`}
+      onClick={() => invoke("pick_champion", { championId: rec.champion_id })}
+    >
+      <div className="cs-rec-card-head">
+        <ChampionIcon championId={rec.champion_id} size={36} />
+        <div className="cs-rec-card-meta">
+          <ChampionNameLabel championId={rec.champion_id} fallback="..." />
+          <div className="cs-rec-card-score">
+            <span className={`cs-rec-tier tier-${rec.tier}`}>{rec.tier}</span>
+            <span className="cs-rec-score-num">{rec.final_score}</span>
+          </div>
+        </div>
+      </div>
+      <div className="cs-rec-card-foot">
+        <span className={`cs-rec-cat cat-${rec.category}`}>{rec.category}</span>
+        {rec.reasons.map((reason, i) => (
+          <ReasonChip key={i} reason={reason} />
+        ))}
+      </div>
+    </button>
+  );
+}
 
 // --- Daily Summary ---
 

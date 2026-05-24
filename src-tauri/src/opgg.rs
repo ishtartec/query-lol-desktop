@@ -302,10 +302,12 @@ pub async fn generate_prediction(
     })
 }
 
-/// Fetch tier list for a position.
+/// Fetch tier list for a position. Champions in `always_include` bypass the
+/// minimum pick-rate filter (used to surface comfort picks even if off-meta).
 pub async fn fetch_tier_list(
     region: &str,
     position: &str,
+    always_include: &std::collections::HashSet<i64>,
 ) -> Result<Vec<(i64, f64, i64)>, String> {
     let url = format!("{}/{}/champions/ranked", OPGG_API_BASE, region);
     info!("Fetching tier list from OP.GG: {}", url);
@@ -323,7 +325,7 @@ pub async fn fetch_tier_list(
     let mut results = vec![];
     for champ in &data.data {
         if let Some(pos) = champ.positions.iter().find(|p| p.name.to_lowercase() == position) {
-            if pos.stats.pick_rate > 0.005 {
+            if pos.stats.pick_rate > 0.005 || always_include.contains(&champ.id) {
                 results.push((champ.id, pos.stats.win_rate, pos.stats.tier));
             }
         }
@@ -433,23 +435,41 @@ pub async fn fetch_aram_win_rates(
     Ok(rates)
 }
 
-/// Generate pick recommendations.
+/// Generate pick recommendations with a breakdown of meta / counter / comfort
+/// signals. The frontend folds in team-comp synergy on top of this output and
+/// computes the final ranked score.
+///
+/// `comfort_map` maps champion_id → games played recently (from match history).
+/// `ban_suggestion_ids` is used as a proxy threat list when no enemy has locked
+/// in yet (first-pick fallback), so even early picks get some counter signal.
 pub async fn recommend_picks(
     region: &str,
     position: &str,
     enemies_with_pos: &[(i64, String)],
     banned_ids: &[i64],
     ally_champion_ids: &[i64],
+    comfort_map: &HashMap<i64, i32>,
+    ban_suggestion_ids: &[i64],
 ) -> Result<Vec<PickRecommendation>, String> {
-    let tier_list = fetch_tier_list(region, position).await?;
+    let comfort_ids: std::collections::HashSet<i64> = comfort_map.keys().copied().collect();
+    let tier_list = fetch_tier_list(region, position, &comfort_ids).await?;
 
-    let mut enemy_counter_data: Vec<HashMap<i64, f64>> = vec![];
-    for (enemy_id, enemy_pos) in enemies_with_pos {
-        if *enemy_id > 0 {
-            // Use enemy's position for counter lookup, fallback to "mid"
-            let pos = if enemy_pos.is_empty() { "mid" } else { enemy_pos };
-            if let Ok(counters) = fetch_counters(region, *enemy_id, pos).await {
-                enemy_counter_data.push(counters);
+    // Resolve threats: real locked enemies first, otherwise fall back to the
+    // top ban-suggestion champions (treated as if they were enemies in our lane).
+    let threats: Vec<(i64, String)> = if !enemies_with_pos.is_empty() {
+        enemies_with_pos.to_vec()
+    } else {
+        ban_suggestion_ids.iter().take(3)
+            .map(|id| (*id, position.to_string()))
+            .collect()
+    };
+
+    let mut threat_counter_data: Vec<(i64, HashMap<i64, f64>)> = vec![];
+    for (threat_id, threat_pos) in &threats {
+        if *threat_id > 0 {
+            let pos = if threat_pos.is_empty() { "mid" } else { threat_pos };
+            if let Ok(counters) = fetch_counters(region, *threat_id, pos).await {
+                threat_counter_data.push((*threat_id, counters));
             }
         }
     }
@@ -467,18 +487,26 @@ pub async fn recommend_picks(
             continue;
         }
 
-        let mut counter_bonus: f64 = 0.0;
-        let mut counters_count: i32 = 0;
-
-        for enemy_counters in &enemy_counter_data {
-            if let Some(&enemy_wr_vs_us) = enemy_counters.get(champ_id) {
+        // Per-threat counter advantage; remember which threats we counter hardest
+        // so the frontend can render "Counters Zed" style reason chips.
+        let mut per_threat: Vec<(i64, f64)> = vec![];
+        for (threat_id, threat_counters) in &threat_counter_data {
+            if let Some(&enemy_wr_vs_us) = threat_counters.get(champ_id) {
                 let advantage = 0.5 - enemy_wr_vs_us;
-                counter_bonus += advantage;
-                if advantage > 0.0 {
-                    counters_count += 1;
-                }
+                per_threat.push((*threat_id, advantage));
             }
         }
+        let counter_bonus: f64 = per_threat.iter().map(|(_, a)| *a).sum();
+        let counters_count: i32 = per_threat.iter().filter(|(_, a)| *a > 0.0).count() as i32;
+
+        let mut top_targets: Vec<(i64, f64)> = per_threat.iter()
+            .filter(|(_, a)| *a > 0.0).copied().collect();
+        top_targets.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let top_counter_targets: Vec<i64> = top_targets.iter().take(2).map(|(id, _)| *id).collect();
+
+        let comfort_games = comfort_map.get(champ_id).copied().unwrap_or(0);
+        // 5 games → max comfort; ramps linearly below that.
+        let comfort_score = (comfort_games as f64 / 5.0).min(1.0);
 
         let score = *win_rate + counter_bonus * 0.3;
 
@@ -486,12 +514,17 @@ pub async fn recommend_picks(
             champion_id: *champ_id,
             score,
             win_rate: *win_rate,
+            meta_wr: *win_rate,
+            counter_bonus,
+            comfort_score,
+            comfort_games,
             counters_count,
             synergies_count: 0,
+            top_counter_targets,
         });
     }
 
     recommendations.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    recommendations.truncate(5);
+    recommendations.truncate(12);
     Ok(recommendations)
 }

@@ -291,6 +291,89 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Recommendation Card v2 (lobby pick suggestions with tier + reasons) */
+.cs-recs-bar-v2 {
+  flex-direction: column; align-items: stretch;
+  gap: 6px; padding: 8px 12px;
+}
+.cs-recs-bar-v2 .cs-recs-label {
+  align-self: flex-start; padding: 0;
+  font-size: 9px; letter-spacing: 1px;
+}
+.cs-recs-bar-v2 .cs-recs-scroll { gap: 8px; align-items: stretch; }
+
+.cs-rec-card {
+  display: flex; flex-direction: column; gap: 6px;
+  min-width: 168px; max-width: 200px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border); border-radius: 10px;
+  cursor: pointer; flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s, transform 0.08s;
+  text-align: left; font-family: inherit; color: inherit;
+  animation: rec-fade-in 0.22s ease-out;
+}
+.cs-rec-card:hover { border-color: var(--accent-gold-dim); background: var(--bg-card-hover); }
+.cs-rec-card:active { transform: scale(0.98); }
+
+@keyframes rec-fade-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.cs-rec-card-head { display: flex; align-items: center; gap: 8px; }
+.cs-rec-card-meta {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1;
+}
+.cs-rec-card-meta .draft-champ-name {
+  font-size: 12px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cs-rec-card-score { display: flex; align-items: baseline; gap: 6px; }
+.cs-rec-tier {
+  font-size: 13px; font-weight: 800;
+  padding: 1px 6px; border-radius: 4px;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.tier-S { color: #fff3d1; background: linear-gradient(135deg, #d4a843, #b8841e); }
+.tier-A { color: #d8f0ff; background: rgba(3, 151, 171, 0.85); }
+.tier-B { color: #d6f5dc; background: rgba(31, 173, 79, 0.78); }
+.tier-C { color: var(--text-primary); background: var(--border); }
+.tier-D { color: var(--text-secondary); background: transparent; border: 1px solid var(--border); }
+
+.cs-rec-score-num {
+  font-size: 14px; font-weight: 700; color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cs-rec-card-foot {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+}
+.cs-rec-cat {
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 2px 6px; border-radius: 4px;
+  border: 1px solid transparent;
+}
+.cat-safe    { color: var(--text-secondary); border-color: var(--border); background: rgba(255,255,255,0.02); }
+.cat-counter { color: #ffb8c2; border-color: rgba(232, 64, 87, 0.55); background: rgba(232, 64, 87, 0.12); }
+.cat-comfort { color: #d6c0ff; border-color: rgba(155, 110, 220, 0.55); background: rgba(155, 110, 220, 0.14); }
+.cat-synergy { color: #b9eef5; border-color: rgba(3, 151, 171, 0.55); background: rgba(3, 151, 171, 0.14); }
+
+.cs-rec-reason {
+  font-size: 10px; font-weight: 500;
+  padding: 1px 5px; border-radius: 3px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+}
+.reason-counter { color: #ffb8c2; }
+.reason-comfort { color: #d6c0ff; }
+.reason-synergy { color: #b9eef5; }
+.reason-meta    { color: var(--accent-gold); }
+
 /* ARAM Bench */
 .aram-bench-chip {
   display: flex; align-items: center; gap: 8px;

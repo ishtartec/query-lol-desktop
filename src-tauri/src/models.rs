@@ -40,8 +40,13 @@ pub struct PickRecommendation {
     pub champion_id: i64,
     pub score: f64,
     pub win_rate: f64,
-    pub counters_count: i32,  // how many enemies this pick counters
-    pub synergies_count: i32, // how many allies this pick synergizes with
+    pub meta_wr: f64,
+    pub counter_bonus: f64,
+    pub comfort_score: f64,
+    pub comfort_games: i32,
+    pub counters_count: i32,
+    pub synergies_count: i32,
+    pub top_counter_targets: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

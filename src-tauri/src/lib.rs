@@ -416,8 +416,17 @@ async fn poll_loop(
                         .collect();
 
                     let all_bans: Vec<i64> = draft.ally_bans.iter().chain(draft.enemy_bans.iter()).copied().collect();
+                    let (comfort_map, ban_suggestion_ids): (std::collections::HashMap<i64, i32>, Vec<i64>) = {
+                        let s = state.lock().await;
+                        let cm = s.comfort_picks.iter()
+                            .map(|c| (c.champion_id, c.games_played))
+                            .collect();
+                        let bs = s.ban_suggestions.iter().map(|b| b.champion_id).collect();
+                        (cm, bs)
+                    };
                     match opgg::recommend_picks(
-                        &region, opgg_pos, &enemies_with_pos, &all_bans, &ally_ids
+                        &region, opgg_pos, &enemies_with_pos, &all_bans, &ally_ids,
+                        &comfort_map, &ban_suggestion_ids,
                     ).await {
                         Ok(recs) => {
                             let mut s = state.lock().await;
