@@ -50,6 +50,108 @@ async fn fetch_json_with_retry<T: DeserializeOwned>(url: &str) -> Result<T, Stri
     Err(last_err)
 }
 
+/// First ~`n` chars of a body, newlines flattened — safe to log.
+fn body_snippet(body: &str, n: usize) -> String {
+    body.chars().take(n).collect::<String>().replace(['\n', '\r'], " ")
+}
+
+/// Window of `target_line` around `col` (both 1-based, as serde_json reports).
+fn snippet_around(body: &str, line: usize, col: usize) -> String {
+    let target = body.lines().nth(line.saturating_sub(1)).unwrap_or(body);
+    let chars: Vec<char> = target.chars().collect();
+    let start = col.saturating_sub(60);
+    let end = (col + 60).min(chars.len());
+    chars[start.min(end)..end].iter().collect::<String>().replace(['\n', '\r'], " ")
+}
+
+/// Parse the tier-list body. Tries a strict parse first; on failure, logs the
+/// exact serde location + a snippet, then falls back to parsing champion by
+/// champion so one malformed entry can't wipe the whole list (the historic
+/// cause of empty pick recommendations during champ select).
+fn parse_tier_list(body: &str) -> Result<OpggTierListResponse, String> {
+    match serde_json::from_str::<OpggTierListResponse>(body) {
+        Ok(parsed) => return Ok(parsed),
+        Err(e) => warn!(
+            "OP.GG tier list strict parse failed at line {} col {}: {} — near: {}",
+            e.line(), e.column(), e, snippet_around(body, e.line(), e.column())
+        ),
+    }
+
+    // Lenient fallback: drop only the entries that fail.
+    let root: serde_json::Value = serde_json::from_str(body).map_err(|e| {
+        format!(
+            "tier list is not valid JSON (line {} col {}): {} — body starts: {}",
+            e.line(), e.column(), e, body_snippet(body, 200)
+        )
+    })?;
+    let arr = root.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
+        format!("tier list missing `data` array — body starts: {}", body_snippet(body, 200))
+    })?;
+
+    let mut champions = Vec::with_capacity(arr.len());
+    let mut skipped = 0usize;
+    for entry in arr {
+        match serde_json::from_value::<OpggTierChampion>(entry.clone()) {
+            Ok(c) => champions.push(c),
+            Err(e) => {
+                skipped += 1;
+                let id = entry.get("id").and_then(|v| v.as_i64()).unwrap_or(-1);
+                warn!("OP.GG tier list: dropping champion id={} — {}", id, e);
+            }
+        }
+    }
+    if champions.is_empty() {
+        return Err(format!("tier list had {} entries but none parsed", arr.len()));
+    }
+    if skipped > 0 {
+        warn!("OP.GG tier list: recovered {} champions, dropped {}", champions.len(), skipped);
+    }
+    Ok(OpggTierListResponse { data: champions })
+}
+
+/// Fetch the tier list with bounded retries, detailed error logging, and
+/// per-champion lenient parsing. Shared by all tier-list consumers.
+async fn fetch_tier_list_response(url: &str) -> Result<OpggTierListResponse, String> {
+    const MAX_ATTEMPTS: u32 = 3;
+    let backoffs_ms = [600u64, 1500, 3000];
+    let mut last_err = String::new();
+    for attempt in 0..MAX_ATTEMPTS {
+        let body: Result<String, String> = async {
+            let resp = http_client()
+                .get(url)
+                .header("User-Agent", "QueryLoLDesktop/0.1")
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {}", e))?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| format!("body read failed: {}", e))?;
+            if !status.is_success() {
+                return Err(format!("HTTP {} — body: {}", status.as_u16(), body_snippet(&text, 200)));
+            }
+            Ok(text)
+        }
+        .await;
+
+        match body.and_then(|t| parse_tier_list(&t)) {
+            Ok(parsed) => {
+                if attempt > 0 {
+                    info!("OP.GG tier list parsed on attempt {} for {}", attempt + 1, url);
+                }
+                return Ok(parsed);
+            }
+            Err(e) => {
+                last_err = e;
+                if attempt + 1 < MAX_ATTEMPTS {
+                    let delay = backoffs_ms[attempt as usize];
+                    warn!("OP.GG tier list attempt {} failed: {} — retrying in {}ms", attempt + 1, last_err, delay);
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                }
+            }
+        }
+    }
+    Err(last_err)
+}
+
 /// Fetch champion build, counters, and alternatives in a single API call.
 pub async fn fetch_champion_data(
     region: &str,
@@ -312,15 +414,7 @@ pub async fn fetch_tier_list(
     let url = format!("{}/{}/champions/ranked", OPGG_API_BASE, region);
     info!("Fetching tier list from OP.GG: {}", url);
 
-    let data: OpggTierListResponse = http_client()
-        .get(&url)
-        .header("User-Agent", "QueryLoLDesktop/0.1")
-        .send()
-        .await
-        .map_err(|e| format!("HTTP: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Parse: {}", e))?;
+    let data = fetch_tier_list_response(&url).await?;
 
     let mut results = vec![];
     for champ in &data.data {
@@ -341,15 +435,7 @@ pub async fn fetch_ban_suggestions(
 ) -> Result<Vec<BanSuggestion>, String> {
     let url = format!("{}/{}/champions/ranked", OPGG_API_BASE, region);
 
-    let data: OpggTierListResponse = http_client()
-        .get(&url)
-        .header("User-Agent", "QueryLoLDesktop/0.1")
-        .send()
-        .await
-        .map_err(|e| format!("HTTP: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Parse: {}", e))?;
+    let data = fetch_tier_list_response(&url).await?;
 
     let mut suggestions: Vec<BanSuggestion> = vec![];
     for champ in &data.data {
@@ -385,15 +471,7 @@ pub async fn fetch_champion_win_rates(
 ) -> Result<HashMap<i64, f64>, String> {
     let url = format!("{}/{}/champions/ranked", OPGG_API_BASE, region);
 
-    let data: OpggTierListResponse = http_client()
-        .get(&url)
-        .header("User-Agent", "QueryLoLDesktop/0.1")
-        .send()
-        .await
-        .map_err(|e| format!("HTTP: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Parse: {}", e))?;
+    let data = fetch_tier_list_response(&url).await?;
 
     let mut rates = HashMap::new();
     for champ in &data.data {
@@ -416,15 +494,7 @@ pub async fn fetch_aram_win_rates(
 ) -> Result<HashMap<i64, f64>, String> {
     let url = format!("{}/{}/champions/aram", OPGG_API_BASE, region);
 
-    let data: OpggTierListResponse = http_client()
-        .get(&url)
-        .header("User-Agent", "QueryLoLDesktop/0.1")
-        .send()
-        .await
-        .map_err(|e| format!("HTTP: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("Parse: {}", e))?;
+    let data = fetch_tier_list_response(&url).await?;
 
     let mut rates = HashMap::new();
     for champ in &data.data {

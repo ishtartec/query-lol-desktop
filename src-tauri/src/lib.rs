@@ -268,8 +268,28 @@ async fn poll_loop(
                 Err(_) => continue,
             };
 
-            let (champion_id, position) = lcu::extract_champion_from_session(&session);
+            let (mut champion_id, position) = lcu::extract_champion_from_session(&session);
             let draft = lcu::extract_draft_state(&session);
+
+            // If our hovered/intended champion got banned, drop the pick so the
+            // stale build is cleared and pick recommendations come back. You can
+            // never have a locked champion that is banned, so this only ever fires
+            // on a pre-lock intent during the ban phase.
+            if champion_id > 0
+                && (draft.ally_bans.contains(&champion_id) || draft.enemy_bans.contains(&champion_id))
+            {
+                log::info!("Intended champion {} was banned; clearing pick state", champion_id);
+                champion_id = 0;
+                if last_champion_id != 0 {
+                    last_champion_id = 0;
+                    let mut s = state.lock().await;
+                    s.champion_id = None;
+                    s.build = None;
+                    s.build_alternatives = None;
+                    s.counters.clear();
+                    let _ = app_handle.emit("app-state-changed", s.clone());
+                }
+            }
 
             // Check if ban phase is still active
             let ban_active = session.actions.iter().flatten()

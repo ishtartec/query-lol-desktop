@@ -1,4 +1,16 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Treat an explicit JSON `null` as the type's default. `#[serde(default)]`
+/// alone only covers *absent* keys — OP.GG sometimes sends `"win_rate": null`
+/// for champions/positions without enough games, which would otherwise abort
+/// the entire tier-list parse.
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
 
 // --- LCU connection ---
 
@@ -356,30 +368,41 @@ pub struct OpggTierListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpggTierChampion {
     pub id: i64,
+    // OP.GG occasionally omits these (new/reworked champs, degraded payloads).
+    // Defaulting them keeps a single bad entry from failing the whole list.
+    #[serde(default)]
     pub average_stats: OpggAverageStats,
+    #[serde(default)]
     pub positions: Vec<OpggPositionStats>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OpggAverageStats {
+    #[serde(default, deserialize_with = "null_as_default")]
     pub win_rate: f64,
+    #[serde(default, deserialize_with = "null_as_default")]
     pub pick_rate: f64,
+    #[serde(default, deserialize_with = "null_as_default")]
     pub ban_rate: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub tier: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OpggPositionStats {
+    #[serde(default, deserialize_with = "null_as_default")]
     pub name: String,
+    #[serde(default)]
     pub stats: OpggPositionWinRate,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OpggPositionWinRate {
+    #[serde(default, deserialize_with = "null_as_default")]
     pub win_rate: f64,
+    #[serde(default, deserialize_with = "null_as_default")]
     pub pick_rate: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub tier: i64,
 }
 
