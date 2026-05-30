@@ -39,8 +39,16 @@ pub fn speak(text: &str) {
          $s.Speak('{}')",
         escaped
     );
+    // CREATE_NO_WINDOW (0x08000000): never create a console window for the
+    // child process. Without this, launching powershell.exe briefly spawns a
+    // conhost window that steals focus — which kicks fullscreen games out of
+    // exclusive fullscreen mode. `-WindowStyle Hidden` is NOT enough: it only
+    // hides the window after it has already been created and grabbed focus.
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let _ = Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn();
 }
 

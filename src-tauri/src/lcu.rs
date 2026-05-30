@@ -75,8 +75,14 @@ fn read_from_process() -> Option<LcuCredentials> {
 
     #[cfg(target_os = "windows")]
     {
+        // CREATE_NO_WINDOW (0x08000000): suppress the console window wmic would
+        // otherwise flash, which steals focus from a fullscreen game. This path
+        // is only a lockfile-read fallback, but the focus-theft cost is the same.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let output = std::process::Command::new("wmic")
             .args(["process", "where", "name='LeagueClientUx.exe'", "get", "CommandLine", "/format:list"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .ok()?;
 
