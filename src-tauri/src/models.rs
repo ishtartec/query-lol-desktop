@@ -368,11 +368,13 @@ pub struct OpggTierListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpggTierChampion {
     pub id: i64,
-    // OP.GG occasionally omits these (new/reworked champs, degraded payloads).
-    // Defaulting them keeps a single bad entry from failing the whole list.
-    #[serde(default)]
+    // OP.GG occasionally omits these OR sends them as explicit `null`
+    // (new/reworked champs, degraded payloads). `#[serde(default)]` alone only
+    // covers absent keys, so we also map `null` to the default to keep a single
+    // bad entry from failing the whole list.
+    #[serde(default, deserialize_with = "null_as_default")]
     pub average_stats: OpggAverageStats,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub positions: Vec<OpggPositionStats>,
 }
 
