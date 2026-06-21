@@ -545,6 +545,8 @@ pub struct MatchHistoryEntry {
     pub total_damage: i64,
     #[serde(default)]
     pub position: String, // TOP / JUNGLE / MIDDLE / BOTTOM / UTILITY (empty if unknown)
+    #[serde(default)]
+    pub team_id: i64, // 100 / 200 — the queried player's side; used for premade detection
 }
 
 // --- ARAM bench ---
@@ -586,6 +588,10 @@ pub struct LiveGamePlayer {
     pub champ_games: i32,
     pub champ_wins: i32,
     pub champ_kda: f64,
+    // Premade detection: same non-zero id = inferred party (duo/trio) within the team.
+    // None = no premade signal. Assigned per team from shared recent match history.
+    #[serde(default)]
+    pub premade_group: Option<u8>,
     // Live in-game stats (updated during game)
     pub live: Option<LivePlayerStats>,
 }

@@ -889,7 +889,7 @@ pub fn analyze_smurf(
 // Riot's `timeline.lane` is unreliable on its own (junglers report JUNGLE which
 // the LCU sometimes returns as TOP), so we cross-check with summoner spell 11
 // (Smite) and CS/vision heuristics — same pattern used in `get_match_details`.
-fn derive_position_from_history(participant: &serde_json::Value, stats: &serde_json::Value) -> String {
+fn derive_position_from_history(participant: &serde_json::Value, stats: &serde_json::Value, duration_secs: i64) -> String {
     let timeline = participant.get("timeline").unwrap_or(&serde_json::Value::Null);
     let lane = timeline.get("lane").and_then(|v| v.as_str()).unwrap_or("");
     let role = timeline.get("role").and_then(|v| v.as_str()).unwrap_or("");
@@ -899,15 +899,28 @@ fn derive_position_from_history(participant: &serde_json::Value, stats: &serde_j
     let cs = stats.get("totalMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0)
         + stats.get("neutralMinionsKilled").and_then(|v| v.as_i64()).unwrap_or(0);
     let vs = stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0);
+    // ADC vs support in bottom lane. Verified against real LCU data: the
+    // `timeline.role` field is reliable for SR and reports "SUPPORT" / "CARRY"
+    // (NOT "DUO_SUPPORT"). Vision/min is the best numeric fallback (support ~2-3,
+    // ADC ~0.5-1) — CS/min is unreliable because a support in a 40-min game still
+    // creeps to ~4 CS/min, overlapping with low-farm ADCs.
+    let role_u = role.to_uppercase();
+    let minutes = (duration_secs as f64 / 60.0).max(1.0);
+    let cs_per_min = cs as f64 / minutes;
+    let vis_per_min = vs as f64 / minutes;
 
     if has_smite { return "JUNGLE".to_string(); }
     let raw = match (lane, role) {
         ("JUNGLE", _) => "TOP",
         ("TOP", _) => "TOP",
         ("MIDDLE", _) | ("MID", _) => "MIDDLE",
-        ("BOTTOM", "DUO_SUPPORT") | ("BOT", "DUO_SUPPORT") => "UTILITY",
-        ("BOTTOM", _) | ("BOT", _) if cs < 100 && vs > 15 => "UTILITY",
-        ("BOTTOM", _) | ("BOT", _) => "BOTTOM",
+        ("BOTTOM", _) | ("BOT", _) => {
+            if role_u.contains("SUPPORT") { "UTILITY" }
+            else if role_u.contains("CARRY") { "BOTTOM" }
+            // Role ambiguous (SOLO/DUO/NONE): heavy warding + light farm ⇒ support.
+            else if (vs > 0 && vis_per_min > 1.5) || cs_per_min < 2.5 { "UTILITY" }
+            else { "BOTTOM" }
+        }
         _ => lane,
     };
     raw.to_uppercase()
@@ -958,7 +971,8 @@ pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Re
                         vision_score: stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0),
                         gold_earned: stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0),
                         total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
-                        position: derive_position_from_history(me, stats),
+                        position: derive_position_from_history(me, stats, duration),
+                        team_id: me.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0),
                     });
                 }
             }
@@ -1019,7 +1033,8 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
                         vision_score: stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0),
                         gold_earned: stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0),
                         total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
-                        position: derive_position_from_history(me, stats),
+                        position: derive_position_from_history(me, stats, duration),
+                        team_id: me.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0),
                     });
                 }
             }
@@ -1299,6 +1314,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
                     champ_games: 0,
                     champ_wins: 0,
                     champ_kda: 0.0,
+                    premade_group: None,
                     live: None,
                 },
                 summoner_id: sid,
@@ -1371,6 +1387,9 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
         champ_games: i32,
         champ_wins: i32,
         champ_kda: f64,
+        // Recent ranked/normal games keyed as (game_id, team_id) for premade detection.
+        // ARAM and other non-team-queue games are excluded (same-side is meaningless there).
+        match_keys: Vec<(i64, i64)>,
     }
 
     let mut futures = vec![];
@@ -1438,10 +1457,18 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
                 None
             };
 
-            PlayerFetchResult { rank, wins, losses, name, smurf, streak, champ_games, champ_wins, champ_kda }
+            // Keys for premade detection: keep only games with a resolved side.
+            let match_keys: Vec<(i64, i64)> = matches.iter()
+                .filter(|m| m.game_id != 0 && (m.team_id == 100 || m.team_id == 200))
+                .map(|m| (m.game_id, m.team_id))
+                .collect();
+
+            PlayerFetchResult { rank, wins, losses, name, smurf, streak, champ_games, champ_wins, champ_kda, match_keys }
         }));
     }
 
+    let player_count = all_raw.len();
+    let mut match_keys_by_player: Vec<Vec<(i64, i64)>> = vec![Vec::new(); player_count];
     for (i, fut) in futures.into_iter().enumerate() {
         if let Ok(r) = fut.await {
             let p = &mut all_raw[i].player;
@@ -1457,6 +1484,76 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
             p.champ_kda = r.champ_kda;
             if !r.name.is_empty() {
                 p.summoner_name = r.name;
+            }
+            match_keys_by_player[i] = r.match_keys;
+        }
+    }
+
+    // Premade detection: two players who appear in the same past game on the SAME
+    // side, in >= PREMADE_MIN_SHARED recent games, are very likely a party. We only
+    // compare players within the same current team (you can't be premade with an enemy)
+    // and use union-find to merge duos/trios into one group id per cluster.
+    {
+        let team_one_count = raw.get("gameData")
+            .and_then(|g| g.get("teamOne")).and_then(|t| t.as_array())
+            .map(|a| a.len()).unwrap_or(5);
+        // Index recent (game_id, team_id) -> player indices, so shared games are O(n).
+        let mut seen: std::collections::HashMap<(i64, i64), Vec<usize>> = std::collections::HashMap::new();
+        for (idx, keys) in match_keys_by_player.iter().enumerate() {
+            for key in keys {
+                seen.entry(*key).or_default().push(idx);
+            }
+        }
+        // Count shared same-side games per unordered pair.
+        let mut shared: std::collections::HashMap<(usize, usize), u32> = std::collections::HashMap::new();
+        for players in seen.values() {
+            if players.len() < 2 { continue; }
+            for a in 0..players.len() {
+                for b in (a + 1)..players.len() {
+                    let (i, j) = (players[a], players[b]);
+                    // Only pair players that are on the same current team.
+                    let same_team = (i < team_one_count) == (j < team_one_count);
+                    if !same_team { continue; }
+                    let pair = if i < j { (i, j) } else { (j, i) };
+                    *shared.entry(pair).or_default() += 1;
+                }
+            }
+        }
+        // Union-find over players linked by >= threshold shared same-side games.
+        const PREMADE_MIN_SHARED: u32 = 2;
+        let mut parent: Vec<usize> = (0..player_count).collect();
+        fn find(parent: &mut Vec<usize>, x: usize) -> usize {
+            let mut r = x;
+            while parent[r] != r { r = parent[r]; }
+            // path compression
+            let mut c = x;
+            while parent[c] != r { let n = parent[c]; parent[c] = r; c = n; }
+            r
+        }
+        let mut linked = false;
+        for (&(i, j), &count) in &shared {
+            if count >= PREMADE_MIN_SHARED {
+                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                if ri != rj { parent[ri] = rj; linked = true; }
+            }
+        }
+        if linked {
+            // Assign a small stable group id per team only to clusters of size >= 2.
+            let mut cluster_size: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+            for i in 0..player_count {
+                let r = find(&mut parent, i);
+                *cluster_size.entry(r).or_default() += 1;
+            }
+            let mut group_ids: std::collections::HashMap<usize, u8> = std::collections::HashMap::new();
+            let mut next_group: u8 = 1;
+            for i in 0..player_count {
+                let r = find(&mut parent, i);
+                if cluster_size.get(&r).copied().unwrap_or(0) < 2 { continue; }
+                let gid = *group_ids.entry(r).or_insert_with(|| { let g = next_group; next_group += 1; g });
+                all_raw[i].player.premade_group = Some(gid);
+            }
+            if next_group > 1 {
+                info!("Premade detection: {} group(s) found across live game", next_group - 1);
             }
         }
     }

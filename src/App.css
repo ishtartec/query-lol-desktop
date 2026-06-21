@@ -1642,6 +1642,22 @@
   border: 1px solid rgba(255, 60, 60, 0.3);
 }
 
+/* Premade group indicator (party detection) */
+.premade-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  font-size: 9px;
+  font-weight: 800;
+  color: #0d1117;
+  border-radius: 4px;
+  margin-right: 5px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
 /* === Damage Composition === */
 .dmg-comp { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
 .dmg-row { display: flex; align-items: center; gap: 8px; }

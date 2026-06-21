@@ -201,6 +201,7 @@ interface LiveGamePlayer {
   champ_games: number;
   champ_wins: number;
   champ_kda: number;
+  premade_group: number | null;
   live: LivePlayerStats | null;
 }
 
@@ -3107,7 +3108,16 @@ function inferMainRole(games: MatchHistoryEntry[]): { role: string | null; confi
   const counts: Record<string, number> = { TOP: 0, JUNGLE: 0, MIDDLE: 0, BOTTOM: 0, UTILITY: 0 };
   let resolved = 0;
   for (const m of games) {
-    const pos = (m.position || "").toUpperCase();
+    let pos = (m.position || "").toUpperCase();
+    // Safety net for a stale/older backend that still mislabels supports as BOTTOM.
+    // Vision/min is the reliable discriminator (support ~2-3, ADC ~0.5-1); CS/min
+    // is only a fallback because long support games creep up to ~4 CS/min.
+    if (pos === "BOTTOM" && m.duration_secs > 0) {
+      const mins = m.duration_secs / 60;
+      const visPerMin = m.vision_score / mins;
+      const csPerMin = m.cs / mins;
+      if ((m.vision_score > 0 && visPerMin > 1.5) || csPerMin < 2.5) pos = "UTILITY";
+    }
     if (pos in counts) {
       counts[pos]++;
       resolved++;
@@ -4010,6 +4020,9 @@ function SpellStaticIcon({ spellId }: { spellId: number }) {
   );
 }
 
+// Distinct colors for inferred premade groups (party indicators), Blitz-style.
+const PREMADE_COLORS = ["#3fb950", "#d29922", "#a371f7", "#f778ba", "#58a6ff"];
+
 function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGamePlayer; onViewPlayer?: (puuid: string) => void; isEnemy?: boolean; spellCd?: SpellCdProps }) {
   const totalGames = p.ranked_wins + p.ranked_losses;
   const champWr = p.champ_games > 0 ? (p.champ_wins / p.champ_games * 100) : 0;
@@ -4022,6 +4035,15 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
       </div>
       <div className="lg-player-info">
         <span className="lg-player-name">
+          {p.premade_group != null && (
+            <span
+              className="premade-badge"
+              style={{ background: PREMADE_COLORS[(p.premade_group - 1) % PREMADE_COLORS.length] }}
+              title={`Premade group ${p.premade_group} — likely queuing together (based on shared recent games)`}
+            >
+              {p.premade_group}
+            </span>
+          )}
           {p.summoner_name}
           {p.smurf && p.smurf.score >= 50 && (
             <span
