@@ -4,6 +4,8 @@ A desktop companion app for League of Legends that auto-configures optimal build
 
 Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Overwolf, no Electron.
 
+**🌐 Website:** https://ishtartec.github.io/query-lol-desktop/ · **⬇️ [Download latest release](https://github.com/ishtartec/query-lol-desktop/releases/latest)**
+
 ---
 
 ## Screenshots
