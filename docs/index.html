@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>QueryLoL — League of Legends Companion for Windows &amp; macOS</title>
-  <meta name="description" content="QueryLoL is a lightweight (~15MB) League of Legends companion app: auto-apply optimal builds, counter-based pick/ban suggestions, smurf detection, a real-time in-game overlay, and post-game analysis. Built with Tauri + React. Free and open source. No Overwolf, no Electron." />
-  <meta name="keywords" content="League of Legends, LoL companion app, LoL overlay, op.gg desktop, build optimizer, rune optimizer, smurf detection, champion select, draft tool, Tauri, LCU" />
+  <title>QueryLoL — The League of Legends coach that plans every level</title>
+  <meta name="description" content="QueryLoL is a free, open-source League of Legends companion: a coach-style level-by-level game plan for all 172 champions, real-time in-game voice callouts, an overlay packed with live advisors, smurf &amp; premade detection, and post-game analysis. ~15MB native app for Windows &amp; macOS — no account, no Electron, no telemetry." />
+  <meta name="keywords" content="League of Legends companion app, LoL overlay, op.gg desktop alternative, free lol overlay, lol coaching app, build optimizer, smurf detection, premade detection, level by level plan, Tauri, LCU" />
   <meta name="author" content="ishtartec" />
   <meta name="robots" content="index, follow" />
-  <meta name="theme-color" content="#0a0e14" />
+  <meta name="theme-color" content="#070a0f" />
   <link rel="canonical" href="https://ishtartec.github.io/query-lol-desktop/" />
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="apple-touch-icon" href="favicon.png" />
@@ -17,8 +17,8 @@
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="QueryLoL" />
-  <meta property="og:title" content="QueryLoL — League of Legends Companion for Windows &amp; macOS" />
-  <meta property="og:description" content="Auto-apply optimal builds, draft intelligence, smurf detection, a real-time in-game overlay, and post-game analysis. Lightweight, free, and open source." />
+  <meta property="og:title" content="QueryLoL — The League of Legends coach that plans every level" />
+  <meta property="og:description" content="A coach-style level-by-level plan for all 172 champions, real-time voice callouts, a live-advisor overlay, smurf &amp; premade detection, and post-game analysis. Free, open source, ~15MB. No account, no Electron." />
   <meta property="og:url" content="https://ishtartec.github.io/query-lol-desktop/" />
   <meta property="og:image" content="https://ishtartec.github.io/query-lol-desktop/screenshots/champ-select-build.png" />
   <meta property="og:image:width" content="2532" />
@@ -27,13 +27,16 @@
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="QueryLoL — League of Legends Companion for Windows &amp; macOS" />
-  <meta name="twitter:description" content="Auto-apply optimal builds, draft intelligence, smurf detection, a real-time in-game overlay, and post-game analysis. Lightweight, free, and open source." />
+  <meta name="twitter:title" content="QueryLoL — The League of Legends coach that plans every level" />
+  <meta name="twitter:description" content="Level-by-level plans for 172 champions, real-time voice callouts, a live-advisor overlay, smurf &amp; premade detection. Free, open source, ~15MB." />
   <meta name="twitter:image" content="https://ishtartec.github.io/query-lol-desktop/screenshots/champ-select-build.png" />
 
   <!-- TODO: paste your Google Search Console verification meta tag below, e.g.
   <meta name="google-site-verification" content="XXXXXXXXXXXXXXXXXXXXXXXXXXXXX" /> -->
 
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 
   <script type="application/ld+json">
@@ -43,120 +46,288 @@
     "name": "QueryLoL",
     "applicationCategory": "GameApplication",
     "operatingSystem": "Windows, macOS",
-    "description": "A lightweight League of Legends companion app: auto-apply optimal builds, counter-based pick/ban suggestions, smurf detection, a real-time in-game overlay, and post-game analysis.",
+    "description": "A free, open-source League of Legends companion app: a coach-style level-by-level game plan for all 172 champions, real-time in-game voice callouts, a live-advisor overlay, smurf and premade detection, and post-game analysis.",
     "url": "https://ishtartec.github.io/query-lol-desktop/",
     "downloadUrl": "https://github.com/ishtartec/query-lol-desktop/releases/latest",
     "softwareVersion": "0.16.0",
     "license": "https://github.com/ishtartec/query-lol-desktop",
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    },
-    "author": {
-      "@type": "Organization",
-      "name": "ishtartec"
-    }
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Organization", "name": "ishtartec" }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Is QueryLoL free?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. QueryLoL is completely free and open source — no paid tiers, no ads, no account. The full source is on GitHub." }
+      },
+      {
+        "@type": "Question",
+        "name": "Will I get banned for using QueryLoL?",
+        "acceptedAnswer": { "@type": "Answer", "text": "QueryLoL only uses Riot's official local APIs (the League Client API and the in-game Live Client Data API) to read game state and apply builds you could set yourself. It never modifies, injects into, or automates gameplay — the same approach used by other popular companion apps." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does it work on macOS and Windows?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes, both. QueryLoL is a native desktop app for Windows and macOS with automatic League client detection on each platform." }
+      },
+      {
+        "@type": "Question",
+        "name": "Do I need an account or login?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No account and no sign-up. QueryLoL reads your local League client directly and talks to public data sources like OP.GG and Data Dragon." }
+      },
+      {
+        "@type": "Question",
+        "name": "How is the app only about 15MB?",
+        "acceptedAnswer": { "@type": "Answer", "text": "QueryLoL is built with Tauri (Rust) and uses your operating system's native webview instead of bundling a whole Chromium runtime like Electron or Overwolf apps, so the binary stays tiny and light on resources." }
+      }
+    ]
   }
   </script>
 </head>
 <body>
+  <div class="grain" aria-hidden="true"></div>
+
   <header class="nav">
     <a class="brand" href="#top">
-      <img src="favicon.png" alt="QueryLoL logo" width="28" height="28" />
-      <span>QueryLoL</span>
+      <img src="favicon.png" alt="QueryLoL logo" width="26" height="26" />
+      <span>Query<em>LoL</em></span>
     </a>
     <nav class="nav-links">
+      <a href="#highlights">Highlights</a>
       <a href="#features">Features</a>
-      <a href="#screenshots">Screenshots</a>
+      <a href="#compare">Compare</a>
+      <a href="#faq">FAQ</a>
       <a href="https://github.com/ishtartec/query-lol-desktop" target="_blank" rel="noopener">GitHub</a>
       <a class="btn btn-sm" href="https://github.com/ishtartec/query-lol-desktop/releases/latest" target="_blank" rel="noopener">Download</a>
     </nav>
   </header>
 
   <main id="top">
+    <!-- HERO -->
     <section class="hero">
-      <div class="hero-inner">
-        <span class="eyebrow">Windows &amp; macOS · Free &amp; open source</span>
-        <h1>Your League of Legends edge,<br />from champ select to post-game.</h1>
-        <p class="lede">
-          QueryLoL auto-applies optimal builds the moment you pick, reads the draft for counters and synergies,
-          flags smurfs, and runs a real-time in-game overlay — then breaks down every match afterwards.
+      <div class="hero-copy">
+        <span class="eyebrow reveal"><span class="dot"></span> Free &amp; open source · Windows &amp; macOS</span>
+        <h1 class="reveal d1">The League companion that <span class="grad">plans every level</span> — and tells you out loud.</h1>
+        <p class="lede reveal d2">
+          Not another scoreboard. QueryLoL maps a per-level game plan for all 172 champions,
+          calls out plays in real time while you play, and reads the enemy team — in a ~15&nbsp;MB
+          native app with no account and no telemetry.
         </p>
-        <div class="cta-row">
-          <a class="btn btn-lg" href="https://github.com/ishtartec/query-lol-desktop/releases/latest" target="_blank" rel="noopener">
-            Download latest release
-          </a>
-          <a class="btn btn-lg btn-ghost" href="https://github.com/ishtartec/query-lol-desktop" target="_blank" rel="noopener">
-            View source on GitHub
-          </a>
+        <div class="cta-row reveal d3">
+          <a class="btn btn-lg" href="https://github.com/ishtartec/query-lol-desktop/releases/latest" target="_blank" rel="noopener">Download latest release</a>
+          <a class="btn btn-lg btn-ghost" href="https://github.com/ishtartec/query-lol-desktop" target="_blank" rel="noopener">View source</a>
         </div>
-        <p class="micro">~15&nbsp;MB binary · No Overwolf · No Electron · Built with Tauri&nbsp;+&nbsp;React</p>
+        <ul class="trust reveal d4">
+          <li><strong>172</strong> champions planned</li>
+          <li><strong>~15MB</strong> native binary</li>
+          <li><strong>0</strong> accounts &amp; trackers</li>
+          <li><strong>11</strong> regions</li>
+        </ul>
+      </div>
+      <div class="hero-art reveal d2">
+        <div class="frame frame-glow">
+          <img src="screenshots/live-game.png" alt="QueryLoL live game overlay with scoreboard, win probability, and recommended build" loading="eager" />
+          <span class="frame-tag"><span class="dot"></span> LIVE</span>
+        </div>
       </div>
     </section>
 
-    <section id="screenshots" class="section">
-      <h2>See it in action</h2>
-
-      <figure class="shot">
-        <img src="screenshots/champ-select-build.png" alt="Champion select build view with damage composition" loading="lazy" />
-        <figcaption><strong>Champion Select — Builds &amp; Damage Composition.</strong> Auto-applied runes, spells, and item set the moment you pick, with per-team AD/AP damage bars and enemy matchup win rates.</figcaption>
-      </figure>
-
-      <figure class="shot">
-        <img src="screenshots/level-plan.png" alt="Level-by-level plan timeline" loading="lazy" />
-        <figcaption><strong>Level-by-Level Plan.</strong> An 18-level timeline vs your lane opponent — per-level advantage from power curves, spike bonuses, and ult strength, plus situational items and matchup notes.</figcaption>
-      </figure>
-
-      <figure class="shot">
-        <img src="screenshots/live-game.png" alt="Live game scoreboard and recommended build" loading="lazy" />
-        <figcaption><strong>Live Game.</strong> Real-time recommended build, win probability, gold diff, and a full scoreboard with player ranks plus OTP / first-time / smurf labels.</figcaption>
-      </figure>
-
-      <figure class="shot">
-        <img src="screenshots/post-game.png" alt="Post-game match summary with role-adjusted performance breakdown" loading="lazy" />
-        <figcaption><strong>Post-Game Analysis.</strong> Full scoreboard for both teams plus a role-adjusted performance breakdown across KDA, CS/min, gold/min, damage share, vision/min, and kill participation.</figcaption>
-      </figure>
-
-      <figure class="shot">
-        <img src="screenshots/home-dashboard.png" alt="Home dashboard with role-aware improvement panel and LP progress" loading="lazy" />
-        <figcaption><strong>Home Dashboard.</strong> Today's recap, your top champions vs your own baseline, role-aware areas to improve, LP progress, and recent match history.</figcaption>
-      </figure>
+    <!-- PILLARS -->
+    <section id="highlights" class="band">
+      <p class="section-eyebrow">Why it's different</p>
+      <h2 class="section-title">More than an op.gg overlay</h2>
+      <div class="pillars">
+        <article class="pillar">
+          <span class="pillar-ico" aria-hidden="true">⌁</span>
+          <h3>Plans every level</h3>
+          <p>A coach-style 18-level route vs your lane opponent, with the right action on each level — for all 172 champions.</p>
+        </article>
+        <article class="pillar">
+          <span class="pillar-ico" aria-hidden="true">◈</span>
+          <h3>Talks to you</h3>
+          <p>Hands-free voice callouts: enemy missing, recall ready, objective spawning, jungler unseen — while your eyes stay on the game.</p>
+        </article>
+        <article class="pillar">
+          <span class="pillar-ico" aria-hidden="true">⬡</span>
+          <h3>Featherweight &amp; private</h3>
+          <p>~15MB native Tauri app. No Electron, no account, no telemetry. All requests run locally from your machine.</p>
+        </article>
+        <article class="pillar">
+          <span class="pillar-ico" aria-hidden="true">⌖</span>
+          <h3>Reads the enemy</h3>
+          <p>Smurf scoring and premade/duo detection surface who you're really up against — before the game even starts.</p>
+        </article>
+      </div>
     </section>
 
-    <section id="features" class="section">
-      <h2>What's inside</h2>
-      <div class="grid">
-        <article class="card">
-          <h3>Champion Select — Builds</h3>
-          <p>Auto-apply full rune pages, summoner spells, and item sets from OP.GG the moment you pick. Alternative builds with win/pick rates, color-coded skill order, and item/rune tooltips.</p>
+    <!-- SPOTLIGHT 01 -->
+    <section class="spotlight">
+      <div class="spot-media reveal">
+        <div class="frame"><img src="screenshots/level-plan.png" alt="Level-by-level plan timeline with per-level actions and spike nodes" loading="lazy" /></div>
+      </div>
+      <div class="spot-copy reveal">
+        <span class="num">01</span>
+        <p class="section-eyebrow">The signature feature</p>
+        <h2 class="section-title">A game plan for all 18 levels</h2>
+        <p>Power curves, spike bonuses and ult strength are compared level by level against your specific lane opponent, then turned into one concrete action per level — <em>"Lvl 3 trade", "All-in con R", "Farm side", "R2 + objective"</em>. Hexagonal nodes pulse on your spikes and color-code each level from dominant to careful.</p>
+        <ul class="ticks">
+          <li>Full coverage for all <strong>172 champions</strong></li>
+          <li>Per-level advantage from power curves + spikes + ult tiers</li>
+          <li>Hover any level for a coach-style tip</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- SPOTLIGHT 02 -->
+    <section class="spotlight reverse">
+      <div class="spot-media reveal">
+        <div class="frame"><img src="screenshots/live-game.png" alt="Live game view with real-time advisors and recommended build" loading="lazy" /></div>
+      </div>
+      <div class="spot-copy reveal">
+        <span class="num">02</span>
+        <p class="section-eyebrow">In-game overlay</p>
+        <h2 class="section-title">Live advisors — and a voice</h2>
+        <p>Hold <kbd>TAB</kbd> for a borderless overlay that thinks with you: a recall optimizer, wave-state advice, death-timer prediction, an enemy-jungle tracker, MIA alerts, vision targets, and a 5-level plan preview. The build strip shows owned / next / future with a gold-needed counter and a "READY" pulse.</p>
+        <ul class="ticks">
+          <li><strong>Voice cues (TTS):</strong> <em>"Caitlyn missing"</em>, <em>"recall ready, Lost Chapter"</em>, <em>"drake in 30s, jungler unseen"</em></li>
+          <li>Win probability, gold diff &amp; objective timers (Season 2026 timings)</li>
+          <li>Spell-cooldown trackers and power-spike alerts</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- SPOTLIGHT 03 -->
+    <section class="spotlight">
+      <div class="spot-media reveal">
+        <div class="frame"><img src="screenshots/champ-select-build.png" alt="Champion select with auto-applied build, draft intelligence and damage composition" loading="lazy" /></div>
+      </div>
+      <div class="spot-copy reveal">
+        <span class="num">03</span>
+        <p class="section-eyebrow">Champion select &amp; scouting</p>
+        <h2 class="section-title">Win the draft, scout the lobby</h2>
+        <p>Runes, spells and items auto-apply the moment you pick — with alternatives labeled <em>Popular</em> or <em>Best WR</em>. On top of that: pick/ban scored 0–100, per-enemy matchup win rates, team-comp callouts, an all-lanes prediction, and AD/AP damage composition for both teams.</p>
+        <ul class="ticks">
+          <li><strong>Smurf detection</strong> — 0–100 confidence from level, WR, games, KDA &amp; champ pool</li>
+          <li><strong>Premade detection</strong> — flags duos/parties from shared recent games</li>
+          <li>Adaptive defensive items based on enemy comp</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- SPOTLIGHT 04 -->
+    <section class="spotlight reverse">
+      <div class="spot-media reveal">
+        <div class="frame stack">
+          <img src="screenshots/post-game.png" alt="Post-game analysis with role-adjusted performance breakdown" loading="lazy" />
+          <img class="stack-2" src="screenshots/home-dashboard.png" alt="Home dashboard with role-aware improvement panel" loading="lazy" />
+        </div>
+      </div>
+      <div class="spot-copy reveal">
+        <span class="num">04</span>
+        <p class="section-eyebrow">After the game</p>
+        <h2 class="section-title">Improve on the right things</h2>
+        <p>Post-game breaks down both teams with MVP and multikill badges, a gold-advantage timeline, and per-phase (early / mid / late) splits. Your home dashboard benchmarks you against <em>your own</em> baseline and your <strong>detected role</strong> — so a support is judged on vision, not CS.</p>
+        <ul class="ticks">
+          <li>Role-aware improvement priorities vs your rank's benchmarks</li>
+          <li>Tilt gate after loss streaks, with your historic post-streak WR</li>
+          <li>LP progress chart and per-champion deltas</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- FEATURE BENTO -->
+    <section id="features" class="band">
+      <p class="section-eyebrow">Everything in the box</p>
+      <h2 class="section-title">Built for every phase of the game</h2>
+      <div class="bento">
+        <article class="cell">
+          <h3>Champion Select</h3>
+          <p>Auto-apply runes, spells &amp; item sets · alternative builds with WR/pick rate · skill order · item &amp; rune tooltips · ARAM bench by win rate.</p>
         </article>
-        <article class="card">
-          <h3>Drafting Intelligence</h3>
-          <p>Pick &amp; ban recommendations scored 0–100, per-enemy matchup win rates, team-composition callouts, all-lanes prediction, and a coach-style level-by-level plan for all 172 champions.</p>
+        <article class="cell">
+          <h3>Draft Intelligence</h3>
+          <p>Pick &amp; ban scored 0–100 · matchup win rates · comp callouts · all-lanes prediction · trinket &amp; ward-placement tips · game prediction.</p>
         </article>
-        <article class="card">
+        <article class="cell wide">
           <h3>Live Game &amp; Overlay</h3>
-          <p>Real-time scoreboard, smurf detection, gold tracker, objective timers, win probability, MIA / death-timer / recall advisors, voice cues (TTS), and a hold-TAB in-game overlay.</p>
+          <p>Real-time scoreboard &amp; items · win probability · gold &amp; lane-diff trackers · objective spawn windows · recall optimizer · wave-state advisor · death-timer prediction · MIA / roam tracker · enemy-jungle tracker · vision targets · spell cooldowns · voice cues · hold-TAB overlay with a 5-level plan preview.</p>
         </article>
-        <article class="card">
-          <h3>Post-Game Analysis</h3>
-          <p>Full scoreboard with MVP and multikill badges, gold-advantage timeline, elo comparison, and per-phase (early / mid / late) breakdowns of CS/min, gold/min, and KDA.</p>
+        <article class="cell">
+          <h3>Scouting</h3>
+          <p>Smurf detection (0–100) · premade/duo detection · player ranks, OTP / first-time / tilt / streak labels · click any player for their history.</p>
         </article>
-        <article class="card">
-          <h3>Profile &amp; Improvement</h3>
-          <p>Daily summary, tilt gate after loss streaks, role-aware improvement priorities vs elo benchmarks, LP progress chart, and per-champion deltas against your own baseline.</p>
+        <article class="cell">
+          <h3>Post-Game</h3>
+          <p>Full scoreboard with MVP &amp; multikills · gold-advantage timeline · elo comparison · early/mid/late phase splits.</p>
         </article>
-        <article class="card">
-          <h3>Lightweight by design</h3>
-          <p>A ~15&nbsp;MB native binary built with Tauri (Rust) + React. No Overwolf, no Electron. Windows and macOS, 11 regions, all HTTP done locally in Rust.</p>
+        <article class="cell">
+          <h3>Profile &amp; Mental</h3>
+          <p>Daily summary &amp; play-time nudges · tilt gate · role-aware improvement priorities · LP chart · per-champion deltas.</p>
         </article>
       </div>
+    </section>
 
+    <!-- COMPARE -->
+    <section id="compare" class="band">
+      <p class="section-eyebrow">How it stacks up</p>
+      <h2 class="section-title">QueryLoL vs typical companion apps</h2>
+      <div class="table-wrap">
+        <table class="compare">
+          <thead>
+            <tr><th scope="col">&nbsp;</th><th scope="col" class="us">QueryLoL</th><th scope="col">Typical companion app</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Price</th><td class="us"><span class="yes">Free &amp; open source</span></td><td>Free with paid tiers / ads</td></tr>
+            <tr><th scope="row">App size</th><td class="us"><span class="yes">~15&nbsp;MB native</span></td><td>200&nbsp;MB+ (Electron / Overwolf)</td></tr>
+            <tr><th scope="row">Account required</th><td class="us"><span class="yes">No</span></td><td>Often</td></tr>
+            <tr><th scope="row">Telemetry &amp; ads</th><td class="us"><span class="yes">None</span></td><td>Common</td></tr>
+            <tr><th scope="row">Per-level game plan</th><td class="us"><span class="yes">Yes — 172 champions</span></td><td>Rare</td></tr>
+            <tr><th scope="row">In-game voice callouts</th><td class="us"><span class="yes">Yes</span></td><td>Rare</td></tr>
+            <tr><th scope="row">Open source</th><td class="us"><span class="yes">Yes</span></td><td><span class="no">No</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq" class="band narrow">
+      <p class="section-eyebrow">Good to know</p>
+      <h2 class="section-title">Frequently asked</h2>
+      <div class="faq">
+        <details>
+          <summary>Is QueryLoL free?</summary>
+          <p>Yes — completely free and open source. No paid tiers, no ads, no account. The full source lives on <a href="https://github.com/ishtartec/query-lol-desktop" target="_blank" rel="noopener">GitHub</a>.</p>
+        </details>
+        <details>
+          <summary>Will I get banned for using it?</summary>
+          <p>QueryLoL only uses Riot's official local APIs — the League Client API and the in-game Live Client Data API — to read game state and apply builds you could set yourself. It never modifies, injects into, or automates gameplay, the same approach used by other popular companion apps.</p>
+        </details>
+        <details>
+          <summary>Does it work on macOS and Windows?</summary>
+          <p>Both. It's a native desktop app for Windows and macOS with automatic League client detection on each platform.</p>
+        </details>
+        <details>
+          <summary>Do I need an account or login?</summary>
+          <p>No account and no sign-up. QueryLoL reads your local League client directly and pulls public data from sources like OP.GG and Data Dragon.</p>
+        </details>
+        <details>
+          <summary>How is the app only ~15MB?</summary>
+          <p>It's built with Tauri (Rust) and uses your OS's native webview instead of bundling a full Chromium runtime like Electron or Overwolf apps — so it stays tiny and light on resources.</p>
+        </details>
+      </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section class="closer">
+      <h2>Stop reacting. Start planning.</h2>
+      <p>One small download. Every level mapped, every callout spoken, every lobby scouted.</p>
       <div class="cta-row center">
-        <a class="btn btn-lg" href="https://github.com/ishtartec/query-lol-desktop/releases/latest" target="_blank" rel="noopener">
-          Download for Windows &amp; macOS
-        </a>
+        <a class="btn btn-lg" href="https://github.com/ishtartec/query-lol-desktop/releases/latest" target="_blank" rel="noopener">Download for Windows &amp; macOS</a>
       </div>
     </section>
   </main>
@@ -173,5 +344,23 @@
       are trademarks or registered trademarks of Riot Games, Inc.
     </p>
   </footer>
+
+  <script>
+    // Staggered scroll reveal — respects reduced-motion.
+    (function () {
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var els = document.querySelectorAll('.reveal');
+      if (reduce || !('IntersectionObserver' in window)) {
+        els.forEach(function (el) { el.classList.add('in'); });
+        return;
+      }
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+      els.forEach(function (el) { io.observe(el); });
+    })();
+  </script>
 </body>
 </html>
