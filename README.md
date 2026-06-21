@@ -23,6 +23,16 @@ Real-time recommended build, win probability, gold diff, and a full scoreboard w
 
 ![Live game scoreboard and recommended build](docs/screenshots/live-game.png)
 
+### Post-Game Analysis
+Full match scoreboard for both teams — damage, KP, CS, vision and gold per player — plus a role-adjusted performance breakdown (here vs Gold UTILITY) across KDA, CS/min, gold/min, damage share, vision/min and kill participation.
+
+![Post-game match summary with role-adjusted performance breakdown](docs/screenshots/post-game.png)
+
+### Home Dashboard
+Today's recap, your top champions vs your own baseline, role-aware areas to improve (benchmarked against your rank and detected position), LP progress, and recent match history.
+
+![Home dashboard with role-aware improvement panel and LP progress](docs/screenshots/home-dashboard.png)
+
 ---
 
 ## Features
