@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ishtartec.github.io/query-lol-desktop/sitemap.xml

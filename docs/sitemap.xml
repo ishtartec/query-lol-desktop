@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://ishtartec.github.io/query-lol-desktop/</loc>
+    <lastmod>2026-06-21</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://ishtartec.github.io/query-lol-desktop/screenshots/champ-select-build.png</image:loc>
+      <image:title>QueryLoL champion select build view</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://ishtartec.github.io/query-lol-desktop/screenshots/live-game.png</image:loc>
+      <image:title>QueryLoL live game scoreboard and overlay</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://ishtartec.github.io/query-lol-desktop/screenshots/post-game.png</image:loc>
+      <image:title>QueryLoL post-game analysis</image:title>
+    </image:image>
+  </url>
+</urlset>
