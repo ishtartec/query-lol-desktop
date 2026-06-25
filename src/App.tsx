@@ -469,7 +469,7 @@ const TRAIT_SCALING = new Set([
 // Burst / high-priority targets
 const TRAIT_BURST = new Set([
   84, 238, 91, 55, 105, 131, 245, 121, 107, 28, 7, 4, 246, 38, 45, 1, 99, 134,
-  99, 142, 711, 800, 893, 910, 9, 35, 56, 141, 164, 234, 254, 950, 904, 360,
+  99, 142, 711, 800, 805, 893, 910, 9, 35, 56, 141, 164, 234, 254, 950, 904, 360,
 ]);
 
 const TRAIT_SHIELDERS = new Set([
@@ -505,7 +505,7 @@ const TRAIT_HARD_CC = new Set([
 // Map champion ID to primary damage type: "ap" or "ad"
 const CHAMP_DAMAGE_TYPE: Record<number, "ap" | "ad"> = {};
 // AP champions
-[1,3,4,7,8,9,10,13,16,17,25,26,27,28,30,31,34,37,38,40,42,43,45,50,54,55,57,60,61,63,68,69,74,76,79,82,84,85,90,96,99,101,103,105,112,113,115,117,127,131,134,136,142,143,147,150,154,161,163,245,246,267,268,350,353,360,427,432,497,517,518,526,555,685,711,800,876,887,888,893,901,902,910,950].forEach(id => CHAMP_DAMAGE_TYPE[id] = "ap");
+[1,3,4,7,8,9,10,13,16,17,25,26,27,28,30,31,34,37,38,40,42,43,45,50,54,55,57,60,61,63,68,69,74,76,79,82,84,85,90,96,99,101,103,105,112,113,115,117,127,131,134,136,142,143,147,150,154,161,163,245,246,267,268,350,353,360,427,432,497,517,518,526,555,685,711,800,805,876,887,888,893,901,902,910,950].forEach(id => CHAMP_DAMAGE_TYPE[id] = "ap");
 // AD champions (rest default to AD for simplicity)
 
 interface ItemRec {
@@ -645,6 +645,7 @@ const POWER_CURVES: Record<number, PowerCurve> = {
   238: { early: 2, mid: 5, late: 2, spikes: [6] },          // Zed
   91:  { early: 2, mid: 5, late: 2, spikes: [6] },          // Talon
   55:  { early: 2, mid: 4, late: 3, spikes: [6, 11] },      // Katarina
+  805: { early: 2, mid: 5, late: 3, spikes: [6, 11] },      // Locke
   105: { early: 2, mid: 4, late: 3, spikes: [6] },          // Fizz
   131: { early: 2, mid: 4, late: 3, spikes: [6] },          // Diana
   245: { early: 2, mid: 4, late: 3, spikes: [6] },          // Ekko
@@ -863,7 +864,7 @@ const CHAMP_ROLES: Record<number, Role[]> = {
   131: ["middle"], 134: ["middle"], 142: ["middle"], 143: ["middle", "utility"], 157: ["middle", "top"],
   161: ["middle"], 163: ["middle"], 238: ["middle"], 246: ["middle"], 268: ["middle"],
   517: ["middle"], 518: ["middle", "top"], 711: ["middle"],
-  777: ["middle", "top"], 800: ["middle"], 901: ["middle"], 950: ["middle", "jungle"],
+  777: ["middle", "top"], 800: ["middle"], 805: ["middle"], 901: ["middle"], 950: ["middle", "jungle"],
   136: ["middle"], 893: ["middle", "top"], 910: ["middle"], 25: ["middle", "utility"],
   // Bottom (ADC)
   18: ["bottom"], 22: ["bottom"], 29: ["bottom"], 51: ["bottom"], 81: ["bottom"],
