@@ -577,7 +577,11 @@ pub fn extract_draft_state(session: &ChampSelectSession) -> DraftState {
 
 /// Extract champion ID from session, checking both myTeam and actions.
 /// Before lock-in, championId in myTeam is 0; the actual pick is in actions.
-pub fn extract_champion_from_session(session: &ChampSelectSession) -> (i64, String) {
+///
+/// The third element is true only when our pick action is completed (locked in).
+/// A hovered champion yields `(id, pos, false)` — callers use that to keep pick
+/// recommendations flowing while the choice is still reversible.
+pub fn extract_champion_from_session(session: &ChampSelectSession) -> (i64, String, bool) {
     let my_cell = session.local_player_cell_id;
 
     let my_player = session.my_team.iter().find(|p| p.cell_id == my_cell);
@@ -586,9 +590,16 @@ pub fn extract_champion_from_session(session: &ChampSelectSession) -> (i64, Stri
         .unwrap_or_default()
         .to_lowercase();
 
+    let locked = session.actions.iter().flatten().any(|a| {
+        a.actor_cell_id == my_cell
+            && a.action_type == "pick"
+            && a.champion_id > 0
+            && a.completed
+    });
+
     if let Some(player) = my_player {
         if player.champion_id > 0 {
-            return (player.champion_id, position);
+            return (player.champion_id, position, locked);
         }
     }
 
@@ -599,12 +610,12 @@ pub fn extract_champion_from_session(session: &ChampSelectSession) -> (i64, Stri
                 && action.action_type == "pick"
                 && action.champion_id > 0
             {
-                return (action.champion_id, position);
+                return (action.champion_id, position, locked);
             }
         }
     }
 
-    (0, position)
+    (0, position, false)
 }
 
 /// Accept the ready check (queue pop).

@@ -268,7 +268,7 @@ async fn poll_loop(
                 Err(_) => continue,
             };
 
-            let (mut champion_id, position) = lcu::extract_champion_from_session(&session);
+            let (mut champion_id, position, champion_locked) = lcu::extract_champion_from_session(&session);
             let draft = lcu::extract_draft_state(&session);
 
             // If our hovered/intended champion got banned, drop the pick so the
@@ -317,6 +317,7 @@ async fn poll_loop(
                 }
                 s.draft = Some(draft.clone());
                 s.ban_phase_active = ban_active;
+                s.champion_locked = champion_locked;
                 let _ = app_handle.emit("app-state-changed", s.clone());
 
                 // ARAM: update bench champion IDs (after emit so UI always updates)
@@ -410,11 +411,10 @@ async fn poll_loop(
                 }
             }
 
-            // If draft changed and we haven't picked yet, generate recommendations
+            // If draft changed and we haven't locked in yet, generate recommendations
             if draft_hash != last_draft_hash {
                 last_draft_hash = draft_hash;
 
-                let my_champ = champion_id;
                 let region = state.lock().await.region.clone();
                 // Get position from draft state (more reliable than assigned_position)
                 let my_pos = draft.allies.iter()
@@ -423,8 +423,9 @@ async fn poll_loop(
                     .unwrap_or_default();
                 let opgg_pos = map_position(&my_pos);
 
-                // Only recommend if we haven't picked yet and not ARAM
-                if my_champ == 0 && !opgg_pos.is_empty() && !is_aram {
+                // Only recommend until we've locked in our pick (a hovered champion
+                // still counts as "not decided") and not ARAM.
+                if !champion_locked && !opgg_pos.is_empty() && !is_aram {
                     let enemies_with_pos: Vec<(i64, String)> = draft.enemies.iter()
                         .filter(|e| e.champion_id > 0)
                         .map(|e| (e.champion_id, map_position(&e.position).to_string()))

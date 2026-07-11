@@ -70,6 +70,9 @@ pub struct AppState {
     #[serde(skip)]
     pub summoner_puuid: Option<String>,
     pub champion_id: Option<i64>,
+    /// True only once the pick action is completed. While hovering, `champion_id`
+    /// is set but this stays false so pick recommendations keep updating.
+    pub champion_locked: bool,
     pub champion_name: Option<String>,
     pub assigned_position: Option<String>,
     pub build: Option<ChampionBuild>,
@@ -181,6 +184,7 @@ impl Default for AppState {
             summoner_id: None,
             summoner_puuid: None,
             champion_id: None,
+            champion_locked: false,
             champion_name: None,
             assigned_position: None,
             build: None,

@@ -280,6 +280,7 @@ interface AppState {
   status: "disconnected" | "connected" | "champ_select" | "in_game" | "post_game";
   summoner_name: string | null;
   champion_id: number | null;
+  champion_locked: boolean;
   champion_name: string | null;
   assigned_position: string | null;
   build: ChampionBuild | null;
@@ -2024,7 +2025,7 @@ function ChampionIcon({ championId, size = 36, className = "" }: { championId: n
 
 function App() {
   const [state, setState] = useState<AppState>({
-    status: "disconnected", summoner_name: null, champion_id: null,
+    status: "disconnected", summoner_name: null, champion_id: null, champion_locked: false,
     champion_name: null, assigned_position: null, build: null,
     build_alternatives: null, counters: {},
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
@@ -2278,7 +2279,7 @@ function App() {
                   ))}
               </div>
             </div>
-          ) : !hasChampion && rankedRecs.length > 0 && (
+          ) : !state.champion_locked && rankedRecs.length > 0 && (
             <div className="cs-recs-bar cs-recs-bar-v2">
               <span className="cs-recs-label">Recommended</span>
               <div className="cs-recs-scroll">
