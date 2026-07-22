@@ -344,9 +344,27 @@ pub struct OpggCounter {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpggGameLength {
     pub game_length: i64,
+    // OP.GG sends `"rate": null` for champions played off-role (not enough
+    // games in that position). Collapse it to a neutral 0.5 WR so the whole
+    // champion payload doesn't fail to deserialize (which used to surface as
+    // "error decoding response body" and drop build/counters/alternatives).
+    #[serde(default = "neutral_win_rate", deserialize_with = "null_as_neutral_win_rate")]
     pub rate: f64,
     #[serde(default)]
     pub average: f64,
+}
+
+fn neutral_win_rate() -> f64 {
+    0.5
+}
+
+/// Like [`null_as_default`] but yields a neutral 0.5 win rate instead of 0.0,
+/// so off-role game-length data doesn't skew early/late power predictions.
+fn null_as_neutral_win_rate<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<f64>::deserialize(deserializer)?.unwrap_or(0.5))
 }
 
 // --- Game prediction ---

@@ -10,32 +10,56 @@ fn http_client() -> reqwest::Client {
     reqwest::Client::new()
 }
 
-/// GET + JSON parse with bounded retries. OP.GG occasionally returns HTML/empty
-/// bodies under load — a short backoff fixes most transient failures without
-/// surfacing them to the user.
+/// A parse failure that should NOT be retried — the body is well-formed enough
+/// to read but doesn't match our types. Retrying the same URL is pointless
+/// (the response is deterministic), so we surface serde's exact location and
+/// give up immediately instead of burning ~4.5s of backoff.
+struct ParseError(String);
+
+/// GET + JSON parse with bounded retries. Transient failures (network errors,
+/// non-2xx, HTML/empty bodies under load) are retried with backoff. A
+/// deserialization mismatch is terminal and returns after the first attempt,
+/// logging serde's line/column and a snippet of the offending body — the
+/// generic reqwest `.json()` error ("error decoding response body") hid this.
 async fn fetch_json_with_retry<T: DeserializeOwned>(url: &str) -> Result<T, String> {
     const MAX_ATTEMPTS: u32 = 3;
     let backoffs_ms = [600u64, 1500, 3000];
     let mut last_err = String::new();
     for attempt in 0..MAX_ATTEMPTS {
-        let res: Result<T, String> = async {
+        // Outer Result = transient error (retry); inner Err(ParseError) = terminal.
+        let res: Result<Result<T, ParseError>, String> = async {
             let resp = http_client()
                 .get(url)
                 .header("User-Agent", "QueryLoLDesktop/0.1")
                 .send()
                 .await
                 .map_err(|e| format!("HTTP request failed: {}", e))?;
-            resp.json::<T>()
-                .await
-                .map_err(|e| format!("Failed to parse OP.GG response: {}", e))
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| format!("body read failed: {}", e))?;
+            if !status.is_success() {
+                return Err(format!("HTTP {} — body: {}", status.as_u16(), body_snippet(&text, 200)));
+            }
+            match serde_json::from_str::<T>(&text) {
+                Ok(v) => Ok(Ok(v)),
+                Err(e) => Ok(Err(ParseError(format!(
+                    "parse failed at line {} col {}: {} — near: {}",
+                    e.line(), e.column(), e, snippet_around(&text, e.line(), e.column())
+                )))),
+            }
         }
         .await;
+
         match res {
-            Ok(v) => {
+            Ok(Ok(v)) => {
                 if attempt > 0 {
                     info!("OP.GG fetch succeeded on attempt {} for {}", attempt + 1, url);
                 }
                 return Ok(v);
+            }
+            // Terminal: shape mismatch. No point retrying an identical body.
+            Ok(Err(ParseError(detail))) => {
+                warn!("OP.GG fetch: not retrying — {} ({})", detail, url);
+                return Err(format!("Failed to parse OP.GG response: {}", detail));
             }
             Err(e) => {
                 last_err = e;
