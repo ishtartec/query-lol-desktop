@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
@@ -21,6 +21,7 @@ interface ChampionBuild {
   core_items: number[];
   boots: number[];
   skill_order: string[];
+  skill_levels: string[];
 }
 
 interface DraftPlayer {
@@ -114,7 +115,7 @@ interface PostGameTeam {
 }
 
 interface GoldDiffPoint { game_time: number; gold_diff: number; }
-interface DeathImpact { game_time: number; summoner_name: string; is_ally: boolean; gold_swing: number; }
+interface DeathImpact { game_time: number; summoner_name: string; champion_id: number; is_ally: boolean; gold_swing: number; }
 
 interface PostGameStats {
   teams: PostGameTeam[];
@@ -1817,6 +1818,19 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
 }
 
+// Riot's official champion-page CDN hosts a preview clip per ability, indexed
+// by the numeric champion id zero-padded to 4 digits (Ahri -> "0103") — no
+// DDragon key translation needed. mp4 rather than the smaller webm because
+// WebM support in WKWebView (Tauri's macOS engine) varies by OS version, while
+// mp4 is safe there and in WebView2. The .jpg poster shows instantly while the
+// clip streams in.
+const ABILITY_CDN = "https://d28xe8vt774jo5.cloudfront.net/champion-abilities";
+
+function abilityMediaUrl(championId: number, slot: string, ext: "mp4" | "jpg"): string {
+  const id = String(championId).padStart(4, "0");
+  return `${ABILITY_CDN}/${id}/ability_${id}_${slot}1.${ext}`;
+}
+
 function splashUrl(championKey: string): string {
   return `${DDRAGON}/img/champion/splash/${championKey}_0.jpg`;
 }
@@ -1842,24 +1856,82 @@ function useChampionName(id: number | null): { key: string; name: string } | nul
   return info;
 }
 
+// --- Champion abilities (Data Dragon) ---
+
+interface SpellData {
+  key: string;          // Q / W / E / R, by slot order
+  name: string;
+  description: string;
+  cooldown: string;     // per-rank, e.g. "9/8/7/6/5"
+  cost: string;
+  range: string;
+  icon: string;
+}
+
+// Per-champion ability text is a separate ~15KB Data Dragon file keyed by the
+// champion's DDragon id ("Ahri", "MonkeyKing"), not the numeric id. Cached
+// because champ select re-renders constantly.
+const spellCache = new Map<string, SpellData[]>();
+const SPELL_SLOT_KEYS = ["Q", "W", "E", "R"];
+
+async function loadChampionSpells(champKey: string): Promise<SpellData[]> {
+  const cached = spellCache.get(champKey);
+  if (cached) return cached;
+  try {
+    const resp = await fetch(`${DDRAGON}/${DDRAGON_VERSION}/data/en_US/champion/${champKey}.json`);
+    const json = await resp.json();
+    const champ = json.data?.[champKey];
+    if (!champ) return [];
+    const spells: SpellData[] = (champ.spells || []).map((sp: any, i: number) => ({
+      key: SPELL_SLOT_KEYS[i] || "",
+      name: sp.name,
+      description: stripHtml(sp.description || ""),
+      cooldown: sp.cooldownBurn || "",
+      cost: sp.costBurn || "",
+      range: sp.rangeBurn || "",
+      icon: `${DDRAGON}/${DDRAGON_VERSION}/img/spell/${sp.image?.full || ""}`,
+    }));
+    spellCache.set(champKey, spells);
+    return spells;
+  } catch { return []; }
+}
+
 // --- Tooltip Components ---
 
 function Tooltip({ children, content }: { children: React.ReactNode; content: React.ReactNode }) {
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [below, setBelow] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const anchor = useRef<DOMRect | null>(null);
 
   function handleEnter(e: React.MouseEvent) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    anchor.current = rect;
     setPos({ x: rect.left + rect.width / 2, y: rect.top });
+    setBelow(false);
     setShow(true);
   }
+
+  // The box is `position: fixed` and sits above its anchor, which is fine for
+  // short item tooltips but not for ability previews (~300px with the clip).
+  // Measure once shown and flip underneath when it would run off the top.
+  useLayoutEffect(() => {
+    if (!show || !boxRef.current || !anchor.current) return;
+    const rect = anchor.current;
+    const needsFlip = rect.top - boxRef.current.getBoundingClientRect().height - 8 < 0;
+    if (needsFlip !== below) {
+      setBelow(needsFlip);
+      setPos({ x: rect.left + rect.width / 2, y: needsFlip ? rect.bottom : rect.top });
+    }
+  }, [show, below, content]);
 
   return (
     <div className="tt-wrap" ref={ref} onMouseEnter={handleEnter} onMouseLeave={() => setShow(false)}>
       {children}
       {show && (
-        <div className="tt-box" style={{ left: pos.x, top: pos.y }}>
+        <div ref={boxRef} className={below ? "tt-box tt-box-below" : "tt-box"} style={{ left: pos.x, top: pos.y }}>
           {content}
         </div>
       )}
@@ -1882,6 +1954,83 @@ function ItemIcon({ id, size = 32, className }: { id: number; size?: number; cla
     }>
       {img}
     </Tooltip>
+  );
+}
+
+function SkillPanel({ priority, levels, championId }: { priority: string[]; levels: string[]; championId: number | null }) {
+  const [spells, setSpells] = useState<SpellData[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!championId) { setSpells([]); return; }
+    loadChampionData()
+      .then(champs => {
+        const key = champs[championId.toString()]?.key;
+        return key ? loadChampionSpells(key) : [];
+      })
+      .then(s => { if (!cancelled) setSpells(s); });
+    return () => { cancelled = true; };
+  }, [championId]);
+
+  function pip(slot: string, extra: React.CSSProperties, className: string, evolve?: string) {
+    const el = (
+      <span className={className} style={{ background: SKILL_COLORS[slot] || "#555", ...extra }}>{slot}</span>
+    );
+    const sp = spells.find(x => x.key === slot);
+    if (!sp) return el;
+    const meta = [
+      sp.cooldown && `CD ${sp.cooldown}`,
+      sp.cost && sp.cost !== "0" && `Cost ${sp.cost}`,
+      sp.range && `Range ${sp.range}`,
+    ].filter(Boolean).join("  ·  ");
+    return (
+      <Tooltip content={
+        <div className="tt-item">
+          {championId !== null && (
+            <video
+              className="tt-video"
+              src={abilityMediaUrl(championId, slot, "mp4")}
+              poster={abilityMediaUrl(championId, slot, "jpg")}
+              autoPlay muted loop playsInline
+              onError={e => { e.currentTarget.style.display = "none"; }}
+            />
+          )}
+          <span className="tt-name">{slot} · {sp.name}</span>
+          {meta && <span className="tt-spell-meta">{meta}</span>}
+          {evolve && <span className="tt-evolve">Evolves {evolve}</span>}
+          <p className="tt-desc">{sp.description}</p>
+        </div>
+      }>{el}</Tooltip>
+    );
+  }
+
+  return (
+    <div className="build-card">
+      <h3 className="card-label">Skill Priority</h3>
+      <div className="skills-row">
+        {priority.map((slot, i) => (
+          <span key={i}>{pip(slot, { opacity: 1 - i * 0.2, fontSize: i === 0 ? 14 : 12 }, "skill-pip")}</span>
+        ))}
+      </div>
+      {levels.length > 0 && (
+        <div className="skill-levels">
+          {levels.map((token, i) => {
+            // Champions with evolutions report the combined choice, e.g. "R-Q"
+            // = level R and evolve Q.
+            const [slot, evolve] = token.split("-");
+            return (
+              <div key={i} className="skill-lvl">
+                <span className="skill-lvl-num">{i + 1}</span>
+                <div className="skill-lvl-pip">
+                  {pip(slot, { fontSize: 10 }, "skill-pip-sm", evolve)}
+                  {evolve && <span className="skill-evolve">{evolve}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2380,17 +2529,11 @@ function App() {
                         </div>
                       )}
                       {state.build!.skill_order.length > 0 && (
-                        <div className="build-card">
-                          <h3 className="card-label">Skill Priority</h3>
-                          <div className="skills-row">
-                            {state.build!.skill_order.map((skill, i) => (
-                              <span key={i} className="skill-pip" style={{
-                                background: SKILL_COLORS[skill] || "#555",
-                                opacity: 1 - i * 0.2, fontSize: i === 0 ? 14 : 12,
-                              }}>{skill}</span>
-                            ))}
-                          </div>
-                        </div>
+                        <SkillPanel
+                          priority={state.build!.skill_order}
+                          levels={state.build!.skill_levels}
+                          championId={state.champion_id}
+                        />
                       )}
                     </div>
 
@@ -4637,12 +4780,40 @@ function PerformancePanel({ player, duration, tier, phases }: {
   );
 }
 
+// Compact form for axis ticks and headline figures: -4106 -> "-4.1k". No unit
+// suffix — "2.7kg" reads as kilograms, and the panel title already says gold.
+function fmtGold(g: number): string {
+  const sign = g > 0 ? "+" : g < 0 ? "-" : "";
+  const abs = Math.abs(g);
+  return abs >= 1000 ? `${sign}${(abs / 1000).toFixed(1)}k` : `${sign}${Math.round(abs)}`;
+}
+
+// Exact form for the hover readout, where the precise number is the whole point.
+function fmtGoldExact(g: number): string {
+  const sign = g > 0 ? "+" : g < 0 ? "-" : "";
+  return `${sign}${Math.round(Math.abs(g)).toLocaleString("en-US")}g`;
+}
+
+function fmtClock(secs: number): string {
+  return `${Math.floor(secs / 60)}m${String(Math.round(secs % 60)).padStart(2, "0")}s`;
+}
+
 function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPoint[]; deaths: DeathImpact[]; duration: number }) {
+  // The readout is drawn into the SVG rather than using <title> tooltips:
+  // WKWebView (Tauri's macOS engine) never renders those, so on macOS a <title>
+  // is invisible, while WebView2 on Windows would show a second native tooltip.
+  const [hover, setHover] = useState<{ kind: "frame" | "death"; idx: number } | null>(null);
+  // Deaths are labelled by champion, not by summoner name — you remember a
+  // fight as "Blitzcrank died", not by the account that played it.
+  const [champs, setChamps] = useState<Record<string, { key: string; name: string }>>({});
+  useEffect(() => { loadChampionData().then(setChamps); }, []);
+
   if (timeline.length < 3) return null;
 
   const width = 600;
   const height = 120;
-  const pad = { top: 10, bottom: 20, left: 30, right: 30 };
+  // Left pad fits a "-4.1k" axis label, right pad the win-probability labels.
+  const pad = { top: 10, bottom: 20, left: 44, right: 32 };
   const w = width - pad.left - pad.right;
   const h = height - pad.top - pad.bottom;
 
@@ -4663,12 +4834,73 @@ function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPo
   const points = timeline.map(p => `${toX(p.game_time)},${toY(p.gold_diff)}`);
   const areaAbove = `M${points[0]} ${points.join(" L")} L${toX(timeline[timeline.length - 1].game_time)},${toY(0)} L${toX(timeline[0].game_time)},${toY(0)} Z`;
 
+  // Headline figures: the chart shows the shape, these give it a scale.
+  const finalDiff = timeline[timeline.length - 1].gold_diff;
+  const peakLead = Math.max(...timeline.map(p => p.gold_diff), 0);
+  const peakDeficit = Math.min(...timeline.map(p => p.gold_diff), 0);
+  const finalProb = estimateWinProbability(finalDiff, timeline[timeline.length - 1].game_time, 0, 0, false, false);
+
+  const hitSlot = w / Math.max(timeline.length - 1, 1);
+
+  // Resolve the hovered target into everything the readout needs to draw.
+  const hoverInfo = (() => {
+    if (!hover) return null;
+    let x: number;
+    let dotY: number | null;
+    let label: string;
+    if (hover.kind === "frame") {
+      const p = timeline[hover.idx];
+      if (!p) return null;
+      const prob = estimateWinProbability(p.gold_diff, p.game_time, 0, 0, false, false);
+      x = toX(p.game_time);
+      dotY = toY(p.gold_diff);
+      label = `${fmtClock(p.game_time)} · ${fmtGoldExact(p.gold_diff)} · ${Math.round(prob * 100)}% win`;
+    } else {
+      const d = deaths[hover.idx];
+      if (!d) return null;
+      x = toX(d.game_time);
+      dotY = null;
+      const who = champs[d.champion_id]?.name || d.summoner_name;
+      label = `${fmtClock(d.game_time)} · ${who} · ${fmtGoldExact(d.gold_swing)}`;
+    }
+    // ~4.6px per char at fontSize 8.5, plus padding, clamped inside the plot.
+    const boxW = Math.min(Math.max(label.length * 4.6 + 12, 80), w);
+    const boxX = Math.min(Math.max(x - boxW / 2, pad.left), width - pad.right - boxW);
+    return { x, dotY, label, boxW, boxX };
+  })();
+
   return (
     <div className="gold-timeline-panel">
-      <h4 className="gold-timeline-title">Gold Advantage</h4>
-      <svg viewBox={`0 0 ${width} ${height}`} className="gold-timeline-svg">
+      <div className="gold-timeline-header">
+        <h4 className="gold-timeline-title">Gold Advantage</h4>
+        <div className="gold-timeline-stats">
+          <span className="gt-stat">
+            <span className="gt-stat-label">Final</span>
+            <b className={finalDiff >= 0 ? "gt-pos" : "gt-neg"}>{fmtGold(finalDiff)}</b>
+          </span>
+          <span className="gt-stat">
+            <span className="gt-stat-label">Peak</span>
+            <b className="gt-pos">{fmtGold(peakLead)}</b>
+            <span className="gt-stat-label">/</span>
+            <b className="gt-neg">{fmtGold(peakDeficit)}</b>
+          </span>
+          <span className="gt-stat">
+            <span className="gt-stat-label">Win</span>
+            <b className="gt-prob">{Math.round(finalProb * 100)}%</b>
+          </span>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="gold-timeline-svg" onMouseLeave={() => setHover(null)}>
         {/* Zero line */}
         <line x1={pad.left} x2={width - pad.right} y1={toY(0)} y2={toY(0)} stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="4,4" opacity="0.4" />
+
+        {/* Gold axis: the scale is symmetric around zero, so the two bounds and
+            the zero line are enough to read any point off the chart. */}
+        <line x1={pad.left} x2={width - pad.right} y1={toY(maxAbs)} y2={toY(maxAbs)} stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
+        <line x1={pad.left} x2={width - pad.right} y1={toY(-maxAbs)} y2={toY(-maxAbs)} stroke="var(--border)" strokeWidth="0.5" opacity="0.5" />
+        <text x={pad.left - 6} y={toY(maxAbs) + 3} textAnchor="end" fontSize="8" fill="var(--accent-blue)" opacity="0.8">{fmtGold(maxAbs)}</text>
+        <text x={pad.left - 6} y={toY(0) + 3} textAnchor="end" fontSize="8" fill="var(--text-muted)">0</text>
+        <text x={pad.left - 6} y={toY(-maxAbs) + 3} textAnchor="end" fontSize="8" fill="var(--accent-red)" opacity="0.8">{fmtGold(-maxAbs)}</text>
 
         {/* Gold diff area */}
         <defs>
@@ -4691,14 +4923,39 @@ function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPo
         <text x={width - pad.right + 4} y={toYProb(0.5) + 3} fontSize="7" fill="var(--accent-gold)" opacity="0.5">50%</text>
         <text x={width - pad.right + 4} y={pad.top + 4} fontSize="7" fill="var(--accent-gold)" opacity="0.5">Win</text>
 
+        {/* Per-frame hover targets. Rendered before the death markers so those
+            win the pointer where they overlap. */}
+        {timeline.map((p, i) => (
+          <rect key={`hit${i}`} x={toX(p.game_time) - hitSlot / 2} y={pad.top} width={hitSlot} height={h}
+            fill="transparent" pointerEvents="all"
+            onMouseEnter={() => setHover({ kind: "frame", idx: i })} />
+        ))}
+
         {/* Death markers */}
         {deaths.map((d, i) => (
-          <circle key={i} cx={toX(d.game_time)} cy={toY(0)} r="3"
+          <circle key={i} cx={toX(d.game_time)} cy={toY(0)}
+            r={hover?.kind === "death" && hover.idx === i ? 4.5 : 3}
             fill={d.is_ally ? "var(--accent-red)" : "var(--accent-blue)"}
-            opacity="0.7">
-            <title>{d.summoner_name} died ({d.gold_swing > 0 ? "+" : ""}{Math.round(d.gold_swing)}g swing)</title>
-          </circle>
+            opacity={hover?.kind === "death" && hover.idx === i ? 1 : 0.7}
+            pointerEvents="all"
+            onMouseEnter={() => setHover({ kind: "death", idx: i })} />
         ))}
+
+        {/* Hover readout: crosshair + value box. pointerEvents none so it never
+            steals the pointer from the targets underneath. */}
+        {hoverInfo && (
+          <g pointerEvents="none">
+            <line x1={hoverInfo.x} x2={hoverInfo.x} y1={pad.top} y2={pad.top + h}
+              stroke="var(--accent-gold)" strokeWidth="0.8" opacity="0.45" />
+            {hoverInfo.dotY !== null && (
+              <circle cx={hoverInfo.x} cy={hoverInfo.dotY} r="2.5" fill="var(--text-primary)" />
+            )}
+            <rect x={hoverInfo.boxX} y={pad.top} width={hoverInfo.boxW} height="14" rx="3"
+              fill="var(--bg-card)" stroke="var(--border)" strokeWidth="0.5" />
+            <text x={hoverInfo.boxX + hoverInfo.boxW / 2} y={pad.top + 10} textAnchor="middle"
+              fontSize="8.5" fill="var(--text-primary)">{hoverInfo.label}</text>
+          </g>
+        )}
 
         {/* Time labels */}
         {[5, 10, 15, 20, 25, 30, 35, 40].filter(m => m * 60 < maxTime).map(m => (

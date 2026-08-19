@@ -212,6 +212,7 @@ pub async fn fetch_champion_data(
         core_items: data.data.core_items.first().map(|c| c.ids.clone()).unwrap_or_default(),
         boots: data.data.boots.first().map(|b| b.ids.clone()).unwrap_or_default(),
         skill_order: data.data.skill_masteries.first().map(|s| s.ids.clone()).unwrap_or_default(),
+        skill_levels: data.data.skills.first().map(|s| s.order.clone()).unwrap_or_default(),
     };
 
     // Counters

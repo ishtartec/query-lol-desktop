@@ -123,6 +123,9 @@ pub struct GoldDiffPoint {
 pub struct DeathImpact {
     pub game_time: f64,
     pub summoner_name: String,
+    /// 0 when unknown. The frontend prefers the champion name over the
+    /// summoner name — you recognise a fight by champion, not by account.
+    pub champion_id: i64,
     pub is_ally: bool,
     pub gold_swing: f64,
 }
@@ -276,6 +279,8 @@ pub struct OpggChampionData {
     #[serde(default)]
     pub skill_masteries: Vec<OpggSkillMastery>,
     #[serde(default)]
+    pub skills: Vec<OpggSkillOrder>,
+    #[serde(default)]
     pub counters: Vec<OpggCounter>,
     #[serde(default)]
     pub game_lengths: Vec<OpggGameLength>,
@@ -329,6 +334,17 @@ pub struct OpggSummonerSpells {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpggSkillMastery {
     pub ids: Vec<String>,
+    pub play: i64,
+    pub win: i64,
+    pub pick_rate: f64,
+}
+
+/// Level-by-level skill order (levels 1-15). Entries are usually "Q"/"W"/"E"/
+/// "R", but champions with evolutions report the combined choice, e.g. "R-Q"
+/// means "level R and evolve Q" (Kha'Zix).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpggSkillOrder {
+    pub order: Vec<String>,
     pub play: i64,
     pub win: i64,
     pub pick_rate: f64,
@@ -440,6 +456,7 @@ pub struct ChampionBuild {
     pub core_items: Vec<i64>,
     pub boots: Vec<i64>,
     pub skill_order: Vec<String>,
+    pub skill_levels: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

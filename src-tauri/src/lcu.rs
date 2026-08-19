@@ -1092,20 +1092,9 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
         }
     }
 
-    // Build identity map: participantId -> (name, puuid)
-    let mut identities_map: std::collections::HashMap<i64, (String, String)> = std::collections::HashMap::new();
-    if let Some(identities) = raw.get("participantIdentities").and_then(|p| p.as_array()) {
-        for ident in identities {
-            let pid = ident.get("participantId").and_then(|v| v.as_i64()).unwrap_or(0);
-            let player = ident.get("player").unwrap_or(&serde_json::Value::Null);
-            let name = player.get("gameName").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
-                .or_else(|| player.get("summonerName").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
-                .unwrap_or("Unknown")
-                .to_string();
-            let puuid = player.get("puuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            identities_map.insert(pid, (name, puuid));
-        }
-    }
+    let parts = map_match_participants(creds, &raw).await;
+    let identities_map = &parts.identities;
+    let my_pid = parts.my_pid;
 
     if let Some(participants) = raw.get("participants").and_then(|p| p.as_array()) {
         for p in participants {
@@ -1162,7 +1151,7 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                 position,
                 rank,
                 puuid: puuid.clone(),
-                is_local: false,
+                is_local: my_pid == Some(pid),
                 kills, deaths, assists, total_damage, gold_earned, cs, vision_score,
                 wards_placed: stats.get("wardsPlaced").and_then(|v| v.as_i64()).unwrap_or(0),
                 wards_killed: stats.get("wardsKilled").and_then(|v| v.as_i64()).unwrap_or(0),
@@ -1221,7 +1210,199 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
     // Sort teams: winning team first
     teams.sort_by(|a, b| b.is_winner.cmp(&a.is_winner));
 
-    Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline: vec![], death_events: vec![] })
+    // Best-effort: a missing timeline just leaves the chart hidden, it must not
+    // fail the whole match view.
+    let (gold_timeline, death_events) =
+        match get_match_timeline(creds, game_id, &parts).await {
+            Ok(t) => t,
+            Err(e) => {
+                info!("Match timeline unavailable for {}: {}", game_id, e);
+                (vec![], vec![])
+            }
+        };
+
+    Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline, death_events })
+}
+
+/// participantId -> team / identity / champion for one match, plus which side
+/// counts as "ally" for the local player.
+pub struct MatchParticipants {
+    pub pid_team: std::collections::HashMap<i64, i64>,
+    pub identities: std::collections::HashMap<i64, (String, String)>,
+    pub pid_champion: std::collections::HashMap<i64, i64>,
+    pub my_pid: Option<i64>,
+    pub ally_team: i64,
+}
+
+async fn map_match_participants(creds: &LcuCredentials, raw: &serde_json::Value) -> MatchParticipants {
+    let mut identities: std::collections::HashMap<i64, (String, String)> = std::collections::HashMap::new();
+    if let Some(idents) = raw.get("participantIdentities").and_then(|p| p.as_array()) {
+        for ident in idents {
+            let pid = ident.get("participantId").and_then(|v| v.as_i64()).unwrap_or(0);
+            let player = ident.get("player").unwrap_or(&serde_json::Value::Null);
+            let name = player.get("gameName").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+                .or_else(|| player.get("summonerName").and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+                .unwrap_or("Unknown")
+                .to_string();
+            let puuid = player.get("puuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            identities.insert(pid, (name, puuid));
+        }
+    }
+
+    // Resolve the local player so the gold timeline knows which side is "ally".
+    // puuid first, display name second — `summonerId` is unreliable on Riot-ID
+    // clients (same caveat as `get_live_game`).
+    let me = get_current_summoner(creds).await.ok();
+    let my_puuid = me.as_ref().and_then(|s| s.puuid.clone()).unwrap_or_default();
+    let my_name = me.as_ref()
+        .and_then(|s| s.game_name.clone().or_else(|| s.display_name.clone()))
+        .unwrap_or_default();
+    let my_pid = identities.iter().find(|(_, (name, puuid))| {
+        (!my_puuid.is_empty() && *puuid == my_puuid) || (!my_name.is_empty() && *name == my_name)
+    }).map(|(pid, _)| *pid);
+
+    let mut pid_team: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    let mut pid_champion: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    if let Some(participants) = raw.get("participants").and_then(|p| p.as_array()) {
+        for p in participants {
+            let pid = p.get("participantId").and_then(|v| v.as_i64()).unwrap_or(0);
+            pid_team.insert(pid, p.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0));
+            pid_champion.insert(pid, p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0));
+        }
+    }
+    // Falls back to blue side when we are not in this game (viewing someone
+    // else's match), which just fixes the chart's perspective to team 100.
+    let ally_team = my_pid.and_then(|pid| pid_team.get(&pid).copied()).unwrap_or(100);
+
+    MatchParticipants { pid_team, identities, pid_champion, my_pid, ally_team }
+}
+
+/// Gold timeline for a match we only know the id of — used to backfill the
+/// post-game chart when the app collected no live snapshots.
+pub async fn get_gold_timeline_for_game(
+    creds: &LcuCredentials,
+    game_id: i64,
+) -> Result<(Vec<GoldDiffPoint>, Vec<DeathImpact>), String> {
+    let client = lcu_client();
+    let resp = client
+        .get(lcu_url(creds, &format!("/lol-match-history/v1/games/{}", game_id)))
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get match for timeline: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Match lookup returned: {}", resp.status()));
+    }
+
+    let raw: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Failed to parse match for timeline: {}", e))?;
+
+    let parts = map_match_participants(creds, &raw).await;
+    get_match_timeline(creds, game_id, &parts).await
+}
+
+/// Fetch the gold-diff timeline and death markers for a past match.
+///
+/// The LCU serves an old V4-shaped timeline: `participantFrames` carry only
+/// gold/xp/level (no `damageStats`) and the only events are CHAMPION_KILL and
+/// BUILDING_KILL. That is still enough to rebuild the gold chart for games the
+/// app never watched live, where `compute_gold_timeline` has no snapshots to
+/// work from. Frames are one per minute.
+pub async fn get_match_timeline(
+    creds: &LcuCredentials,
+    game_id: i64,
+    parts: &MatchParticipants,
+) -> Result<(Vec<GoldDiffPoint>, Vec<DeathImpact>), String> {
+    let (pid_team, identities, ally_team) = (&parts.pid_team, &parts.identities, parts.ally_team);
+    let client = lcu_client();
+    let resp = client
+        .get(lcu_url(creds, &format!("/lol-match-history/v1/game-timelines/{}", game_id)))
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get match timeline: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Match timeline returned: {}", resp.status()));
+    }
+
+    let raw: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Failed to parse match timeline: {}", e))?;
+
+    let frames = raw.get("frames").and_then(|f| f.as_array())
+        .ok_or("Match timeline has no frames")?;
+
+    let mut timeline: Vec<GoldDiffPoint> = vec![];
+    let mut raw_deaths: Vec<(f64, i64)> = vec![]; // (game_time, victim participantId)
+
+    for frame in frames {
+        // Timeline timestamps are milliseconds; the rest of the app and the
+        // frontend chart work in seconds.
+        let game_time = frame.get("timestamp").and_then(|v| v.as_f64()).unwrap_or(0.0) / 1000.0;
+
+        let mut ally_gold = 0.0;
+        let mut enemy_gold = 0.0;
+        if let Some(pframes) = frame.get("participantFrames").and_then(|p| p.as_object()) {
+            for pf in pframes.values() {
+                let pid = pf.get("participantId").and_then(|v| v.as_i64()).unwrap_or(0);
+                let gold = pf.get("totalGold").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                match pid_team.get(&pid) {
+                    Some(&t) if t == ally_team => ally_gold += gold,
+                    Some(_) => enemy_gold += gold,
+                    None => {}
+                }
+            }
+        }
+        timeline.push(GoldDiffPoint { game_time, gold_diff: ally_gold - enemy_gold });
+
+        if let Some(events) = frame.get("events").and_then(|e| e.as_array()) {
+            for ev in events {
+                if ev.get("type").and_then(|v| v.as_str()) != Some("CHAMPION_KILL") {
+                    continue;
+                }
+                let victim = ev.get("victimId").and_then(|v| v.as_i64()).unwrap_or(0);
+                if victim == 0 {
+                    continue;
+                }
+                let t = ev.get("timestamp").and_then(|v| v.as_f64()).unwrap_or(0.0) / 1000.0;
+                raw_deaths.push((t, victim));
+            }
+        }
+    }
+
+    // Every death inside the same frame shares one gold swing. Split it between
+    // them rather than crediting each one with the whole minute — ARAM games
+    // routinely pack half a dozen kills into a single frame.
+    let frame_of = |t: f64| timeline.iter().position(|p| p.game_time >= t);
+    let mut deaths_per_frame: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
+    for (t, _) in &raw_deaths {
+        if let Some(i) = frame_of(*t) {
+            *deaths_per_frame.entry(i).or_insert(0.0) += 1.0;
+        }
+    }
+
+    let mut death_events = vec![];
+    for (game_time, victim) in raw_deaths {
+        let is_ally = pid_team.get(&victim).copied() == Some(ally_team);
+        let summoner_name = identities.get(&victim)
+            .map(|(name, _)| name.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+        let champion_id = parts.pid_champion.get(&victim).copied().unwrap_or(0);
+        let gold_swing = match frame_of(game_time) {
+            Some(i) => {
+                let after = timeline[i].gold_diff;
+                let before = if i > 0 { timeline[i - 1].gold_diff } else { 0.0 };
+                let share = deaths_per_frame.get(&i).copied().unwrap_or(1.0).max(1.0);
+                (after - before) / share
+            }
+            None => 0.0,
+        };
+        death_events.push(DeathImpact { game_time, summoner_name, champion_id, is_ally, gold_swing });
+    }
+
+    info!("Match timeline {}: {} frames, {} deaths", game_id, timeline.len(), death_events.len());
+    Ok((timeline, death_events))
 }
 
 /// Get the current queue ID from the gameflow session.
@@ -1894,6 +2075,7 @@ pub fn compute_gold_timeline(
     snapshots: &[PlayerSnapshot],
     ally_names: &[String],
     enemy_names: &[String],
+    champions: &std::collections::HashMap<String, i64>,
 ) -> (Vec<GoldDiffPoint>, Vec<DeathImpact>) {
     let ally_set: std::collections::HashSet<&str> = ally_names.iter().map(|s| s.as_str()).collect();
     let enemy_set: std::collections::HashSet<&str> = enemy_names.iter().map(|s| s.as_str()).collect();
@@ -1928,6 +2110,7 @@ pub fn compute_gold_timeline(
                     deaths.push(DeathImpact {
                         game_time: s.game_time,
                         summoner_name: s.summoner_name.clone(),
+                        champion_id: champions.get(&s.summoner_name).copied().unwrap_or(0),
                         is_ally,
                         gold_swing: 0.0, // filled below
                     });
@@ -1940,13 +2123,16 @@ pub fn compute_gold_timeline(
         timeline.push(GoldDiffPoint { game_time, gold_diff: diff });
     }
 
-    // Compute gold swing for each death: diff at death time vs diff at previous snapshot
+    // Compute gold swing for each death: diff at death time vs diff at previous
+    // snapshot. `gold_diff` is ally - enemy, so its delta is already signed from
+    // our point of view — positive means the death left us better off, whoever
+    // died. Negating it for enemy deaths made good events read as negative.
     for death in &mut deaths {
         let idx = timeline.iter().position(|p| p.game_time >= death.game_time);
         if let Some(i) = idx {
             let after = timeline[i].gold_diff;
             let before = if i > 0 { timeline[i - 1].gold_diff } else { 0.0 };
-            death.gold_swing = if death.is_ally { after - before } else { before - after };
+            death.gold_swing = after - before;
         }
     }
 

@@ -163,6 +163,8 @@ async fn poll_loop(
 ) {
     let mut last_champion_id: i64 = 0;
     let mut last_draft_hash: u64 = 0;
+    // Bounded retries for backfilling the post-game gold chart from the LCU.
+    let mut timeline_backfill_tries: u32 = 0;
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -576,12 +578,32 @@ async fn poll_loop(
                                     // Gold timeline and death impacts
                                     let ally_names: Vec<String> = live_game.allies.iter().map(|p| p.summoner_name.clone()).collect();
                                     let enemy_names: Vec<String> = live_game.enemies.iter().map(|p| p.summoner_name.clone()).collect();
-                                    let (timeline, deaths) = lcu::compute_gold_timeline(&live_data.snapshots, &ally_names, &enemy_names);
+                                    let champions: std::collections::HashMap<String, i64> = live_game.allies.iter()
+                                        .chain(live_game.enemies.iter())
+                                        .map(|p| (p.summoner_name.clone(), p.champion_id))
+                                        .collect();
+                                    let (timeline, deaths) = lcu::compute_gold_timeline(&live_data.snapshots, &ally_names, &enemy_names, &champions);
                                     stats.gold_timeline = timeline;
                                     stats.death_events = deaths;
                                 }
                             }
                         }
+                        // No snapshots (app started mid-game, or Live Client
+                        // Data never answered) means an empty chart. The LCU
+                        // has the real timeline — try it now, and keep retrying
+                        // below, since the match is indexed a few seconds after
+                        // the game ends.
+                        if stats.gold_timeline.is_empty() && stats.game_id > 0 {
+                            match lcu::get_gold_timeline_for_game(&creds, stats.game_id).await {
+                                Ok((timeline, deaths)) => {
+                                    stats.gold_timeline = timeline;
+                                    stats.death_events = deaths;
+                                    log::info!("Gold timeline backfilled from LCU at post-game transition");
+                                }
+                                Err(e) => log::info!("Gold timeline not ready yet: {}", e),
+                            }
+                        }
+                        timeline_backfill_tries = 0;
                         s.post_game = Some(stats);
                         s.live_game = None; // Clean up after consuming snapshots
                         s.champion_id = None;
@@ -596,6 +618,27 @@ async fn poll_loop(
                         log::info!("Post-game stats loaded");
                     }
                     Err(e) => log::warn!("Failed to fetch post-game stats: {}", e),
+                }
+            } else {
+                // Already in post-game. Retry the backfill until the LCU has
+                // indexed the match, so the user does not have to leave and
+                // re-open the game to see the chart.
+                let pending = s.post_game.as_ref()
+                    .map(|p| p.gold_timeline.is_empty() && p.game_id > 0)
+                    .unwrap_or(false);
+                if pending && timeline_backfill_tries < 15 {
+                    timeline_backfill_tries += 1;
+                    let game_id = s.post_game.as_ref().map(|p| p.game_id).unwrap_or(0);
+                    if let Ok((timeline, deaths)) = lcu::get_gold_timeline_for_game(&creds, game_id).await {
+                        if !timeline.is_empty() {
+                            if let Some(ref mut pg) = s.post_game {
+                                pg.gold_timeline = timeline;
+                                pg.death_events = deaths;
+                            }
+                            let _ = app_handle.emit("app-state-changed", s.clone());
+                            log::info!("Gold timeline backfilled after {} tries", timeline_backfill_tries);
+                        }
+                    }
                 }
             }
         } else {
@@ -623,6 +666,7 @@ async fn poll_loop(
                 s.game_mode = "classic".to_string();
                 last_champion_id = 0;
                 last_draft_hash = 0;
+                timeline_backfill_tries = 0;
                 // Refresh match history and ranked stats (delay for API indexing)
                 drop(s);
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;

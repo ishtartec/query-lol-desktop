@@ -52,7 +52,8 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **Auto-apply summoner spells** — sets the recommended spell pair
 - **Auto-apply item sets** — creates a custom item set with starter items, boots, and core build
 - **Alternative builds** — up to 3 options per category (runes, spells, items) with win rate and pick rate, switchable via tabs
-- **Skill priority** — color-coded skill order sequence (Q/W/E/R)
+- **Skill order** — color-coded priority (Q/W/E/R) plus the full level-by-level order for levels 1-15, with evolution badges on the levels where champions like Kha'Zix pick one
+- **Ability details** — hover any skill pip for that ability's in-game preview clip, name, description, and per-rank cooldown / cost / range
 - **Item & rune tooltips** — hover any icon to see name, description, and gold cost
 - Manual "Apply" button when auto-apply is disabled
 
@@ -136,7 +137,7 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **MVP badge** — awarded to the top performer based on a composite score
 - **Multikill badges** — triple, quadra, and penta kill indicators
 - **Final items** — complete end-game item build for each player with tooltips
-- **Gold advantage timeline** — SVG chart showing gold diff over time with death markers and win probability curve overlay
+- **Gold advantage timeline** — SVG chart of gold diff over time with a win probability curve overlaid, a labelled gold axis, and final / peak / win% figures in the header. Hover any point for the exact gold diff and win chance at that minute; death markers name the champion and the gold swing around their death. Works for any match in your history, not only games the app watched live
 - **Elo comparison** — your CS/min, vision/min, KDA, damage share, KP, and gold/min compared against your rank's average with percentage deltas
 - **Performance by phase** — CS/min, gold/min, and KDA broken down by early (0-14m), mid (14-25m), and late (25m+) game phases
 - **Player profiles** — click any player name to view their ranked info and match history

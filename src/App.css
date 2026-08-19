@@ -47,6 +47,7 @@
   box-shadow: 0 4px 16px rgba(0,0,0,0.5);
   animation: ttFade 0.12s ease;
 }
+.tt-box-below { transform: translate(-50%, 0) translateY(8px); }
 @keyframes ttFade { from { opacity: 0; transform: translate(-50%, -100%) translateY(-4px); } to { opacity: 1; transform: translate(-50%, -100%) translateY(-8px); } }
 .tt-item { display: flex; flex-direction: column; gap: 3px; }
 .tt-name { font-size: 12px; font-weight: 700; color: var(--accent-gold); }
@@ -757,6 +758,36 @@
   width: 28px; height: 28px; border-radius: 5px;
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; color: #0a0e13;
+  cursor: help;
+}
+
+/* Level-by-level order (levels 1-15) from OP.GG */
+.skill-levels {
+  display: flex; gap: 3px; flex-wrap: wrap;
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.skill-lvl { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.skill-lvl-num { font-size: 8px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.skill-lvl-pip { position: relative; display: flex; }
+.skill-pip-sm {
+  width: 18px; height: 18px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; color: #0a0e13;
+  cursor: help;
+}
+.skill-evolve {
+  position: absolute; top: -4px; right: -4px;
+  min-width: 10px; height: 10px; padding: 0 1px; border-radius: 3px;
+  background: var(--accent-gold); color: #0a0e13;
+  font-size: 7px; font-weight: 800; line-height: 10px; text-align: center;
+  pointer-events: none;
+}
+.tt-spell-meta { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tt-evolve { font-size: 9px; font-weight: 700; color: var(--accent-gold); }
+.tt-video {
+  width: 100%; display: block; border-radius: 4px;
+  background: #000; margin-bottom: 2px;
 }
 
 /* === Runes === */
@@ -1947,10 +1978,23 @@
   margin-top: 16px; padding: 14px 16px;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
 }
+.gold-timeline-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 8px;
+}
 .gold-timeline-title {
   font-size: 12px; font-weight: 700; color: var(--accent-gold);
-  margin-bottom: 8px; letter-spacing: 0.3px;
+  letter-spacing: 0.3px;
 }
+.gold-timeline-stats {
+  display: flex; align-items: baseline; gap: 14px;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.gt-stat { display: flex; align-items: baseline; gap: 4px; }
+.gt-stat-label { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+.gt-pos { color: var(--accent-blue); font-weight: 700; }
+.gt-neg { color: var(--accent-red); font-weight: 700; }
+.gt-prob { color: var(--accent-gold); font-weight: 700; }
 .gold-timeline-svg {
   width: 100%; height: auto;
 }
