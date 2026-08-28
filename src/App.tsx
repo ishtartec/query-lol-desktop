@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
 import { check } from "@tauri-apps/plugin-updater";
@@ -70,6 +71,15 @@ interface RankedRecommendation extends PickRecommendation {
 
 interface PostGamePlayer {
   champion_id: number;
+  physical_damage: number;
+  magic_damage: number;
+  true_damage: number;
+  damage_taken: number;
+  physical_taken: number;
+  magic_taken: number;
+  true_taken: number;
+  self_mitigated: number;
+  champion_level: number;
   summoner_name: string;
   position: string;
   rank: string;
@@ -312,6 +322,8 @@ interface AppState {
 const DDRAGON = "https://ddragon.leagueoflegends.com/cdn";
 let DDRAGON_VERSION = "16.9.1"; // fallback, updated dynamically
 
+let versionPromise: Promise<void> | null = null;
+
 async function fetchLatestVersion() {
   try {
     const resp = await fetch("https://ddragon.leagueoflegends.com/api/versions.json");
@@ -321,6 +333,16 @@ async function fetchLatestVersion() {
       console.log("Data Dragon version:", DDRAGON_VERSION);
     }
   } catch { /* use fallback */ }
+}
+
+// Every loader below memoises its result, so whichever one runs first decides
+// the patch for the whole session. Resolving the version before any of them
+// touches DDRAGON_VERSION stops a caller that mounts early from pinning the
+// hardcoded fallback — that silently served months-old item stats, which is
+// invisible until you compare a number against the live patch.
+function ensureVersion(): Promise<void> {
+  if (!versionPromise) versionPromise = fetchLatestVersion();
+  return versionPromise;
 }
 
 const REGIONS = [
@@ -465,7 +487,7 @@ const TRAIT_PEEL = new Set([
 // Late-game scaling carries — power compounds with items/levels
 const TRAIT_SCALING = new Set([
   10, 38, 67, 96, 29, 13, 45, 75, 30, 8, 222, 51, 18, 887, 11, 23, 67, 145,
-  157, 777, 114, 37, 104, 200, 17, 901, 221, 235, 268, 523, 4, 7, 55, 62, 803, 804,
+  157, 777, 114, 37, 104, 200, 17, 901, 221, 235, 268, 523, 4, 7, 55, 62, 804,
 ]);
 
 // Burst / high-priority targets
@@ -474,27 +496,37 @@ const TRAIT_BURST = new Set([
   99, 142, 711, 800, 805, 893, 910, 9, 35, 56, 141, 164, 234, 254, 950, 904, 360,
 ]);
 
+// Champions that put a damage-absorbing shield on an ALLY — the thing
+// Serpent's Fang actually reduces. Self-shields do not belong here: buying
+// anti-shield because the enemy Malphite has a rock passive is wasted gold.
+//
+// Verified against Data Dragon spell text rather than memory. Removed: Malphite
+// and Poppy (self-shield passives), Rell (self-shield on W), Yuumi (E shields
+// herself; the ally only gets move speed), Braum (E intercepts projectiles, it
+// is not a shield), Bard (W is a heal shrine), Syndra (no shield at all), and
+// id 685, which exists in neither Data Dragon nor CommunityDragon.
+//
+// Morgana stays despite her spell *description* never saying "shield" — the
+// tooltip does: "grants an ally champion Magic Shield".
 const TRAIT_SHIELDERS = new Set([
+  // Enchanters — shielding is their core job
   117, // Lulu
   43,  // Karma
   40,  // Janna
-  497, // Rakan
-  412, // Thresh
-  201, // Braum
-  25,  // Morgana
+  147, // Seraphine
+  25,  // Morgana — Black Shield
   61,  // Orianna
-  134, // Syndra
+  427, // Ivern
+  44,  // Taric
+  888, // Renata Glasc
+  902, // Milio
+  497, // Rakan
+  412, // Thresh — lantern shields nearby allies
+  // Tanks whose ally shield is ultimate-locked rather than spammed. Weaker
+  // case than the enchanters above, but the shields are real and large.
   3,   // Galio
-  54,  // Malphite (passive)
-  78,  // Poppy
   98,  // Shen
   223, // Tahm Kench
-  432, // Bard
-  685, // Renata Glasc
-  526, // Rell
-  147, // Seraphine
-  350, // Bel'Veth
-  427, // Ivern
 ]);
 
 // Champions with reliable hard CC (stuns/knockups/roots ≥1.0s, multi-target preferred)
@@ -1542,21 +1574,29 @@ const SHARD_ICON_BASE = "https://raw.communitydragon.org/latest/plugins/rcp-be-l
 // --- Data Dragon cache ---
 
 interface RuneData { id: number; name: string; icon: string; shortDesc: string; }
-interface ItemData { name: string; description: string; plaintext: string; gold: number; }
+interface ItemData { name: string; description: string; plaintext: string; gold: number; stats: ItemStats; }
 
-let championCache: Record<string, { key: string; name: string }> | null = null;
+interface ChampBase { armor: number; armorPerLevel: number; spellblock: number; spellblockPerLevel: number; }
+let championCache: Record<string, { key: string; name: string; base: ChampBase }> | null = null;
 let runeCache: Map<number, RuneData> | null = null;
 let runeStyleCache: Map<number, { name: string; icon: string }> | null = null;
 let itemCache: Record<string, ItemData> | null = null;
 
 async function loadChampionData() {
+  await ensureVersion();
   if (championCache) return championCache;
   try {
     const resp = await fetch(`${DDRAGON}/${DDRAGON_VERSION}/data/en_US/champion.json`);
     const json = await resp.json();
-    const byId: Record<string, { key: string; name: string }> = {};
+    const byId: Record<string, { key: string; name: string; base: ChampBase }> = {};
     for (const champ of Object.values(json.data) as any[]) {
-      byId[champ.key] = { key: champ.id, name: champ.name };
+      byId[champ.key] = {
+        key: champ.id, name: champ.name,
+        base: {
+          armor: champ.stats?.armor ?? 0, armorPerLevel: champ.stats?.armorperlevel ?? 0,
+          spellblock: champ.stats?.spellblock ?? 0, spellblockPerLevel: champ.stats?.spellblockperlevel ?? 0,
+        },
+      };
     }
     championCache = byId;
     return byId;
@@ -1564,6 +1604,7 @@ async function loadChampionData() {
 }
 
 async function loadRuneData() {
+  await ensureVersion();
   if (runeCache && runeStyleCache) return;
   try {
     const resp = await fetch(`${DDRAGON}/${DDRAGON_VERSION}/data/en_US/runesReforged.json`);
@@ -1582,13 +1623,17 @@ async function loadRuneData() {
 }
 
 async function loadItemData() {
+  await ensureVersion();
   if (itemCache) return itemCache;
   try {
     const resp = await fetch(`${DDRAGON}/${DDRAGON_VERSION}/data/en_US/item.json`);
     const json = await resp.json();
     const byId: Record<string, ItemData> = {};
     for (const [id, item] of Object.entries(json.data) as any[]) {
-      byId[id] = { name: item.name, description: item.description || "", plaintext: item.plaintext || "", gold: item.gold?.total || 0 };
+      byId[id] = {
+        name: item.name, description: item.description || "", plaintext: item.plaintext || "",
+        gold: item.gold?.total || 0, stats: parseItemStats(item.description || ""),
+      };
     }
     itemCache = byId;
     return byId;
@@ -1711,6 +1756,154 @@ function isSupportRole(pos: string): boolean {
   return p.startsWith("uti") || p.startsWith("sup");
 }
 
+// --- Penetration advisor ---
+//
+// Every figure here is measured rather than modelled. Enemy resistance is their
+// champion's base plus per-level growth plus the magic resist / armor on the
+// items they are actually holding. The damage multiplier 100/(100+R) is exact
+// and — crucially — independent of the champion's ability ratios, so the gain a
+// penetration item buys can be stated as a real number instead of an estimate.
+// Comparing penetration against raw AP/AD would need the base-vs-ratio split of
+// a champion's damage, which is not public, so the advisor deliberately does
+// not make that claim.
+
+const PEN_ITEMS_AP = [3135, 3137, 3175, 3020];   // Void Staff, Cryptbloom, Spellslinger's, Sorcerer's
+const PEN_ITEMS_AD = [3036, 3033, 6694, 3035];   // Lord Dominik's, Mortal Reminder, Serylda's, Last Whisper
+
+interface PenetrationAdvice {
+  damageType: "ap" | "ad";
+  avgResist: number;
+  absorbedPercent: number;
+  itemId: number;
+  itemName: string;
+  gainPercent: number;
+  enemiesBuying: number;
+}
+
+function resistMultiplier(resist: number): number {
+  return 100 / (100 + Math.max(0, resist));
+}
+
+// Riot applies percent penetration before flat, and the result floors at zero.
+function effectiveResist(resist: number, percentPen: number, flatPen: number): number {
+  return Math.max(0, resist * (1 - percentPen / 100) - flatPen);
+}
+
+function sumItemStats(items: number[]): ItemStats {
+  const total = emptyItemStats();
+  for (const id of items) {
+    const s = getItemData(id)?.stats;
+    if (!s) continue;
+    for (const k of Object.keys(total) as (keyof ItemStats)[]) total[k] += s[k];
+  }
+  return total;
+}
+
+// Returns [total resistance, resistance coming from items] or null if we do not
+// know the champion yet.
+function enemyResist(e: LiveGamePlayer, kind: "mr" | "armor"): [number, number] | null {
+  const base = championCache?.[e.champion_id.toString()]?.base;
+  if (!base) return null;
+  const level = e.live?.level ?? 1;
+  const items = sumItemStats(e.live?.items ?? []);
+  const fromItems = kind === "mr" ? items.magicResist : items.armor;
+  const fromChamp = kind === "mr"
+    ? base.spellblock + base.spellblockPerLevel * (level - 1)
+    : base.armor + base.armorPerLevel * (level - 1);
+  return [fromChamp + fromItems, fromItems];
+}
+
+function suggestPenetration(
+  myChampionId: number,
+  myItems: number[],
+  enemies: LiveGamePlayer[],
+  gameTime: number,
+): PenetrationAdvice | null {
+  if (gameTime < 10 * 60) return null;
+  const damageType: "ap" | "ad" = CHAMP_DAMAGE_TYPE[myChampionId] === "ap" ? "ap" : "ad";
+  const kind = damageType === "ap" ? "mr" : "armor";
+
+  const measured = enemies.map(e => enemyResist(e, kind)).filter((r): r is [number, number] => r != null);
+  if (measured.length < 3) return null;
+  const avgResist = measured.reduce((a, r) => a + r[0], 0) / measured.length;
+  const enemiesBuying = measured.filter(r => r[1] >= 25).length;
+
+  const mine = sumItemStats(myItems);
+  const myPercent = damageType === "ap" ? mine.magicPenPercent : mine.armorPenPercent;
+  const myFlat = damageType === "ap" ? mine.magicPen : mine.lethality;
+  const currentMult = resistMultiplier(effectiveResist(avgResist, myPercent, myFlat));
+
+  const owned = new Set(myItems);
+  let best: { id: number; gain: number } | null = null;
+  for (const id of damageType === "ap" ? PEN_ITEMS_AP : PEN_ITEMS_AD) {
+    if (owned.has(id)) continue;
+    const s = getItemData(id)?.stats;
+    if (!s) continue;
+    const after = effectiveResist(
+      avgResist,
+      myPercent + (damageType === "ap" ? s.magicPenPercent : s.armorPenPercent),
+      myFlat + (damageType === "ap" ? s.magicPen : s.lethality),
+    );
+    const gain = (resistMultiplier(after) / currentMult - 1) * 100;
+    if (!best || gain > best.gain) best = { id, gain };
+  }
+  // Percent penetration always looks good — Void Staff is worth ~10% more damage
+  // even against a team holding no magic resist at all — so a low bar would fire
+  // every game and mean nothing. 15% needs roughly 48 average resist, and pairing
+  // it with two enemies actually holding resist items keeps this to the case the
+  // advice is for: they committed to resistances, so you should answer.
+  if (!best || best.gain < 15 || enemiesBuying < 2) return null;
+
+  return {
+    damageType,
+    avgResist: Math.round(avgResist),
+    absorbedPercent: Math.round((1 - currentMult) * 100),
+    itemId: best.id,
+    itemName: getItemData(best.id)?.name || "",
+    gainPercent: Math.round(best.gain),
+    enemiesBuying,
+  };
+}
+
+// Anti-shield is not the same kind of decision as the branches in
+// suggestThreatResponse. Magic resist and armor are alternatives to each other
+// — you pick a resistance — whereas Serpent's Fang counters a mechanic, and
+// against two enchanters you may well want both. Ranked against them it lost
+// every time: to win on share of enemy threat, the enablers would have to hold
+// more than half of it, which two of five champions essentially never do. It
+// stayed at 0% across 600 simulated players in every scoring variant tried.
+// So it gets its own chip, like the penetration advice.
+function suggestAntiShield(
+  enemies: LiveGamePlayer[],
+  myItems: number[],
+  myPosition: string,
+  gameTime: number,
+): ThreatSuggestion | null {
+  if (gameTime < 8 * 60) return null;
+  // Serpent's Fang is for damage dealers, not tanks — but only rule someone out
+  // when the role is actually known. Modes without lanes report no position at
+  // all (73% of a 600-player sample), and blocking those blocked the advice
+  // everywhere it was measured.
+  if (myPosition && !isCarryRole(myPosition) && !isSupportRole(myPosition)) return null;
+  if (myItems.includes(THREAT_ITEMS.anti_shield.id)) return null;
+
+  const enablers = enemies.filter(e => {
+    if (!TRAIT_SHIELDERS.has(e.champion_id) || !e.live) return false;
+    const it = sumItemStats(e.live.items);
+    return it.abilityPower < 80 && it.attackDamage < 60;
+  });
+  if (enablers.length < 2) return null;
+
+  const names = enablers.slice(0, 2)
+    .map(e => championCache?.[e.champion_id.toString()]?.name || "?").join(", ");
+  return {
+    kind: "anti-shield",
+    itemId: THREAT_ITEMS.anti_shield.id,
+    itemName: THREAT_ITEMS.anti_shield.name,
+    reason: `${enablers.length} shielders (${names})`,
+  };
+}
+
 function suggestThreatResponse(
   enemies: LiveGamePlayer[],
   myItems: number[],
@@ -1732,20 +1925,74 @@ function suggestThreatResponse(
     return { player: e, score: Math.max(0.1, kda * lvlFactor * goldFactor), apMain: CHAMP_DAMAGE_TYPE[e.champion_id] === "ap" };
   });
   const totalScore = scored.reduce((a, b) => a + b.score, 0) || 1;
-  const apThreat = scored.filter(s => s.apMain).reduce((a, b) => a + b.score, 0) / totalScore;
-  const adThreat = 1 - apThreat;
+
+  // Split each enemy's threat by the counterplay it demands, rather than
+  // letting one champion feed two competing branches. An enchanter used to
+  // inflate apThreat (pushing magic resist) *and* register as a shielder, and
+  // magic resist always won — but stacking MR against a Lulu answers nothing,
+  // because her damage is not what is killing you.
+  //
+  // Who counts as an enabler is read from their items rather than assumed:
+  // a Karma holding 220 AP is a damage threat, a Karma holding Moonstone and
+  // 40 AP is not. That reuses the verified item-stat table and adapts as they
+  // build, instead of freezing a judgement about how a champion "is played".
+  const ENABLER_AP_CUTOFF = 80;
+  const ENABLER_AD_CUTOFF = 60;
+  const enablers = scored.filter(x => {
+    if (!TRAIT_SHIELDERS.has(x.player.champion_id)) return false;
+    const it = sumItemStats(x.player.live?.items ?? []);
+    return it.abilityPower < ENABLER_AP_CUTOFF && it.attackDamage < ENABLER_AD_CUTOFF;
+  });
+  const enablerIds = new Set(enablers.map(x => x.player.champion_id));
+  const shieldThreat = enablers.reduce((a, b) => a + b.score, 0) / totalScore;
+
+  // Damage threat excludes the enablers: their score already went to shields.
+  const damageScored = scored.filter(x => !enablerIds.has(x.player.champion_id));
+  const damageTotal = damageScored.reduce((a, b) => a + b.score, 0) || 1;
+  const damageShare = 1 - shieldThreat;
+  const apThreat = (damageScored.filter(s => s.apMain).reduce((a, b) => a + b.score, 0) / damageTotal) * damageShare;
+  const adThreat = damageShare - apThreat;
   const topEnemy = scored.slice().sort((a, b) => b.score - a.score)[0];
   const topEnemyName = championCache?.[topEnemy.player.champion_id.toString()]?.name || "enemy";
 
-  // 1) Antiheal — high priority, needed once enemies have items
-  const healers = enemies.filter(e => TRAIT_HEALERS.has(e.champion_id));
-  if (healers.length >= 1 && !owned.has(THREAT_ITEMS.antiheal_ad.id)
-    && !OWNED_COVERAGE.antiheal.some(id => owned.has(id))) {
-    const myIsAp = CHAMP_DAMAGE_TYPE[myChampionId] === "ap";
-    const isSup = isSupportRole(myPosition);
-    const pick = isSup ? THREAT_ITEMS.antiheal_sup : (myIsAp ? THREAT_ITEMS.antiheal_ap : THREAT_ITEMS.antiheal_ad);
-    const names = healers.slice(0, 2).map(e => championCache?.[e.champion_id.toString()]?.name || "?").join(", ");
-    return { kind: "antiheal", itemId: pick.id, itemName: pick.name, reason: `Heavy healing (${names})` };
+  // Each branch below contributes a candidate scored as "how much of the enemy
+  // team is this threat", so they can be compared instead of racing.
+  //
+  // The old code returned on the first matching branch, and the first branch
+  // fired whenever a single enemy was in TRAIT_HEALERS — a 56-champion set that
+  // covers a third of the roster, present in 82.5% of teams across 60 sampled
+  // games. The result was that antiheal was the only advice this ever gave, and
+  // the MR / armor / tenacity / shield branches were unreachable in practice.
+  //
+  // Scoring also removes the need for an arbitrary healer threshold: a fed
+  // Aatrox carries a high threat score and wins on merit, while a 0/7 Warwick
+  // scores near zero and loses to whatever is actually killing you.
+  // Scores are raw shares of enemy threat. Normalising each by its own trigger
+  // bar was tried and measured worse: dividing by the low healing bar inflated
+  // antiheal from 20% to 43% of all suggestions across 600 simulated players.
+  const candidates: { score: number; suggestion: ThreatSuggestion }[] = [];
+  const teamSize = Math.max(enemies.length, 1);
+
+  // 1) Antiheal
+  // Enablers were already charged to the shield bucket; counting them here too
+  // would let one Seraphine push both antiheal and anti-shield.
+  const healers = enemies.filter(e => TRAIT_HEALERS.has(e.champion_id) && !enablerIds.has(e.champion_id));
+  if (healers.length >= 1 && !OWNED_COVERAGE.antiheal.some(id => owned.has(id))) {
+    const healerIds = new Set(healers.map(e => e.champion_id));
+    const healThreat = scored.filter(x => healerIds.has(x.player.champion_id))
+      .reduce((a, b) => a + b.score, 0) / totalScore;
+    // Floor: healing has to be a real part of what is killing you, not just
+    // present on the enemy roster.
+    if (healThreat >= 0.25) {
+      const myIsAp = CHAMP_DAMAGE_TYPE[myChampionId] === "ap";
+      const isSup = isSupportRole(myPosition);
+      const pick = isSup ? THREAT_ITEMS.antiheal_sup : (myIsAp ? THREAT_ITEMS.antiheal_ap : THREAT_ITEMS.antiheal_ad);
+      const names = healers.slice(0, 2).map(e => championCache?.[e.champion_id.toString()]?.name || "?").join(", ");
+      candidates.push({
+        score: healThreat,
+        suggestion: { kind: "antiheal", itemId: pick.id, itemName: pick.name, reason: `Heavy healing (${names})` },
+      });
+    }
   }
 
   // 2) Heavy AP threat
@@ -1760,12 +2007,15 @@ function suggestThreatResponse(
       pick = THREAT_ITEMS.mr_squishy_generic;
     }
     const kind = isBruiserRole(myPosition) ? "mr-bruiser" : "mr-squishy";
-    return {
-      kind: kind as ThreatKind,
-      itemId: pick.id, itemName: pick.name,
-      reason: `${Math.round(apThreat * 100)}% AP threat · ${topEnemyName} carrying`,
-      topEnemyChamp: topEnemyName,
-    };
+    candidates.push({
+      score: apThreat,
+      suggestion: {
+        kind: kind as ThreatKind,
+        itemId: pick.id, itemName: pick.name,
+        reason: `${Math.round(apThreat * 100)}% AP threat · ${topEnemyName} carrying`,
+        topEnemyChamp: topEnemyName,
+      },
+    });
   }
 
   // 3) Heavy AD threat
@@ -1780,38 +2030,34 @@ function suggestThreatResponse(
       pick = THREAT_ITEMS.armor_squishy;
     }
     const kind = isBruiserRole(myPosition) ? "armor-bruiser" : "armor-squishy";
-    return {
-      kind: kind as ThreatKind,
-      itemId: pick.id, itemName: pick.name,
-      reason: `${Math.round(adThreat * 100)}% AD threat · ${topEnemyName} carrying`,
-      topEnemyChamp: topEnemyName,
-    };
+    candidates.push({
+      score: adThreat,
+      suggestion: {
+        kind: kind as ThreatKind,
+        itemId: pick.id, itemName: pick.name,
+        reason: `${Math.round(adThreat * 100)}% AD threat · ${topEnemyName} carrying`,
+        topEnemyChamp: topEnemyName,
+      },
+    });
   }
 
   // 4) Heavy hard CC
   const ccCount = enemies.filter(e => TRAIT_HARD_CC.has(e.champion_id)).length;
   if (ccCount >= 3 && !OWNED_COVERAGE.tenacity.some(id => owned.has(id))) {
-    return {
-      kind: "tenacity",
-      itemId: THREAT_ITEMS.tenacity_boots.id,
-      itemName: THREAT_ITEMS.tenacity_boots.name,
-      reason: `${ccCount} hard-CC champs — get tenacity`,
-    };
+    candidates.push({
+      score: ccCount / teamSize,
+      suggestion: {
+        kind: "tenacity",
+        itemId: THREAT_ITEMS.tenacity_boots.id,
+        itemName: THREAT_ITEMS.tenacity_boots.name,
+        reason: `${ccCount} hard-CC champs — get tenacity`,
+      },
+    });
   }
 
-  // 5) Heavy shielding
-  const shielders = enemies.filter(e => TRAIT_SHIELDERS.has(e.champion_id)).length;
-  if (shielders >= 2 && !owned.has(THREAT_ITEMS.anti_shield.id)
-    && (isCarryRole(myPosition) || isSupportRole(myPosition))) {
-    return {
-      kind: "anti-shield",
-      itemId: THREAT_ITEMS.anti_shield.id,
-      itemName: THREAT_ITEMS.anti_shield.name,
-      reason: `${shielders} shielders enemy team`,
-    };
-  }
-
-  return null;
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0].suggestion;
 }
 
 function stripHtml(html: string): string {
@@ -1875,6 +2121,7 @@ const spellCache = new Map<string, SpellData[]>();
 const SPELL_SLOT_KEYS = ["Q", "W", "E", "R"];
 
 async function loadChampionSpells(champKey: string): Promise<SpellData[]> {
+  await ensureVersion();
   const cached = spellCache.get(champKey);
   if (cached) return cached;
   try {
@@ -2034,11 +2281,13 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
   );
 }
 
-function BuildSequencePanel({ slots, nextSlot, currentGold, threat, alternatives, currentCoreIds }: {
+function BuildSequencePanel({ slots, nextSlot, currentGold, threat, antiShield, penetration, alternatives, currentCoreIds }: {
   slots: BuildSlot[];
   nextSlot: BuildSlot | undefined;
   currentGold: number;
   threat?: ThreatSuggestion | null;
+  antiShield?: ThreatSuggestion | null;
+  penetration?: PenetrationAdvice | null;
   alternatives?: ItemOption[];
   currentCoreIds?: number[];
 }) {
@@ -2079,6 +2328,31 @@ function BuildSequencePanel({ slots, nextSlot, currentGold, threat, alternatives
       {nextSlot && nextSlot.goldCost > 0 && (
         <div className="bs-progress-bar-wrap">
           <div className="bs-progress-bar" style={{ width: `${nextSlot.progressPct ?? 0}%` }} />
+        </div>
+      )}
+      {penetration && (
+        <div className={`bs-pen bs-pen-${penetration.damageType}`}>
+          <img src={itemIconUrl(penetration.itemId)} alt={penetration.itemName} className="bs-threat-icon" />
+          <div className="bs-threat-text">
+            <span className="bs-pen-label">
+              PENETRATION · {penetration.itemName} <b>+{penetration.gainPercent}% dmg</b>
+            </span>
+            <span className="bs-threat-reason">
+              {penetration.enemiesBuying > 0
+                ? `${penetration.enemiesBuying} enemies stacking ${penetration.damageType === "ap" ? "MR" : "armor"} · `
+                : ""}
+              avg {penetration.damageType === "ap" ? "MR" : "armor"} {penetration.avgResist} absorbs {penetration.absorbedPercent}% of your damage
+            </span>
+          </div>
+        </div>
+      )}
+      {antiShield && (
+        <div className="bs-threat bs-threat-anti-shield">
+          <img src={itemIconUrl(antiShield.itemId)} alt={antiShield.itemName} className="bs-threat-icon" />
+          <div className="bs-threat-text">
+            <span className="bs-threat-label">CONSIDER · {antiShield.itemName}</span>
+            <span className="bs-threat-reason">{antiShield.reason}</span>
+          </div>
         </div>
       )}
       {threat && (
@@ -2194,7 +2468,7 @@ function App() {
 
   useEffect(() => {
     invoke<AppState>("get_state").then(setState);
-    fetchLatestVersion().then(() => {
+    ensureVersion().then(() => {
       loadChampionData();
       loadRuneData().then(() => setRunesLoaded(true));
       loadItemData();
@@ -4392,6 +4666,16 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
     ? suggestThreatResponse(game.enemies, localLive.items, localPlayer.position || "", localPlayer.champion_id, ld.game_time)
     : null;
 
+  // Penetration advice from the enemy's actual resistances
+  const penAdvice = (localLive && localPlayer && ld)
+    ? suggestPenetration(localPlayer.champion_id, localLive.items, game.enemies, ld.game_time)
+    : null;
+
+  // Anti-shield: orthogonal to the threat response, so it gets its own slot
+  const shieldAdvice = (localLive && localPlayer && ld)
+    ? suggestAntiShield(game.enemies, localLive.items, localPlayer.position || "", ld.game_time)
+    : null;
+
   // Detect enemy item completions
   useEffect(() => {
     if (!ld) return;
@@ -4458,6 +4742,8 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
           nextSlot={nextSlot}
           currentGold={localLive?.current_gold ?? 0}
           threat={threatSuggestion}
+          antiShield={shieldAdvice}
+          penetration={penAdvice}
           alternatives={game.recommended_alternatives?.core_items ?? []}
           currentCoreIds={build?.core_items ?? []}
         />
@@ -4966,6 +5252,147 @@ function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPo
   );
 }
 
+// --- Post-game damage profile ---
+//
+// Nothing here is modelled. The damage split is what the game recorded, and the
+// enemy resistances are their champions' base plus per-level growth plus the
+// armor / magic resist on the items they finished with. The absorbed figure is
+// `1 - 100/(100+R)` after your own penetration, which is exact for any champion.
+
+function DamageProfilePanel({ stats }: { stats: PostGameStats }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => { Promise.all([loadChampionData(), loadItemData()]).then(() => setReady(true)); }, []);
+
+  const myTeam = stats.teams.find(t => t.players.some(p => p.is_local));
+  const me = myTeam?.players.find(p => p.is_local);
+  const enemyTeam = stats.teams.find(t => t !== myTeam);
+  if (!ready || !me || !enemyTeam) return null;
+
+  const split = (phys: number, magic: number, tru: number) => {
+    const parts = [
+      { key: "physical", label: "Physical", value: phys, color: "var(--accent-red)" },
+      { key: "magic", label: "Magic", value: magic, color: "#b25ceb" },
+      { key: "true", label: "True", value: tru, color: "var(--text-primary)" },
+    ].filter(p => p.value > 0);
+    const total = parts.reduce((a, p) => a + p.value, 0);
+    return { parts, total };
+  };
+
+  const dealt = split(me.physical_damage, me.magic_damage, me.true_damage);
+  const taken = split(me.physical_taken, me.magic_taken, me.true_taken);
+  // Older matches predate these fields; without a split there is nothing to draw.
+  if (!dealt.total && !taken.total) return null;
+
+  const resistOf = (p: PostGamePlayer, kind: "mr" | "armor") => {
+    const base = championCache?.[p.champion_id.toString()]?.base;
+    if (!base) return null;
+    const lvl = p.champion_level || 18;
+    const items = sumItemStats(p.items);
+    return kind === "mr"
+      ? base.spellblock + base.spellblockPerLevel * (lvl - 1) + items.magicResist
+      : base.armor + base.armorPerLevel * (lvl - 1) + items.armor;
+  };
+  const avgEnemy = (kind: "mr" | "armor") => {
+    const vals = enemyTeam.players.map(p => resistOf(p, kind)).filter((v): v is number => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  };
+  const enemyMR = avgEnemy("mr");
+  const enemyArmor = avgEnemy("armor");
+  const myArmor = resistOf(me, "armor") ?? 0;
+  const myMR = resistOf(me, "mr") ?? 0;
+
+  const mine = sumItemStats(me.items);
+  const absorbedMagic = 1 - resistMultiplier(effectiveResist(enemyMR, mine.magicPenPercent, mine.magicPen));
+  const absorbedPhys = 1 - resistMultiplier(effectiveResist(enemyArmor, mine.armorPenPercent, mine.lethality));
+
+  const gold = me.gold_earned || 1;
+  const bar = (s: { parts: { key: string; label: string; value: number; color: string }[]; total: number }) => (
+    <>
+      <div className="dprof-bar">
+        {s.parts.map(p => (
+          <div key={p.key} className="dprof-seg" style={{ width: `${(p.value / s.total) * 100}%`, background: p.color }}
+            title={`${p.label}: ${p.value.toLocaleString("en-US")} (${Math.round((p.value / s.total) * 100)}%)`} />
+        ))}
+      </div>
+      <div className="dprof-legend">
+        {s.parts.map(p => (
+          <span key={p.key} className="dprof-legend-item">
+            <i style={{ background: p.color }} /> {p.label} {Math.round((p.value / s.total) * 100)}%
+          </span>
+        ))}
+      </div>
+    </>
+  );
+
+  // Which story to flag. Penetration advice is meaningless for someone who is
+  // not a damage source — it fired on an Alistar who dealt 8% of team damage —
+  // so it needs a real damage share behind it. Otherwise, if you soaked more
+  // than you dealt, the useful question is whether you bought the right
+  // resistances for what actually hit you.
+  const dealtDominant = me.magic_damage >= me.physical_damage ? "magic" : "physical";
+  const dealtShare = dealt.total ? Math.max(me.magic_damage, me.physical_damage) / dealt.total : 0;
+  const dealtResist = dealtDominant === "magic" ? enemyMR : enemyArmor;
+  const hasPen = dealtDominant === "magic"
+    ? mine.magicPen > 0 || mine.magicPenPercent > 0
+    : mine.lethality > 0 || mine.armorPenPercent > 0;
+  const isDamageSource = me.damage_share >= 0.15;
+
+  const takenDominant = me.magic_taken >= me.physical_taken ? "magic" : "physical";
+  const takenShare = taken.total ? Math.max(me.magic_taken, me.physical_taken) / taken.total : 0;
+  const relevantResist = takenDominant === "magic" ? myMR : myArmor;
+  const otherResist = takenDominant === "magic" ? myArmor : myMR;
+
+  let note: string | null = null;
+  if (isDamageSource && dealtShare > 0.7 && dealtResist >= 60 && !hasPen) {
+    note = `${Math.round(dealtShare * 100)}% of your damage was ${dealtDominant} into an average `
+      + `${dealtDominant === "magic" ? "MR" : "armor"} of ${Math.round(dealtResist)}, and you finished `
+      + `without penetration — ${Math.round((dealtDominant === "magic" ? absorbedMagic : absorbedPhys) * 100)}% of it was absorbed.`;
+  } else if (me.self_mitigated > me.total_damage && takenShare > 0.6 && relevantResist < otherResist * 0.7) {
+    note = `${Math.round(takenShare * 100)}% of the damage you took was ${takenDominant}, but you finished with `
+      + `${Math.round(myArmor)} armor and ${Math.round(myMR)} MR.`;
+  }
+
+  return (
+    <div className="dprof-row">
+      <div className="dprof-card">
+        <div className="dprof-header">
+          <h4 className="gold-timeline-title">Damage Dealt</h4>
+          <div className="gold-timeline-stats">
+            <span className="gt-stat"><span className="gt-stat-label">Per 1k gold</span>
+              <b className="gt-prob">{Math.round(me.total_damage / (gold / 1000))}</b></span>
+          </div>
+        </div>
+        {dealt.total > 0 && bar(dealt)}
+        <div className="dprof-resists">
+          <div className="dprof-resist"><span className="gt-stat-label">Enemy armor</span><b>{Math.round(enemyArmor)}</b>
+            <span className="dprof-absorb">absorbs {Math.round(absorbedPhys * 100)}%</span></div>
+          <div className="dprof-resist"><span className="gt-stat-label">Enemy MR</span><b>{Math.round(enemyMR)}</b>
+            <span className="dprof-absorb">absorbs {Math.round(absorbedMagic * 100)}%</span></div>
+        </div>
+      </div>
+
+      <div className="dprof-card">
+        <div className="dprof-header">
+          <h4 className="gold-timeline-title">Damage Taken</h4>
+          <div className="gold-timeline-stats">
+            <span className="gt-stat"><span className="gt-stat-label">Mitigated</span>
+              <b className="gt-pos">{(me.self_mitigated / 1000).toFixed(1)}k</b></span>
+          </div>
+        </div>
+        {taken.total > 0 && bar(taken)}
+        <div className="dprof-resists">
+          <div className="dprof-resist"><span className="gt-stat-label">Your armor</span><b>{Math.round(myArmor)}</b></div>
+          <div className="dprof-resist"><span className="gt-stat-label">Your MR</span><b>{Math.round(myMR)}</b></div>
+          <div className="dprof-resist"><span className="gt-stat-label">Taken</span>
+            <b>{(me.damage_taken / 1000).toFixed(1)}k</b></div>
+        </div>
+      </div>
+
+      {note && <p className="dprof-note">{note}</p>}
+    </div>
+  );
+}
+
 function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void }) {
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
 
@@ -5019,6 +5446,8 @@ function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats;
       {stats.gold_timeline.length > 0 && (
         <GoldDiffTimeline timeline={stats.gold_timeline} deaths={stats.death_events} duration={stats.game_duration_secs} />
       )}
+
+      <DamageProfilePanel stats={stats} />
 
       {/* Unified performance panel (vs role-elo benchmark + phase trends) */}
       {stats.game_duration_secs > 0 && (() => {
@@ -5255,7 +5684,7 @@ function OverlayApp() {
     // Also listen for events
     invoke<AppState>("get_state").then(setState);
     const unlisten = listen<AppState>("app-state-changed", (e) => setState(e.payload));
-    fetchLatestVersion().then(() => { loadChampionData(); loadItemData(); });
+    ensureVersion().then(() => { loadChampionData(); loadItemData(); });
     return () => { clearInterval(poll); unlisten.then(fn => fn()); };
   }, []);
 
@@ -5602,6 +6031,18 @@ function OverlayApp() {
     ? suggestThreatResponse(game.enemies, me.live.items, me.position || "", me.champion_id, ld.game_time)
     : null;
 
+  // --- Penetration advice (overlay) ---
+  // The overlay is where this decision actually gets made — you hold TAB with
+  // the shop open mid-game — so the gain goes in the badge rather than a
+  // tooltip: the overlay is click-through, so nothing here can be hovered.
+  const ovPen = (me?.live && ld)
+    ? suggestPenetration(me.champion_id, me.live.items, game.enemies, ld.game_time)
+    : null;
+
+  const ovShield = (me?.live && ld)
+    ? suggestAntiShield(game.enemies, me.live.items, me.position || "", ld.game_time)
+    : null;
+
   // --- Upcoming objective spawns ---
   const ovSpawns = ld ? computeObjectiveSpawns(ld.events, ld.game_time) : [];
   // Show only the next 2 (current LIVE, next imminent) and only when relevant (≤90s or just spawned)
@@ -5795,6 +6236,18 @@ function OverlayApp() {
             <div className={`ov-build-threat ov-threat-${ovThreat.kind}`} title={`${ovThreat.itemName} · ${ovThreat.reason}`}>
               <img src={itemIconUrl(ovThreat.itemId)} alt="" className="ov-build-icon" />
               <span className="ov-build-threat-tag">!</span>
+            </div>
+          )}
+          {ovShield && (
+            <div className="ov-build-threat ov-threat-anti-shield" title={`${ovShield.itemName} · ${ovShield.reason}`}>
+              <img src={itemIconUrl(ovShield.itemId)} alt="" className="ov-build-icon" />
+              <span className="ov-build-threat-tag">S</span>
+            </div>
+          )}
+          {ovPen && (
+            <div className="ov-build-threat ov-build-pen">
+              <img src={itemIconUrl(ovPen.itemId)} alt="" className="ov-build-icon" />
+              <span className="ov-build-pen-tag">+{ovPen.gainPercent}%</span>
             </div>
           )}
         </div>

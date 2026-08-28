@@ -1361,6 +1361,18 @@
 .bs-threat-armor-squishy, .bs-threat-armor-bruiser { background: rgba(232, 64, 87, 0.1); border-color: rgba(232, 64, 87, 0.35); }
 .bs-threat-tenacity { background: rgba(56, 189, 248, 0.1); border-color: rgba(56, 189, 248, 0.35); }
 .bs-threat-anti-shield { background: rgba(132, 204, 22, 0.1); border-color: rgba(132, 204, 22, 0.35); }
+.bs-pen {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.35); background: rgba(56, 189, 248, 0.1);
+}
+.bs-pen-ap { border-color: rgba(178, 92, 235, 0.4); background: rgba(178, 92, 235, 0.1); }
+.bs-pen-ad { border-color: rgba(232, 128, 64, 0.4); background: rgba(232, 128, 64, 0.1); }
+.bs-pen-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  color: var(--text-primary); text-transform: uppercase;
+}
+.bs-pen-label b { color: var(--accent-gold); }
 .bs-threat-icon {
   width: 30px; height: 30px; border-radius: 3px; flex-shrink: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1536,6 +1548,15 @@
 .ov-threat-armor-squishy, .ov-threat-armor-bruiser { border-color: rgba(232, 64, 87, 0.7); box-shadow: 0 0 6px rgba(232, 64, 87, 0.35); }
 .ov-threat-tenacity { border-color: rgba(56, 189, 248, 0.7); box-shadow: 0 0 6px rgba(56, 189, 248, 0.35); }
 .ov-threat-anti-shield { border-color: rgba(132, 204, 22, 0.7); box-shadow: 0 0 6px rgba(132, 204, 22, 0.35); }
+.ov-build-pen { border-color: rgba(56, 189, 248, 0.7); }
+.ov-build-pen-tag {
+  position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+  padding: 0 3px; height: 13px;
+  background: var(--accent-gold); color: #0a0e13;
+  font-size: 9px; font-weight: 900; line-height: 13px;
+  text-align: center; border-radius: 7px; white-space: nowrap;
+  border: 1.5px solid var(--bg-primary);
+}
 .ov-build-threat-tag {
   position: absolute; top: -5px; right: -5px;
   width: 14px; height: 14px;
@@ -1995,6 +2016,44 @@
 .gt-pos { color: var(--accent-blue); font-weight: 700; }
 .gt-neg { color: var(--accent-red); font-weight: 700; }
 .gt-prob { color: var(--accent-gold); font-weight: 700; }
+/* Post-game damage profile. Prefixed `dprof-` on purpose: the champ-select
+   damage-composition panel already owns .dmg-row / .dmg-bar / .dmg-resist /
+   .dmg-legend-item, and reusing those names silently restyled it. */
+.dprof-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px; margin-top: 16px;
+}
+.dprof-card {
+  padding: 14px 16px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+}
+.dprof-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.dprof-bar {
+  display: flex; height: 10px; border-radius: 5px; overflow: hidden;
+  background: var(--bg-card-hover);
+}
+.dprof-seg { height: 100%; }
+.dprof-legend {
+  display: flex; gap: 14px; margin-top: 6px;
+  font-size: 10px; color: var(--text-secondary); font-variant-numeric: tabular-nums;
+}
+.dprof-legend-item { display: flex; align-items: center; gap: 5px; }
+.dprof-legend-item i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.dprof-resists { display: flex; gap: 22px; margin-top: 12px; flex-wrap: wrap; }
+.dprof-resist {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.dprof-resist b { color: var(--text-primary); font-weight: 700; }
+.dprof-absorb { font-size: 10px; color: var(--accent-red); }
+.dprof-note {
+  grid-column: 1 / -1; margin: 0; padding: 7px 10px; border-radius: 6px;
+  background: rgba(247, 173, 47, 0.08); border: 1px solid rgba(247, 173, 47, 0.3);
+  font-size: 11px; line-height: 1.45; color: var(--text-secondary);
+}
 .gold-timeline-svg {
   width: 100%; height: auto;
 }

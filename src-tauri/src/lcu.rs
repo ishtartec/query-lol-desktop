@@ -3,6 +3,35 @@ use base64::Engine;
 use log::info;
 use std::path::PathBuf;
 
+/// Normalise a lane/position string coming from the client.
+///
+/// Modes without lanes still fill the field, and each endpoint picks its own
+/// marker: the end-of-game block reports "INVALID" for ARAM while match details
+/// report "NONE". Both used to reach the UI verbatim, rendering as
+/// "Xerath · INVALID" on the scoreboard and "GOLD INVALID" on the performance
+/// panel. An empty string is the honest answer — every render site already
+/// hides the position when it is blank.
+fn normalize_position(raw: &str) -> String {
+    let up = raw.trim().to_uppercase();
+    match up.as_str() {
+        "INVALID" | "NONE" | "AFFINITY_NONE" | "UNSELECTED" => String::new(),
+        _ => up,
+    }
+}
+
+/// Read an integer stat under any of the given spellings. The end-of-game
+/// block uses SCREAMING_SNAKE (`TOTAL_DAMAGE_DEALT_TO_CHAMPIONS`) while match
+/// details use camelCase (`totalDamageDealtToChampions`), and neither is
+/// documented, so callers pass every spelling they expect.
+fn stat_i64(stats: &serde_json::Value, keys: &[&str]) -> i64 {
+    for k in keys {
+        if let Some(v) = stats.get(*k).and_then(|v| v.as_i64()) {
+            return v;
+        }
+    }
+    0
+}
+
 /// Try to find and parse the League client lockfile.
 pub fn read_lockfile() -> Option<LcuCredentials> {
     let mut possible_paths: Vec<Option<PathBuf>> = vec![];
@@ -366,11 +395,12 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                             }).collect()
                         });
 
-                    let position = rp.get("detectedTeamPosition")
-                        .and_then(|v| v.as_str())
-                        .or_else(|| rp.get("selectedPosition").and_then(|v| v.as_str()))
-                        .unwrap_or("")
-                        .to_uppercase();
+                    let position = normalize_position(
+                        rp.get("detectedTeamPosition")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| rp.get("selectedPosition").and_then(|v| v.as_str()))
+                            .unwrap_or(""),
+                    );
 
                     let puuid_str = rp.get("puuid").and_then(|v| v.as_str()).unwrap_or("");
                     let rank = if !puuid_str.is_empty() {
@@ -390,6 +420,17 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
                         deaths: stats.get("NUM_DEATHS").and_then(|v| v.as_i64()).unwrap_or(0),
                         assists: stats.get("ASSISTS").and_then(|v| v.as_i64()).unwrap_or(0),
                         total_damage: stats.get("TOTAL_DAMAGE_DEALT_TO_CHAMPIONS").and_then(|v| v.as_i64()).unwrap_or(0),
+                        physical_damage: stat_i64(stats, &["PHYSICAL_DAMAGE_DEALT_TO_CHAMPIONS", "physicalDamageDealtToChampions"]),
+                        magic_damage: stat_i64(stats, &["MAGIC_DAMAGE_DEALT_TO_CHAMPIONS", "magicDamageDealtToChampions"]),
+                        true_damage: stat_i64(stats, &["TRUE_DAMAGE_DEALT_TO_CHAMPIONS", "trueDamageDealtToChampions"]),
+                        damage_taken: stat_i64(stats, &["TOTAL_DAMAGE_TAKEN", "totalDamageTaken"]),
+                        physical_taken: stat_i64(stats, &["PHYSICAL_DAMAGE_TAKEN", "physicalDamageTaken"]),
+                        // Riot spells this one "magical", not "magic", unlike
+                        // every other damage field.
+                        magic_taken: stat_i64(stats, &["MAGIC_DAMAGE_TAKEN", "MAGICAL_DAMAGE_TAKEN", "magicalDamageTaken"]),
+                        true_taken: stat_i64(stats, &["TRUE_DAMAGE_TAKEN", "trueDamageTaken"]),
+                        self_mitigated: stat_i64(stats, &["DAMAGE_SELF_MITIGATED", "damageSelfMitigated"]),
+                        champion_level: stat_i64(stats, &["LEVEL", "CHAMPION_LEVEL", "champLevel"]),
                         gold_earned: stats.get("GOLD_EARNED").and_then(|v| v.as_i64()).unwrap_or(0),
                         cs: stats.get("MINIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0)
                             + stats.get("NEUTRAL_MINIONS_KILLED").and_then(|v| v.as_i64()).unwrap_or(0),
@@ -934,7 +975,7 @@ fn derive_position_from_history(participant: &serde_json::Value, stats: &serde_j
         }
         _ => lane,
     };
-    raw.to_uppercase()
+    normalize_position(raw)
 }
 
 pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Result<Vec<MatchHistoryEntry>, String> {
@@ -1120,7 +1161,7 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
             let role = timeline.get("role").and_then(|v| v.as_str()).unwrap_or("");
             let has_smite = p.get("spell1Id").and_then(|v| v.as_i64()).unwrap_or(0) == 11
                 || p.get("spell2Id").and_then(|v| v.as_i64()).unwrap_or(0) == 11;
-            let position = if has_smite {
+            let position = normalize_position(if has_smite {
                 "JUNGLE"
             } else {
                 match (lane, role) {
@@ -1132,7 +1173,7 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                     ("BOTTOM" | "BOT", _) => "BOTTOM",
                     _ => lane,
                 }
-            }.to_uppercase();
+            });
 
             let (name, puuid) = identities_map.get(&pid)
                 .cloned()
@@ -1153,6 +1194,15 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
                 puuid: puuid.clone(),
                 is_local: my_pid == Some(pid),
                 kills, deaths, assists, total_damage, gold_earned, cs, vision_score,
+                physical_damage: stat_i64(stats, &["physicalDamageDealtToChampions"]),
+                magic_damage: stat_i64(stats, &["magicDamageDealtToChampions"]),
+                true_damage: stat_i64(stats, &["trueDamageDealtToChampions"]),
+                damage_taken: stat_i64(stats, &["totalDamageTaken"]),
+                physical_taken: stat_i64(stats, &["physicalDamageTaken"]),
+                magic_taken: stat_i64(stats, &["magicalDamageTaken"]),
+                true_taken: stat_i64(stats, &["trueDamageTaken"]),
+                self_mitigated: stat_i64(stats, &["damageSelfMitigated"]),
+                champion_level: stat_i64(stats, &["champLevel"]),
                 wards_placed: stats.get("wardsPlaced").and_then(|v| v.as_i64()).unwrap_or(0),
                 wards_killed: stats.get("wardsKilled").and_then(|v| v.as_i64()).unwrap_or(0),
                 damage_share: 0.0,
@@ -1485,11 +1535,9 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
                 .unwrap_or("")
                 .to_string();
 
-            let position = p.get("selectedPosition")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("")
-                .to_uppercase();
+            let position = normalize_position(
+                p.get("selectedPosition").and_then(|v| v.as_str()).unwrap_or(""),
+            );
 
             RawPlayer {
                 player: LiveGamePlayer {

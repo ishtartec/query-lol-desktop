@@ -152,6 +152,19 @@ pub struct PostGamePlayer {
     pub deaths: i64,
     pub assists: i64,
     pub total_damage: i64,
+    /// Damage to champions split by type. The enemy's resistances decide how
+    /// much of each actually landed, which is what the post-game profile shows.
+    pub physical_damage: i64,
+    pub magic_damage: i64,
+    pub true_damage: i64,
+    pub damage_taken: i64,
+    /// Incoming damage by type — what actually hit you, which is a better
+    /// question for a tank than what you dealt.
+    pub physical_taken: i64,
+    pub magic_taken: i64,
+    pub true_taken: i64,
+    pub self_mitigated: i64,
+    pub champion_level: i64,
     pub gold_earned: i64,
     pub cs: i64,
     pub vision_score: i64,
