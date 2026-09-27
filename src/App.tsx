@@ -2069,8 +2069,9 @@ function stripHtml(html: string): string {
 // DDragon key translation needed. mp4 rather than the smaller webm because
 // WebM support in WKWebView (Tauri's macOS engine) varies by OS version, while
 // mp4 is safe there and in WebView2. The .jpg poster shows instantly while the
-// clip streams in.
-const ABILITY_CDN = "https://d28xe8vt774jo5.cloudfront.net/champion-abilities";
+// clip streams in. The older cloudfront host (d28xe8vt774jo5) stopped receiving
+// new champions — Locke and Zaahen 403 there — while this one serves them all.
+const ABILITY_CDN = "https://lol.dyn.riotcdn.net/x/videos/champion-abilities";
 
 function abilityMediaUrl(championId: number, slot: string, ext: "mp4" | "jpg"): string {
   const id = String(championId).padStart(4, "0");
