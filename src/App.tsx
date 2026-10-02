@@ -315,6 +315,8 @@ interface AppState {
   auto_accept: boolean;
   tts_enabled: boolean;
   region: string;
+  flash_key: string;
+  flash_key_detected: string | null;
 }
 
 // --- Constants ---
@@ -2455,7 +2457,7 @@ function App() {
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
-    auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, region: "euw",
+    auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, region: "euw", flash_key: "auto", flash_key_detected: null,
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2635,6 +2637,15 @@ function App() {
               <span className="toggle-slider" />
               Voice cues
             </label>
+            <select className="select select-sm"
+              value={state.flash_key}
+              onChange={(e) => invoke("set_flash_key", { key: e.target.value })}
+              title="Which key Flash goes on when spells are applied. Auto reads it from your recent games.">
+              <option value="auto">Flash: Auto{state.flash_key_detected ? ` (${state.flash_key_detected})` : ""}</option>
+              <option value="D">Flash: D</option>
+              <option value="F">Flash: F</option>
+              <option value="off">Flash: As OP.GG</option>
+            </select>
             <select className="select select-sm overlay-pos-select"
               defaultValue="top-left"
               onChange={(e) => invoke("set_overlay_position", { position: e.target.value })}

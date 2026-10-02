@@ -22,6 +22,8 @@ pub struct UserConfig {
     pub auto_accept: bool,
     #[serde(default)]
     pub tts_enabled: bool,
+    #[serde(default = "default_flash_key")]
+    pub flash_key: String,
 
     #[serde(default)]
     pub accounts: HashMap<String, AccountState>,
@@ -49,6 +51,7 @@ pub struct LpEntry {
 
 fn default_region() -> String { "euw".to_string() }
 fn default_true() -> bool { true }
+fn default_flash_key() -> String { "auto".to_string() }
 
 impl UserConfig {
     /// Returns the LP history for a given puuid (empty if unknown).

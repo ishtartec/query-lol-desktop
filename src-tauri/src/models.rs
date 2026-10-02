@@ -100,6 +100,11 @@ pub struct AppState {
     pub region: String,
     #[serde(skip)]
     pub overlay_position: String,
+    /// "auto" | "D" | "F" | "off". Which key Flash goes on when we apply
+    /// spells; OP.GG reports the most common order, which is not the user's.
+    pub flash_key: String,
+    /// What "auto" resolved to from match history (None = no clear habit).
+    pub flash_key_detected: Option<String>,
 }
 
 // --- Post-game stats ---
@@ -226,6 +231,8 @@ impl Default for AppState {
             tts_enabled: false,
             region: "euw".to_string(),
             overlay_position: "top-left".to_string(),
+            flash_key: "auto".to_string(),
+            flash_key_detected: None,
         }
     }
 }
@@ -599,6 +606,8 @@ pub struct MatchHistoryEntry {
     pub position: String, // TOP / JUNGLE / MIDDLE / BOTTOM / UTILITY (empty if unknown)
     #[serde(default)]
     pub team_id: i64, // 100 / 200 — the queried player's side; used for premade detection
+    #[serde(default)]
+    pub spell_ids: [i64; 2], // [D, F] as the player had them bound
 }
 
 // --- ARAM bench ---

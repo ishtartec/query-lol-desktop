@@ -20,11 +20,60 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
     cfg.auto_lock = s.auto_lock;
     cfg.auto_accept = s.auto_accept;
     cfg.tts_enabled = s.tts_enabled;
+    cfg.flash_key = s.flash_key.clone();
     if let Some(puuid) = s.summoner_puuid.as_deref() {
         cfg.set_lp_history(puuid, s.lp_history.clone());
     }
     // If puuid isn't known yet (rare: pre-connect save), don't touch lp buckets.
     config::save(app, &cfg);
+}
+
+const FLASH_SPELL_ID: i64 = 4;
+
+/// Which key the player habitually puts Flash on, from recent match history.
+/// Needs a few games and a clear majority; otherwise we leave OP.GG's order.
+fn detect_flash_key(history: &[models::MatchHistoryEntry]) -> Option<String> {
+    let (mut on_d, mut on_f) = (0, 0);
+    for e in history.iter().take(20) {
+        if e.spell_ids[0] == FLASH_SPELL_ID { on_d += 1; }
+        if e.spell_ids[1] == FLASH_SPELL_ID { on_f += 1; }
+    }
+    if on_d + on_f < 3 { return None; }
+    if on_d * 3 >= (on_d + on_f) * 2 { Some("D".into()) }
+    else if on_f * 3 >= (on_d + on_f) * 2 { Some("F".into()) }
+    else { None }
+}
+
+fn set_match_history(s: &mut AppState, history: Vec<models::MatchHistoryEntry>) {
+    s.flash_key_detected = detect_flash_key(&history);
+    s.match_history = history;
+    orient_build_spells(s);
+}
+
+/// Swaps the build's spells (and the spell alternatives) so Flash sits on
+/// the user's key. Done when the build is stored, so the UI shows the same
+/// order the client receives and every apply path inherits it.
+fn orient_build_spells(s: &mut AppState) {
+    let key = match s.flash_key.as_str() {
+        "D" | "F" => Some(s.flash_key.clone()),
+        "auto" => s.flash_key_detected.clone(),
+        _ => None,
+    };
+    let Some(key) = key else { return };
+    let flash_slot = if key == "D" { 0 } else { 1 };
+    let orient = |ids: &mut [i64; 2]| {
+        if ids[1 - flash_slot] == FLASH_SPELL_ID && ids[flash_slot] != FLASH_SPELL_ID {
+            ids.swap(0, 1);
+        }
+    };
+    if let Some(ids) = s.build.as_mut().and_then(|b| b.summoner_spells.as_mut()) {
+        orient(ids);
+    }
+    if let Some(alts) = s.build_alternatives.as_mut() {
+        for opt in alts.summoner_spells.iter_mut() {
+            orient(&mut opt.ids);
+        }
+    }
 }
 
 fn notify(title: &str, body: &str) {
@@ -120,7 +169,7 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
                     }
                     // Fetch match history and ranked stats
                     if let Ok(history) = lcu::get_match_history(&creds).await {
-                        s.match_history = history;
+                        set_match_history(&mut s, history);
                     }
                     if let Ok(ranked) = lcu::get_ranked_stats(&creds).await {
                         // Record initial LP if history is empty or LP changed
@@ -378,17 +427,18 @@ async fn poll_loop(
                 match opgg::fetch_champion_data(&region, champion_id, opgg_pos).await {
                     Ok(result) => {
                         log::info!("Champion data fetched for {}", champion_id);
-                        let build = result.build.clone();
-                        {
+                        let build = {
                             let mut s = state.lock().await;
                             s.build = Some(result.build);
                             s.build_alternatives = Some(result.alternatives);
+                            orient_build_spells(&mut s);
                             // Store counters with string keys for JSON serialization
                             s.counters = result.counters.iter()
                                 .map(|(k, v)| (k.to_string(), *v))
                                 .collect();
                             let _ = app_handle.emit("app-state-changed", s.clone());
-                        }
+                            s.build.clone().unwrap()
+                        };
 
                         if auto_apply {
                             if let Some(ref runes) = build.runes {
@@ -672,7 +722,7 @@ async fn poll_loop(
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 let mut s = state.lock().await;
                 if let Ok(history) = lcu::get_match_history(&creds).await {
-                    s.match_history = history;
+                    set_match_history(&mut s, history);
                 }
                 if let Ok(ranked) = lcu::get_ranked_stats(&creds).await {
                     // Record LP if it changed
@@ -821,6 +871,23 @@ async fn set_tts_enabled(
 ) -> Result<(), String> {
     let mut s = state.lock().await;
     s.tts_enabled = enabled;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    save_config(&app_handle, &s);
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_flash_key(
+    key: String,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    if !matches!(key.as_str(), "auto" | "D" | "F" | "off") {
+        return Err(format!("Invalid flash key: {}", key));
+    }
+    let mut s = state.lock().await;
+    s.flash_key = key;
+    orient_build_spells(&mut s);
     let _ = app_handle.emit("app-state-changed", s.clone());
     save_config(&app_handle, &s);
     Ok(())
@@ -1081,6 +1148,7 @@ pub fn run() {
             swap_aram_bench,
             set_overlay_position,
             set_tts_enabled,
+            set_flash_key,
             speak,
         ])
         .setup(|app| {
@@ -1094,6 +1162,7 @@ pub fn run() {
                 s.auto_lock = cfg.auto_lock;
                 s.auto_accept = cfg.auto_accept;
                 s.tts_enabled = cfg.tts_enabled;
+                s.flash_key = cfg.flash_key;
                 // lp_history stays empty until the watcher learns the active
                 // puuid; at that point we hydrate from the right bucket.
                 s.lp_history = vec![];

@@ -1025,6 +1025,10 @@ pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Re
                         total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
                         position: derive_position_from_history(me, stats, duration),
                         team_id: me.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0),
+                        spell_ids: [
+                            me.get("spell1Id").and_then(|v| v.as_i64()).unwrap_or(0),
+                            me.get("spell2Id").and_then(|v| v.as_i64()).unwrap_or(0),
+                        ],
                     });
                 }
             }
@@ -1087,6 +1091,10 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
                         total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
                         position: derive_position_from_history(me, stats, duration),
                         team_id: me.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0),
+                        spell_ids: [
+                            me.get("spell1Id").and_then(|v| v.as_i64()).unwrap_or(0),
+                            me.get("spell2Id").and_then(|v| v.as_i64()).unwrap_or(0),
+                        ],
                     });
                 }
             }
