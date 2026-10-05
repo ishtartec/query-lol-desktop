@@ -831,11 +831,18 @@ pub fn analyze_smurf(
     losses: i64,
     matches: &[MatchHistoryEntry],
 ) -> SmurfAnalysis {
-    let games_played = wins + losses;
-    let win_rate = if games_played > 0 {
-        wins as f64 / games_played as f64
+    // The LCU reports 0 losses for other players, so ranked W/L is only usable
+    // when it actually contains losses. Otherwise every enemy looked like a 100%
+    // win-rate account and scored +45 from data that did not exist.
+    let ranked_games = wins + losses;
+    let ranked_complete = losses > 0;
+    let (games_played, win_rate) = if matches.len() >= 10 {
+        let recent_wins = matches.iter().filter(|m| m.win).count();
+        (matches.len() as i64, recent_wins as f64 / matches.len() as f64)
+    } else if ranked_complete {
+        (ranked_games, wins as f64 / ranked_games as f64)
     } else {
-        0.0
+        (0, 0.0)
     };
 
     let (avg_kda, unique_champions) = if !matches.is_empty() {
@@ -887,13 +894,14 @@ pub fn analyze_smurf(
         };
     }
 
-    // Factor 3: Few ranked games (max 15)
-    if games_played > 0 {
-        score += if games_played < 30 {
+    // Factor 3: Few ranked games (max 15). Skipped when the ranked totals are
+    // missing their losses — the count would be wins alone.
+    if ranked_complete {
+        score += if ranked_games < 30 {
             15.0
-        } else if games_played < 60 {
+        } else if ranked_games < 60 {
             8.0
-        } else if games_played < 100 {
+        } else if ranked_games < 100 {
             3.0
         } else {
             0.0
@@ -924,6 +932,12 @@ pub fn analyze_smurf(
         } else {
             0.0
         };
+    }
+
+    // A smurf stomps. A low-level account that is losing and dying is a new or
+    // struggling player, so keep it under the badge threshold (50).
+    if !matches.is_empty() && avg_kda < 2.0 && games_played > 0 && win_rate < 0.5 {
+        score = score.min(40.0);
     }
 
     SmurfAnalysis {
