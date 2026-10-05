@@ -205,6 +205,95 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
     }
 }
 
+/// The general OP.GG build for the champion in hand, kept so the matchup
+/// adjustment is always re-derived from it rather than stacked on a previous one.
+struct BaseBuild {
+    champion_id: i64,
+    position: String,
+    build: models::ChampionBuild,
+    profile: models::BuildProfile,
+    counter_games: std::collections::HashMap<i64, i64>,
+}
+
+/// Adjusts the build to the lane opponent once one can be identified, and
+/// again whenever it changes. Re-applies to the client if auto-apply is on.
+async fn refresh_matchup(
+    creds: &models::LcuCredentials,
+    state: &SharedState,
+    app_handle: &tauri::AppHandle,
+    base: &BaseBuild,
+    draft: &models::DraftState,
+    matchup_key: &mut Option<(i64, i64)>,
+) {
+    if !opgg::matchup_adjusts_position(&base.position) {
+        return;
+    }
+    let enemies: Vec<(i64, String)> = draft.enemies.iter()
+        .filter(|e| e.champion_id > 0)
+        .map(|e| (e.champion_id, e.position.clone()))
+        .collect();
+    let Some(opponent) = opgg::pick_lane_opponent(&base.position, &enemies, &base.counter_games) else { return };
+    if *matchup_key == Some((base.champion_id, opponent)) {
+        return;
+    }
+    // Set before fetching so a failed request is not retried every second.
+    *matchup_key = Some((base.champion_id, opponent));
+
+    let games = base.counter_games.get(&opponent).copied().unwrap_or(0);
+    let (build, matchup) = if games >= opgg::MATCHUP_MIN_GAMES {
+        let region = state.lock().await.region.clone();
+        match opgg::fetch_matchup_data(&region, base.champion_id, &base.position, opponent).await {
+            Ok(data) => {
+                let (build, changes) = opgg::adjust_for_matchup(&base.build, &base.profile, &data);
+                log::info!("Matchup vs {}: {} significant shifts", opponent, changes.len());
+                (build, Some(models::MatchupAdjustment { opponent_id: opponent, games, changes }))
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch matchup build: {}", e);
+                return;
+            }
+        }
+    } else {
+        // Too few games to trust; undo any adjustment made for a previous opponent.
+        (base.build.clone(), None)
+    };
+
+    let (old, auto_apply, summoner_id) = {
+        let mut s = state.lock().await;
+        if s.champion_id != Some(base.champion_id) {
+            return;
+        }
+        let old = s.build.clone();
+        s.build = Some(build.clone());
+        s.matchup = matchup;
+        orient_build_spells(&mut s);
+        let _ = app_handle.emit("app-state-changed", s.clone());
+        (old, s.auto_apply, s.summoner_id)
+    };
+
+    if !auto_apply {
+        return;
+    }
+    let runes_changed = old.as_ref().and_then(|b| b.runes.as_ref()).map(|r| &r.selected_perk_ids)
+        != build.runes.as_ref().map(|r| &r.selected_perk_ids);
+    let items_changed = old.as_ref().map(|b| (&b.starter_items, &b.boots, &b.core_items))
+        != Some((&build.starter_items, &build.boots, &build.core_items));
+    if runes_changed {
+        if let Some(ref runes) = build.runes {
+            if let Err(e) = lcu::apply_runes(creds, runes).await {
+                log::warn!("Failed to apply matchup runes: {}", e);
+            }
+        }
+    }
+    if items_changed {
+        if let Some(sid) = summoner_id {
+            if let Err(e) = lcu::apply_item_set(creds, sid, base.champion_id, &build).await {
+                log::warn!("Failed to apply matchup items: {}", e);
+            }
+        }
+    }
+}
+
 async fn poll_loop(
     creds: models::LcuCredentials,
     state: SharedState,
@@ -212,6 +301,8 @@ async fn poll_loop(
 ) {
     let mut last_champion_id: i64 = 0;
     let mut last_draft_hash: u64 = 0;
+    let mut base_build: Option<BaseBuild> = None;
+    let mut matchup_key: Option<(i64, i64)> = None;
     // Bounded retries for backfilling the post-game gold chart from the LCU.
     let mut timeline_backfill_tries: u32 = 0;
 
@@ -229,6 +320,7 @@ async fn poll_loop(
                 s.champion_id = None;
                 s.build = None;
                 s.build_alternatives = None;
+                s.matchup = None;
                 s.counters.clear();
                 s.draft = None;
                 s.recommendations = vec![];
@@ -337,6 +429,7 @@ async fn poll_loop(
                     s.champion_id = None;
                     s.build = None;
                     s.build_alternatives = None;
+                    s.matchup = None;
                     s.counters.clear();
                     let _ = app_handle.emit("app-state-changed", s.clone());
                 }
@@ -413,6 +506,7 @@ async fn poll_loop(
                     s.assigned_position = Some(position.clone());
                     s.build = None;
                 s.build_alternatives = None;
+                s.matchup = None;
                 s.counters.clear();
                     let _ = app_handle.emit("app-state-changed", s.clone());
                 }
@@ -427,6 +521,14 @@ async fn poll_loop(
                 match opgg::fetch_champion_data(&region, champion_id, opgg_pos).await {
                     Ok(result) => {
                         log::info!("Champion data fetched for {}", champion_id);
+                        base_build = Some(BaseBuild {
+                            champion_id,
+                            position: opgg_pos.to_string(),
+                            build: result.build.clone(),
+                            profile: result.profile,
+                            counter_games: result.counter_games,
+                        });
+                        matchup_key = None;
                         let build = {
                             let mut s = state.lock().await;
                             s.build = Some(result.build);
@@ -461,6 +563,10 @@ async fn poll_loop(
                     }
                     Err(e) => log::warn!("Failed to fetch champion data: {}", e),
                 }
+            }
+
+            if let Some(base) = base_build.as_ref().filter(|b| b.champion_id == champion_id && !is_aram) {
+                refresh_matchup(&creds, &state, &app_handle, base, &draft, &mut matchup_key).await;
             }
 
             // If draft changed and we haven't locked in yet, generate recommendations
@@ -581,6 +687,7 @@ async fn poll_loop(
                         s.champion_id = None;
                         s.build = None;
                         s.build_alternatives = None;
+                        s.matchup = None;
                         s.counters.clear();
                         s.draft = None;
                         s.recommendations = vec![];
@@ -659,6 +766,7 @@ async fn poll_loop(
                         s.champion_id = None;
                         s.build = None;
                 s.build_alternatives = None;
+                s.matchup = None;
                 s.counters.clear();
                         s.draft = None;
                         s.recommendations = vec![];
@@ -705,6 +813,7 @@ async fn poll_loop(
                 s.assigned_position = None;
                 s.build = None;
                 s.build_alternatives = None;
+                s.matchup = None;
                 s.counters.clear();
                 s.draft = None;
                 s.recommendations = vec![];

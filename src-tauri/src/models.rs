@@ -105,6 +105,9 @@ pub struct AppState {
     pub flash_key: String,
     /// What "auto" resolved to from match history (None = no clear habit).
     pub flash_key_detected: Option<String>,
+    /// How the build was adjusted for the lane opponent (None until one is
+    /// known, and never for ADC/support or ARAM).
+    pub matchup: Option<MatchupAdjustment>,
 }
 
 // --- Post-game stats ---
@@ -233,6 +236,7 @@ impl Default for AppState {
             overlay_position: "top-left".to_string(),
             flash_key: "auto".to_string(),
             flash_key_detected: None,
+            matchup: None,
         }
     }
 }
@@ -304,6 +308,9 @@ pub struct OpggChampionData {
     pub counters: Vec<OpggCounter>,
     #[serde(default)]
     pub game_lengths: Vec<OpggGameLength>,
+    /// Every item the champion finishes, with pick rates — its situational pool.
+    #[serde(default)]
+    pub last_items: Vec<OpggCoreItems>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -495,6 +502,39 @@ pub struct BuildAlternatives {
     pub core_items: Vec<ItemOption>,
     pub starter_items: Vec<ItemOption>,
     pub boots: Vec<ItemOption>,
+    /// Items this champion actually builds (finished items + every boot) with
+    /// their pick rate, so situational advice only names items it buys.
+    #[serde(default)]
+    pub item_pool: Vec<PoolItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PoolItem {
+    pub id: i64,
+    pub pick_rate: f64,
+}
+
+// --- Matchup adjustment ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchupAdjustment {
+    pub opponent_id: i64,
+    /// Games OP.GG has for this exact matchup.
+    pub games: i64,
+    pub changes: Vec<MatchupChange>,
+}
+
+/// A choice players make significantly more often in this matchup than in
+/// general. `replaces` is set when it was swapped into the build; otherwise
+/// the build already had it (or nothing fell far enough to make room).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchupChange {
+    /// "boots" | "starter" | "keystone" | "core"
+    pub category: String,
+    pub id: i64,
+    pub replaces: Option<i64>,
+    pub base_share: f64,
+    pub matchup_share: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -524,7 +564,26 @@ pub struct ItemOption {
 pub struct ChampionFetchResult {
     pub build: ChampionBuild,
     pub counters: std::collections::HashMap<i64, f64>,
+    /// Games per lane opponent — the sample size behind each matchup.
+    pub counter_games: std::collections::HashMap<i64, i64>,
     pub alternatives: BuildAlternatives,
+    pub profile: BuildProfile,
+}
+
+/// How often each choice appears, weighted by games, per category. Compared
+/// between the general and the per-matchup response to find what changes.
+#[derive(Debug, Clone, Default)]
+pub struct BuildProfile {
+    pub core: CategoryShares,
+    pub boots: CategoryShares,
+    pub starter: CategoryShares,
+    pub keystone: CategoryShares,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CategoryShares {
+    pub shares: std::collections::HashMap<i64, f64>,
+    pub games: i64,
 }
 
 // --- LCU rune page ---

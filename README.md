@@ -52,6 +52,7 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **Auto-apply summoner spells** — sets the recommended spell pair
 - **Auto-apply item sets** — creates a custom item set with starter items, boots, and core build
 - **Alternative builds** — up to 3 options per category (runes, spells, items) with win rate and pick rate, switchable via tabs
+- **Matchup-adjusted build** — OP.GG's default build is an average over every game against every opponent. Once your lane opponent is known, QueryLoL also fetches the build filtered to that exact matchup and adjusts boots, starter, keystone and core items where players clearly build differently. Malphite into Sylas swaps Sunfire Aegis for Hollow Radiance (picked in 3% of all Malphite games but 73% against Sylas) and Plated Steelcaps for Mercury's Treads. A "vs" card lists each shift with both shares, and auto-apply re-applies the adjusted build. A change needs a shift of at least 10 points that is also well outside sampling noise, on matchups with 500+ games, because the matchup's most-played build often flips by chance. Top, jungle and mid only: across 48 measured matchups, bot-lane builds did not change with the lane opponent
 - **Skill order** — color-coded priority (Q/W/E/R) plus the full level-by-level order for levels 1-15, with evolution badges on the levels where champions like Kha'Zix pick one
 - **Ability details** — hover any skill pip for that ability's in-game preview clip, name, description, and per-rank cooldown / cost / range
 - **Item & rune tooltips** — hover any icon to see name, description, and gold cost
@@ -69,7 +70,7 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **Matchup analysis by level** — phase-by-phase power comparison (early/mid/late) with actionable tips like "avoid trades level 1-3" or "power spike at level 6"
 - **Level-by-level plan** — 18-level timeline vs your lane opponent with a contextual action per level (e.g. "Lvl 3 trade", "All-in con R", "Farm lado opuesto", "R2 + obj"). Calculates per-level advantage from power curves + spike bonuses + ult-strength comparison, with hexagonal nodes pulsing on spike levels and color-coded categories (dominant / strong / even / careful / weak). Full coverage for all 172 champions. Hover any level to see a coach-style tip in the detail card
 - **Damage composition** — AD/AP split bar for both teams, with warnings for heavy one-type compositions
-- **Adaptive item recommendations** — situational items based on enemy comp (antiheal, MR stacking, armor, anti-shield) with champion-specific reasoning
+- **Adaptive item recommendations** — situational items based on enemy comp (antiheal, MR stacking, armor, anti-shield), drawn from the items your champion actually builds according to OP.GG. Jinx gets Mortal Reminder and Mercurial Scimitar, never Spirit Visage
 - **Game prediction** — team-vs-team analysis with early/late game phase scores and a strategy tip
 - **One-click pick/ban** — click any recommendation or ban suggestion to lock it in
 - **Auto-lock** — optionally auto-lock your champion selection
@@ -254,7 +255,7 @@ pnpm tauri build
 
 1. **Watcher loop** — the Rust backend continuously polls for the League client process. Once detected, it reads the LCU lockfile to establish a connection.
 2. **Phase detection** — polls the game phase every second (lobby, champ select, in-game, post-game) and reacts to transitions.
-3. **Build fetching** — when you pick a champion in champ select, it fetches the optimal build from OP.GG for your champion + position + region.
+3. **Build fetching** — when you pick a champion in champ select, it fetches the optimal build from OP.GG for your champion + position + region. When the enemy laner is identified (by known position, or by which enemy OP.GG has the most games against you in that lane), it fetches the matchup-filtered build and adjusts the general one with the choices that shift significantly.
 4. **Auto-apply** — writes runes, summoner spells, and item sets directly to the League client via LCU endpoints.
 5. **Draft analysis** — as enemies are revealed, it calculates matchup win rates, power curves, damage composition, generates pick/ban recommendations, adaptive item suggestions, a game prediction, and an 18-level action plan against your lane opponent (combining interpolated power curves, per-champion spike levels, and ult-strength comparison).
 6. **Live game data** — during a match, polls the Live Client Data API (port 2999) every second for real-time KDA, CS, gold, items, ward score, and game events. Records snapshots every 30s for post-game phase analysis.

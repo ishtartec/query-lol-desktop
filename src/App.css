@@ -851,6 +851,27 @@
 .item-opt-wr {
   font-size: 10px; font-weight: 700; min-width: 36px; text-align: right;
 }
+.item-opt-matchup { color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* === Matchup build adjustment === */
+.mbuild-title { display: flex; align-items: center; gap: 5px; }
+.mbuild-title img { border-radius: 3px; }
+.mbuild-games { font-size: 9px; font-weight: 600; color: var(--text-muted); }
+.mbuild-none { font-size: 10px; color: var(--text-secondary); margin: 2px 0 0; }
+.mbuild-legend { font-size: 9px; color: var(--text-muted); margin-bottom: 4px; }
+.mbuild-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.mbuild-cat {
+  font-size: 9px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.5px; min-width: 52px;
+}
+.mbuild-row img { display: block; border-radius: 3px; }
+.mbuild-out { opacity: 0.4; filter: grayscale(1); }
+.mbuild-share { font-size: 10px; color: var(--text-secondary); }
+.mbuild-share strong { color: var(--text-primary); }
+.mbuild-tag {
+  margin-left: auto; font-size: 9px; font-weight: 700; color: var(--accent-gold);
+  border: 1px solid var(--accent-gold-dim); border-radius: 3px; padding: 0 4px;
+}
 
 /* === Toast === */
 .toast-error {

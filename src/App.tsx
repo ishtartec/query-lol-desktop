@@ -280,6 +280,26 @@ interface BuildAlternatives {
   core_items: ItemOption[];
   starter_items: ItemOption[];
   boots: ItemOption[];
+  item_pool?: PoolItem[];
+}
+
+interface PoolItem {
+  id: number;
+  pick_rate: number;
+}
+
+interface MatchupChange {
+  category: "boots" | "starter" | "keystone" | "core";
+  id: number;
+  replaces: number | null;
+  base_share: number;
+  matchup_share: number;
+}
+
+interface MatchupAdjustment {
+  opponent_id: number;
+  games: number;
+  changes: MatchupChange[];
 }
 
 interface AramBenchChampion {
@@ -317,6 +337,7 @@ interface AppState {
   region: string;
   flash_key: string;
   flash_key_detected: string | null;
+  matchup: MatchupAdjustment | null;
 }
 
 // --- Constants ---
@@ -551,7 +572,46 @@ interface ItemRec {
   items: { id: number; name: string }[];
 }
 
-function analyzeEnemyComp(enemyIds: number[]): ItemRec[] {
+// Every item that answers each threat, keyed by ItemRec category. Once a
+// champion is picked, its recommendations are drawn from here and kept only if
+// the champion actually builds them, so an ADC is not told to buy Spirit Visage.
+const SITUATIONAL_ITEMS: Record<string, { id: number; name: string }[]> = {
+  "Antiheal": [
+    { id: 3165, name: "Morellonomicon" }, { id: 3033, name: "Mortal Reminder" },
+    { id: 3011, name: "Chemtech Putrifier" }, { id: 3075, name: "Thornmail" },
+    { id: 6609, name: "Chempunk Chainsword" }, { id: 3123, name: "Executioner's Calling" },
+    { id: 3916, name: "Oblivion Orb" }, { id: 3076, name: "Bramble Vest" },
+  ],
+  "Magic Resist": [
+    { id: 3111, name: "Mercury's Treads" }, { id: 3065, name: "Spirit Visage" },
+    { id: 4401, name: "Force of Nature" }, { id: 2504, name: "Kaenic Rookern" },
+    { id: 6665, name: "Jak'Sho, The Protean" }, { id: 6664, name: "Hollow Radiance" },
+    { id: 3102, name: "Banshee's Veil" }, { id: 3156, name: "Maw of Malmortius" },
+    { id: 3139, name: "Mercurial Scimitar" }, { id: 3091, name: "Wit's End" },
+    { id: 8020, name: "Abyssal Mask" },
+  ],
+  "Armor": [
+    { id: 3047, name: "Plated Steelcaps" }, { id: 3143, name: "Randuin's Omen" },
+    { id: 3110, name: "Frozen Heart" }, { id: 3075, name: "Thornmail" },
+    { id: 3157, name: "Zhonya's Hourglass" }, { id: 6333, name: "Death's Dance" },
+    { id: 3742, name: "Dead Man's Plate" }, { id: 6662, name: "Iceborn Gauntlet" },
+  ],
+  "Anti-Shield": [{ id: 6695, name: "Serpent's Fang" }],
+};
+
+// Below this pick rate an item is not part of the champion's repertoire —
+// Plated Steelcaps on Jinx is 0.8% of games.
+const POOL_MIN_PICK_RATE = 0.01;
+
+function fromChampionPool(category: string, pool: PoolItem[]) {
+  const rate = new Map(pool.map(p => [p.id, p.pick_rate]));
+  return (SITUATIONAL_ITEMS[category] ?? [])
+    .filter(it => (rate.get(it.id) ?? 0) >= POOL_MIN_PICK_RATE)
+    .sort((a, b) => (rate.get(b.id) ?? 0) - (rate.get(a.id) ?? 0))
+    .slice(0, 3);
+}
+
+function analyzeEnemyComp(enemyIds: number[], pool?: PoolItem[]): ItemRec[] {
   const recs: ItemRec[] = [];
   if (enemyIds.length === 0) return recs;
 
@@ -642,12 +702,15 @@ function analyzeEnemyComp(enemyIds: number[]): ItemRec[] {
       reason: `Heavy shielding: ${names}`,
       priority: "medium",
       items: [
-        { id: 6609, name: "Serpent's Fang" },
+        { id: 6695, name: "Serpent's Fang" },
       ],
     });
   }
 
-  return recs;
+  if (!pool || pool.length === 0) return recs;
+  return recs
+    .map(r => ({ ...r, items: fromChampionPool(r.category, pool) }))
+    .filter(r => r.items.length > 0);
 }
 
 // --- Champion power curves for matchup analysis ---
@@ -2453,7 +2516,7 @@ function App() {
   const [state, setState] = useState<AppState>({
     status: "disconnected", summoner_name: null, champion_id: null, champion_locked: false,
     champion_name: null, assigned_position: null, build: null,
-    build_alternatives: null, counters: {},
+    build_alternatives: null, matchup: null, counters: {},
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
@@ -2845,89 +2908,35 @@ function App() {
                         <div className="items-sections">
                           {/* Start + Boots side by side */}
                           <div className="items-top-row">
-                            {state.build_alternatives && state.build_alternatives.starter_items.length > 0 ? (
+                            {(state.build!.starter_items.length > 0 || (state.build_alternatives?.starter_items.length ?? 0) > 0) && (
                               <div className="items-group items-half">
                                 <span className="items-label">Start</span>
-                                {state.build_alternatives.starter_items.slice(0, 2).map((opt, oi) => (
-                                  <div key={oi} className="item-option-row">
-                                    <div className="item-option-icons">
-                                      {opt.ids.map(id => <ItemIcon key={id} id={id} size={22} />)}
-                                    </div>
-                                    <span className="item-opt-pr">{(opt.pick_rate * 100).toFixed(0)}%</span>
-                                    <span className={`item-opt-wr ${opt.win_rate >= 0.52 ? "lg-wr-good" : opt.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
-                                      {(opt.win_rate * 100).toFixed(1)}%
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : state.build!.starter_items.length > 0 && (
-                              <div className="items-group items-half">
-                                <span className="items-label">Start</span>
-                                <div className="items-row">
-                                  {state.build!.starter_items.map(id => <ItemIcon key={id} id={id} size={22} />)}
-                                </div>
+                                <ItemOptionRows options={state.build_alternatives?.starter_items ?? []} current={state.build!.starter_items} limit={2} />
                               </div>
                             )}
-                            {state.build_alternatives && state.build_alternatives.boots.length > 0 ? (
+                            {(state.build!.boots.length > 0 || (state.build_alternatives?.boots.length ?? 0) > 0) && (
                               <div className="items-group items-half">
                                 <span className="items-label">Boots</span>
-                                {state.build_alternatives.boots.slice(0, 2).map((opt, oi) => (
-                                  <div key={oi} className="item-option-row">
-                                    <div className="item-option-icons">
-                                      {opt.ids.map(id => <ItemIcon key={id} id={id} size={22} />)}
-                                    </div>
-                                    <span className="item-opt-pr">{(opt.pick_rate * 100).toFixed(0)}%</span>
-                                    <span className={`item-opt-wr ${opt.win_rate >= 0.52 ? "lg-wr-good" : opt.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
-                                      {(opt.win_rate * 100).toFixed(1)}%
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : state.build!.boots.length > 0 && (
-                              <div className="items-group items-half">
-                                <span className="items-label">Boots</span>
-                                <div className="items-row">
-                                  {state.build!.boots.map(id => <ItemIcon key={id} id={id} size={22} />)}
-                                </div>
+                                <ItemOptionRows options={state.build_alternatives?.boots ?? []} current={state.build!.boots} limit={2} />
                               </div>
                             )}
                           </div>
                           {/* Core builds with alternatives */}
                           <div className="items-group">
                             <span className="items-label">Core</span>
-                            {state.build_alternatives && state.build_alternatives.core_items.length > 0 ? (
-                              state.build_alternatives.core_items.slice(0, 3).map((opt, oi) => (
-                                <div key={oi} className={`item-option-row ${oi === 0 ? "item-option-active" : ""}`}
-                                  onClick={() => invoke("select_build_option", { category: "items", index: oi })}
-                                  style={{ cursor: "pointer" }}>
-                                  <div className="item-option-icons">
-                                    {opt.ids.map((id, ii) => (
-                                      <span key={id} className="item-core-slot">
-                                        <ItemIcon id={id} size={22} />
-                                        {ii < opt.ids.length - 1 && <span className="item-arrow-sm">&rarr;</span>}
-                                      </span>
-                                    ))}
-                                  </div>
-                                  <span className="item-opt-pr">{(opt.pick_rate * 100).toFixed(0)}%</span>
-                                  <span className={`item-opt-wr ${opt.win_rate >= 0.52 ? "lg-wr-good" : opt.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
-                                    {(opt.win_rate * 100).toFixed(1)}%
-                                  </span>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="items-row">
-                                {state.build!.core_items.map((id, i) => (
-                                  <div key={id} className="items-row">
-                                    <ItemIcon id={id} size={32} />
-                                    {i < state.build!.core_items.length - 1 && <span className="item-arrow">&rarr;</span>}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            <ItemOptionRows
+                              options={state.build_alternatives?.core_items ?? []}
+                              current={state.build!.core_items}
+                              limit={3}
+                              sequence
+                              onSelect={oi => invoke("select_build_option", { category: "items", index: oi })}
+                            />
                           </div>
                         </div>
                       </div>
                     )}
+
+                    {state.matchup && <MatchupBuildCard matchup={state.matchup} />}
                   </div>
                 )}
               </section>
@@ -2981,7 +2990,7 @@ function App() {
             {/* Adaptive item recommendations */}
             {state.draft && state.draft.enemies.filter(e => e.champion_id > 0).length >= 2 && (() => {
               const enemyIds = state.draft.enemies.filter(e => e.champion_id > 0).map(e => e.champion_id);
-              const recs = analyzeEnemyComp(enemyIds);
+              const recs = analyzeEnemyComp(enemyIds, state.build_alternatives?.item_pool);
               if (recs.length === 0) return null;
               return (
                 <div className="item-recs-panel">
@@ -5559,6 +5568,97 @@ function formatNumber(n: number): string {
 }
 
 // --- Alt Tabs ---
+
+function sameIds(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+// OP.GG's top options with the one actually in the build highlighted. When the
+// build holds something that is not among them (a matchup swap), it is shown
+// first, tagged, since the general pick/win rates do not describe it.
+function ItemOptionRows({ options, current, limit, sequence = false, onSelect }: {
+  options: ItemOption[];
+  current: number[];
+  limit: number;
+  sequence?: boolean;
+  onSelect?: (index: number) => void;
+}) {
+  const shown = options.slice(0, limit);
+  const activeIdx = shown.findIndex(o => sameIds(o.ids, current));
+  const icons = (ids: number[]) => (
+    <div className="item-option-icons">
+      {ids.map((id, i) => sequence ? (
+        <span key={`${id}-${i}`} className="item-core-slot">
+          <ItemIcon id={id} size={22} />
+          {i < ids.length - 1 && <span className="item-arrow-sm">&rarr;</span>}
+        </span>
+      ) : <ItemIcon key={`${id}-${i}`} id={id} size={22} />)}
+    </div>
+  );
+  return (
+    <>
+      {activeIdx === -1 && current.length > 0 && (
+        <div className="item-option-row item-option-active">
+          {icons(current)}
+          {shown.length > 0 && <span className="item-opt-pr item-opt-matchup">matchup</span>}
+        </div>
+      )}
+      {shown.map((opt, oi) => (
+        <div key={oi} className={`item-option-row ${oi === activeIdx ? "item-option-active" : ""}`}
+          onClick={onSelect ? () => onSelect(oi) : undefined}
+          style={onSelect ? { cursor: "pointer" } : undefined}>
+          {icons(opt.ids)}
+          <span className="item-opt-pr">{(opt.pick_rate * 100).toFixed(0)}%</span>
+          <span className={`item-opt-wr ${opt.win_rate >= 0.52 ? "lg-wr-good" : opt.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
+            {(opt.win_rate * 100).toFixed(1)}%
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+const MATCHUP_CATEGORY_LABELS: Record<MatchupChange["category"], string> = {
+  boots: "Boots", starter: "Start", keystone: "Keystone", core: "Core",
+};
+
+// What players build differently against this lane opponent, compared with
+// all games. Swapped rows were changed in the build; the rest are shifts the
+// build already covers, or where nothing fell far enough to make room.
+function MatchupBuildCard({ matchup }: { matchup: MatchupAdjustment }) {
+  const opponent = useChampionName(matchup.opponent_id);
+  const icon = (c: MatchupChange, id: number, cls = "") => (
+    <span className={cls}>{c.category === "keystone" ? <RuneIcon id={id} size={20} /> : <ItemIcon id={id} size={20} />}</span>
+  );
+  return (
+    <div className="build-card mbuild">
+      <div className="card-header">
+        <h3 className="card-label mbuild-title">
+          vs <ChampionIcon championId={matchup.opponent_id} size={16} /> {opponent?.name ?? ""}
+        </h3>
+        <span className="mbuild-games">{matchup.games.toLocaleString()} games</span>
+      </div>
+      {matchup.changes.length === 0 ? (
+        <p className="mbuild-none">Players build the same as in any other matchup.</p>
+      ) : (
+        <>
+          <div className="mbuild-legend">Share of builds: all games &rarr; this matchup</div>
+          {matchup.changes.map((c, i) => (
+            <div key={i} className="mbuild-row">
+              <span className="mbuild-cat">{MATCHUP_CATEGORY_LABELS[c.category]}</span>
+              {c.replaces != null && <>{icon(c, c.replaces, "mbuild-out")}<span className="item-arrow-sm">&rarr;</span></>}
+              {icon(c, c.id)}
+              <span className="mbuild-share">
+                {(c.base_share * 100).toFixed(0)}% &rarr; <strong>{(c.matchup_share * 100).toFixed(0)}%</strong>
+              </span>
+              {c.replaces != null && <span className="mbuild-tag">Swapped</span>}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
 
 function AltTabs({ options, category, currentIds, currentBuild }: {
   options: { win_rate: number; pick_rate: number }[];

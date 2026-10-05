@@ -275,17 +275,250 @@ pub async fn fetch_champion_data(
         }
     }).collect();
 
+    let item_pool: Vec<PoolItem> = data.data.last_items.iter().map(|r| (&r.ids, r.pick_rate))
+        .chain(data.data.boots.iter().map(|r| (&r.ids, r.pick_rate)))
+        .filter_map(|(ids, pick_rate)| ids.first().map(|&id| PoolItem { id, pick_rate }))
+        .collect();
+
     let alternatives = BuildAlternatives {
         runes: rune_alts,
         summoner_spells: spell_alts,
         core_items: item_alts,
         starter_items: starter_alts,
         boots: boots_alts,
+        item_pool,
     };
+
+    let counter_games = data.data.counters.iter()
+        .map(|c| (c.champion_id, c.play))
+        .collect();
+    let profile = build_profile(&data.data);
 
     info!("Champion data fetched: {} counters, {} rune options", counters.len(), alternatives.runes.len());
 
-    Ok(ChampionFetchResult { build, counters, alternatives })
+    Ok(ChampionFetchResult { build, counters, counter_games, alternatives, profile })
+}
+
+// --- Matchup adjustment ---
+//
+// OP.GG's build is the average over every game, against every opponent. The
+// same endpoint takes `?target_champion={id}` and returns the build filtered to
+// games against that lane opponent (it is lane-only: Ahri mid vs Leona has one
+// game). Measured over 48 matchups, players adapt strongly in top (Malphite vs
+// Sylas: Sunfire 84% -> 17%, Hollow Radiance 3% -> 73%), clearly in jungle
+// (boots follow the enemy jungler's damage type), in mid only against
+// assassins, and not at all in bot lane — so ADC and support are not adjusted.
+//
+// The per-matchup sample is small (~100 games per exact core build), so its
+// top build often flips for no reason. Instead we compare how often each
+// choice appears against its general share, and only act on shifts that are
+// both large and well outside sampling noise.
+
+/// Fewer games than this and the matchup is not worth a request.
+pub const MATCHUP_MIN_GAMES: i64 = 500;
+const MATCHUP_MIN_SHIFT: f64 = 0.10;
+const MATCHUP_MIN_Z: f64 = 3.0;
+
+/// Positions where the lane opponent changes what players build.
+pub fn matchup_adjusts_position(position: &str) -> bool {
+    matches!(position, "top" | "jungle" | "mid")
+}
+
+fn shares(rows: impl Iterator<Item = (Vec<i64>, i64)>) -> CategoryShares {
+    let mut counts: HashMap<i64, i64> = HashMap::new();
+    let mut games = 0;
+    for (keys, play) in rows {
+        games += play;
+        for k in keys {
+            *counts.entry(k).or_insert(0) += play;
+        }
+    }
+    let shares = if games > 0 {
+        counts.into_iter().map(|(k, v)| (k, v as f64 / games as f64)).collect()
+    } else {
+        HashMap::new()
+    };
+    CategoryShares { shares, games }
+}
+
+pub fn build_profile(d: &OpggChampionData) -> BuildProfile {
+    let first = |ids: &[i64]| ids.first().map(|&i| vec![i]).unwrap_or_default();
+    BuildProfile {
+        core: shares(d.core_items.iter().map(|r| {
+            let mut ids = r.ids.clone();
+            ids.sort_unstable();
+            ids.dedup();
+            (ids, r.play)
+        })),
+        boots: shares(d.boots.iter().map(|r| (first(&r.ids), r.play))),
+        // Keyed on the first item: Doran's Blade vs Doran's Shield, not the potions.
+        starter: shares(d.starter_items.iter().map(|r| (first(&r.ids), r.play))),
+        keystone: shares(d.runes.iter().map(|r| (first(&r.primary_rune_ids), r.play))),
+    }
+}
+
+/// Change in share of `id` between the general and the matchup profile, or
+/// None if it is within sampling noise.
+fn significant_shift(base: &CategoryShares, matchup: &CategoryShares, id: i64) -> Option<f64> {
+    if matchup.games == 0 {
+        return None;
+    }
+    let b = base.shares.get(&id).copied().unwrap_or(0.0);
+    let m = matchup.shares.get(&id).copied().unwrap_or(0.0);
+    let diff = m - b;
+    // Floor the variance so a choice nobody makes in general (b = 0) still
+    // needs a real number of matchup games to count.
+    let se = ((b * (1.0 - b)).max(0.0025) / matchup.games as f64).sqrt();
+    (diff.abs() >= MATCHUP_MIN_SHIFT && diff.abs() / se >= MATCHUP_MIN_Z).then_some(diff)
+}
+
+fn rune_build(r: &OpggRune) -> RuneBuild {
+    RuneBuild {
+        primary_style_id: r.primary_page_id,
+        sub_style_id: r.secondary_page_id,
+        selected_perk_ids: r.primary_rune_ids.iter()
+            .chain(r.secondary_rune_ids.iter())
+            .chain(r.stat_mod_ids.iter())
+            .copied()
+            .collect(),
+    }
+}
+
+/// Applies the matchup's significant shifts to the general build. Single-choice
+/// categories (boots, starter, keystone) switch only when the matchup's most
+/// common choice differs from the build's and rose significantly. A core item
+/// is swapped in only when a build item fell significantly to make room.
+pub fn adjust_for_matchup(
+    base_build: &ChampionBuild,
+    base: &BuildProfile,
+    matchup: &OpggChampionData,
+) -> (ChampionBuild, Vec<MatchupChange>) {
+    let mp = build_profile(matchup);
+    let mut build = base_build.clone();
+    let mut changes: Vec<(f64, MatchupChange)> = Vec::new();
+
+    let rises = |b: &CategoryShares, m: &CategoryShares| -> Vec<(i64, f64)> {
+        let mut v: Vec<(i64, f64)> = m.shares.keys()
+            .filter_map(|&id| significant_shift(b, m, id).filter(|d| *d > 0.0).map(|d| (id, d)))
+            .collect();
+        v.sort_by(|a, b| b.1.total_cmp(&a.1));
+        v
+    };
+    let top = |m: &CategoryShares| m.shares.iter().max_by(|a, b| a.1.total_cmp(b.1)).map(|(&id, _)| id);
+    let change = |cat: &str, id: i64, replaces: Option<i64>, b: &CategoryShares, m: &CategoryShares| MatchupChange {
+        category: cat.to_string(),
+        id,
+        replaces,
+        base_share: b.shares.get(&id).copied().unwrap_or(0.0),
+        matchup_share: m.shares.get(&id).copied().unwrap_or(0.0),
+    };
+
+    let singles: [(&str, &CategoryShares, &CategoryShares); 3] = [
+        ("boots", &base.boots, &mp.boots),
+        ("starter", &base.starter, &mp.starter),
+        ("keystone", &base.keystone, &mp.keystone),
+    ];
+    for (cat, b, m) in singles {
+        let current = match cat {
+            "boots" => build.boots.first().copied(),
+            "starter" => build.starter_items.first().copied(),
+            _ => build.runes.as_ref().and_then(|r| r.selected_perk_ids.first().copied()),
+        };
+        let top_id = top(m);
+        for (id, diff) in rises(b, m) {
+            let mut replaces = None;
+            if Some(id) == top_id && Some(id) != current {
+                let swapped = match cat {
+                    "boots" => { build.boots = vec![id]; true }
+                    "starter" => match matchup.starter_items.iter().find(|r| r.ids.first() == Some(&id)) {
+                        Some(r) => { build.starter_items = r.ids.clone(); true }
+                        None => false,
+                    },
+                    _ => match matchup.runes.iter().find(|r| r.primary_rune_ids.first() == Some(&id)) {
+                        Some(r) => { build.runes = Some(rune_build(r)); true }
+                        None => false,
+                    },
+                };
+                if swapped {
+                    replaces = current;
+                }
+            }
+            changes.push((diff, change(cat, id, replaces, b, m)));
+        }
+    }
+
+    // Core: build items whose share fell significantly make room, most-fallen first.
+    let mut drops: Vec<(i64, f64)> = build.core_items.iter()
+        .filter_map(|&id| significant_shift(&base.core, &mp.core, id).filter(|d| *d < 0.0).map(|d| (id, d)))
+        .collect();
+    drops.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let mut drops = drops.into_iter();
+    for (id, diff) in rises(&base.core, &mp.core) {
+        let mut replaces = None;
+        if !build.core_items.contains(&id) {
+            if let Some((out, _)) = drops.next() {
+                if let Some(slot) = build.core_items.iter_mut().find(|i| **i == out) {
+                    *slot = id;
+                    replaces = Some(out);
+                }
+            }
+        }
+        changes.push((diff, change("core", id, replaces, &base.core, &mp.core)));
+    }
+
+    // Swaps first, then the biggest shifts.
+    changes.sort_by(|a, b| {
+        b.1.replaces.is_some().cmp(&a.1.replaces.is_some()).then(b.0.total_cmp(&a.0))
+    });
+    (build, changes.into_iter().map(|(_, c)| c).collect())
+}
+
+/// The enemy in our lane. A known position wins; otherwise the enemy with the
+/// most games against us in this position, provided it clearly dominates the
+/// runner-up (Garen and Sett both visible to a top laner is ambiguous until
+/// one of them shows a role). `enemies` carries the raw LCU position, "" when
+/// hidden.
+pub fn pick_lane_opponent(
+    my_pos: &str,
+    enemies: &[(i64, String)],
+    counter_games: &HashMap<i64, i64>,
+) -> Option<i64> {
+    let lcu_pos = |p: &str| match p {
+        "middle" => "mid",
+        "bottom" => "adc",
+        "utility" => "support",
+        other => other,
+    }.to_string();
+    if let Some((id, _)) = enemies.iter().find(|(_, p)| !p.is_empty() && lcu_pos(p) == my_pos) {
+        return Some(*id);
+    }
+    let mut ranked: Vec<(i64, i64)> = enemies.iter()
+        .filter(|(id, p)| *id > 0 && p.is_empty())
+        .map(|(id, _)| (*id, counter_games.get(id).copied().unwrap_or(0)))
+        .filter(|(_, g)| *g > 0)
+        .collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1));
+    match ranked.as_slice() {
+        [] => None,
+        [(id, _)] => Some(*id),
+        [(id, g1), (_, g2), ..] => (*g1 >= g2 * 2).then_some(*id),
+    }
+}
+
+/// The build filtered to games against `opponent_id`.
+pub async fn fetch_matchup_data(
+    region: &str,
+    champion_id: i64,
+    position: &str,
+    opponent_id: i64,
+) -> Result<OpggChampionData, String> {
+    let url = format!(
+        "{}/{}/champions/ranked/{}/{}?target_champion={}",
+        OPGG_API_BASE, region, champion_id, position, opponent_id
+    );
+    info!("Fetching matchup build from OP.GG: {}", url);
+    let data: OpggResponse = fetch_json_with_retry(&url).await?;
+    Ok(data.data)
 }
 
 /// Fetch counters for a specific champion (used by recommend_picks).
