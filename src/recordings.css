@@ -303,6 +303,16 @@
 .rec-tile-kda { font-size: 12px; color: var(--rec-text-2); font-variant-numeric: tabular-nums; }
 .rec-tile-meta { font-size: 11px; color: var(--rec-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rec-more { align-self: center; }
+.rec-tile-actions { display: flex; gap: 6px; flex: none; }
+.rec-tile-del { width: 34px; height: 34px; border-radius: 8px; border-color: var(--border); color: var(--text-secondary); }
+.rec-tile-del:hover { border-color: rgba(240,107,126,.55); color: var(--negative); background: var(--negative-soft); }
+.rec-tile-deleted {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  min-height: 210px; border-style: dashed; color: var(--text-secondary); font-size: 13px; font-weight: 600;
+}
+.rec-tile-deleted:hover { transform: none; }
+.rec-tile-deleted-meta { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.rec-tile-deleted .rec-btn { margin-top: 4px; }
 
 .rec-alert {
   display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-radius: 12px;

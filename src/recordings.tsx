@@ -625,33 +625,9 @@ export function RecordingsLibrary({ recordings, recordingOn, permission, status,
         </div>
       ) : (
         <div className="rec-grid">
-          {shown.map(r => {
-            const best = bestMoment(r);
-            const at = best ? toVideo(r, best.time - LEAD) : 0;
-            const champ = champions[String(r.champion_id)];
-            return (
-              <div key={r.id} className="rec-tile">
-                <button className="rec-tile-thumb" onClick={() => onWatch(r, at)} aria-label={`Watch ${resultLabel(r)} from ${fmtWhen(r.created_at)}`}>
-                  <Thumb rec={r} at={at + LEAD} />
-                  <span className="rec-thumb-shade" />
-                  <span className="rec-tile-play"><Icon name="play" size={16} /></span>
-                  <span className="rec-badge rec-tile-len">{fmtClock(gameLength(r))}</span>
-                  {best && <span className="rec-tile-moment">{best.title} · {fmtClock(best.time)}</span>}
-                </button>
-                <div className="rec-tile-body">
-                  {champ && <img className="rec-tile-champ" src={iconUrl(champ.key)} alt={champ.name} />}
-                  <div className="rec-tile-text">
-                    <div className="rec-tile-line">
-                      <span className={`rec-result ${resultClass(r)}`}>{resultLabel(r)}</span>
-                      {(r.kills || r.deaths || r.assists) ? <span className="rec-tile-kda">{r.kills} / {r.deaths} / {r.assists}</span> : null}
-                    </div>
-                    <div className="rec-tile-meta">{[r.queue, fmtWhen(r.created_at), fmtSize(r.bytes)].filter(Boolean).join(" · ")}</div>
-                  </div>
-                  <KeepButton rec={r} compact />
-                </div>
-              </div>
-            );
-          })}
+          {shown.map(r => (
+            <RecordingTile key={r.id} rec={r} champ={champions[String(r.champion_id)]} iconUrl={iconUrl} onWatch={onWatch} />
+          ))}
         </div>
       )}
       {list.length > 8 && (
@@ -660,6 +636,54 @@ export function RecordingsLibrary({ recordings, recordingOn, permission, status,
         </button>
       )}
     </section>
+  );
+}
+
+/** One library card. Delete needs no confirmation: like the post-game
+ *  card, the file goes only after a few seconds, with Undo meanwhile. */
+function RecordingTile({ rec: r, champ, iconUrl, onWatch }: {
+  rec: Recording; champ?: { key: string; name: string }; iconUrl: (key: string) => string;
+  onWatch: (rec: Recording, at?: number) => void;
+}) {
+  const del = useDeferredDelete(r.id);
+  const best = bestMoment(r);
+  const at = best ? toVideo(r, best.time - LEAD) : 0;
+  if (del.pending) {
+    return (
+      <div className="rec-tile rec-tile-deleted">
+        <Icon name="trash" size={18} />
+        <span>Recording deleted</span>
+        <span className="rec-tile-deleted-meta">{fmtSize(r.bytes)} freed</span>
+        <button className="rec-btn rec-btn-quiet" onClick={del.undo}>Undo</button>
+      </div>
+    );
+  }
+  return (
+    <div className="rec-tile">
+      <button className="rec-tile-thumb" onClick={() => onWatch(r, at)} aria-label={`Watch ${resultLabel(r)} from ${fmtWhen(r.created_at)}`}>
+        <Thumb rec={r} at={at + LEAD} />
+        <span className="rec-thumb-shade" />
+        <span className="rec-tile-play"><Icon name="play" size={16} /></span>
+        <span className="rec-badge rec-tile-len">{fmtClock(gameLength(r))}</span>
+        {best && <span className="rec-tile-moment">{best.title} · {fmtClock(best.time)}</span>}
+      </button>
+      <div className="rec-tile-body">
+        {champ && <img className="rec-tile-champ" src={iconUrl(champ.key)} alt={champ.name} />}
+        <div className="rec-tile-text">
+          <div className="rec-tile-line">
+            <span className={`rec-result ${resultClass(r)}`}>{resultLabel(r)}</span>
+            {(r.kills || r.deaths || r.assists) ? <span className="rec-tile-kda">{r.kills} / {r.deaths} / {r.assists}</span> : null}
+          </div>
+          <div className="rec-tile-meta">{[r.queue, fmtWhen(r.created_at), fmtSize(r.bytes)].filter(Boolean).join(" · ")}</div>
+        </div>
+        <div className="rec-tile-actions">
+          <KeepButton rec={r} compact />
+          <button className="rec-btn rec-tile-del" onClick={del.start} aria-label="Delete recording" title="Delete recording">
+            <Icon name="trash" size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
