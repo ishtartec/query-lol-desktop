@@ -3207,7 +3207,7 @@ function App() {
                   </span>
                 )}
               </div>
-              <button className="btn-back" onClick={() => setPlayerProfile(null)}>Close</button>
+              <button className="q-btn q-btn-secondary pg-back" onClick={() => setPlayerProfile(null)}>Close</button>
             </div>
             {playerProfile.matches.length > 0 ? (
               <MatchHistoryView history={playerProfile.matches} />
@@ -4955,7 +4955,7 @@ function ChampionStatsBar({ history, filter, onFilter }: {
             <ChampionIcon championId={s.id} size={24} />
             <div className="champ-stat-info">
               <span className="champ-stat-games">{s.games}g</span>
-              <span className={`champ-stat-wr ${Number(wr) >= 50 ? "pg-above" : "pg-below"}`}>{wr}%</span>
+              <span className={`champ-stat-wr ${Number(wr) >= 50 ? "lg-wr-good" : "lg-wr-bad"}`}>{wr}%</span>
             </div>
           </div>
         );
@@ -5465,58 +5465,95 @@ function DamageProfilePanel({ stats }: { stats: PostGameStats }) {
   );
 }
 
+type PgMetric = "damage" | "gold" | "vision";
+const PG_METRIC: Record<PgMetric, { label: string; get: (p: PostGamePlayer) => number; fmt: (v: number) => string }> = {
+  damage: { label: "Damage", get: p => p.total_damage, fmt: formatNumber },
+  gold: { label: "Gold", get: p => p.gold_earned, fmt: formatNumber },
+  vision: { label: "Vision", get: p => p.vision_score, fmt: v => String(v) },
+};
+
+/** Per-team bests: one gold mark per column instead of red/green per cell. */
+function teamBests(players: PostGamePlayer[], metric: PgMetric) {
+  const max = (f: (p: PostGamePlayer) => number) => Math.max(...players.map(f));
+  return {
+    kda: max(p => (p.kills + p.assists) / Math.max(1, p.deaths)),
+    metric: max(PG_METRIC[metric].get),
+    share: max(p => p.damage_share),
+    kp: max(p => p.kill_participation),
+    cs: max(p => p.cs),
+    vision: max(p => p.vision_score),
+    gold: max(p => p.gold_earned),
+  };
+}
+type TeamBests = ReturnType<typeof teamBests>;
+
 function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recordingError }: {
   stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void;
   recording?: Recording; onWatch?: (rec: Recording, at?: number) => void;
   recordingError?: string | null;
 }) {
+  const [metric, setMetric] = useState<PgMetric>("damage");
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
-
-  const maxDamage = Math.max(
-    ...stats.teams.flatMap(t => t.players.map(p => p.total_damage)),
-    1
-  );
+  const metricMax = Math.max(...stats.teams.flatMap(t => t.players.map(PG_METRIC[metric].get)), 1);
+  const localTeam = stats.teams.find(t => t.players.some(p => p.is_local));
+  const local = localTeam?.players.find(p => p.is_local);
+  const localChamp = useChampionName(local?.champion_id ?? null);
+  const mins = Math.floor(stats.game_duration_secs / 60);
+  const secs = String(stats.game_duration_secs % 60).padStart(2, "0");
 
   return (
     <div className="postgame-layout">
       <div className="postgame-title-row">
         {showBack && (
-          <button className="btn-back" onClick={() => invoke("back_to_lobby")}>&larr; Back</button>
+          <button className="q-btn q-btn-secondary pg-back" onClick={() => invoke("back_to_lobby")}>&larr; Back</button>
         )}
-        <h3 className="section-title">Match Summary</h3>
+        {localTeam ? (
+          <h2 className={`pg-outcome ${localTeam.is_winner ? "win" : "loss"}`}>{localTeam.is_winner ? "Victory" : "Defeat"}</h2>
+        ) : (
+          <h2 className="pg-outcome">Match summary</h2>
+        )}
+        <span className="pg-outcome-meta">
+          {[`${mins}:${secs}`, localChamp?.name, local?.position ? POSITION_LABELS[local.position.toLowerCase()] || local.position : null,
+            local ? `${local.kills} / ${local.deaths} / ${local.assists}` : null].filter(Boolean).join(" · ")}
+        </span>
+        {local?.is_mvp && <span className="pg-outcome-badge"><Badge tone="gold">MVP of your team</Badge></span>}
       </div>
-      {recording && onWatch && <RecordingCard rec={recording} onWatch={onWatch} />}
+      {recording && onWatch && <RecordingCard rec={recording} onWatch={onWatch} compact />}
       {!recording && recordingError && <RecordingNotice error={recordingError} />}
+
+      <div className="pg-board-head">
+        <span className="q-label">Scoreboard <span className="pg-board-hint">· gold marks the best in each team</span></span>
+        <Segmented label="Bar metric" size="sm" value={metric} onChange={setMetric}
+          options={(Object.keys(PG_METRIC) as PgMetric[]).map(k => ({ value: k, label: PG_METRIC[k].label }))} />
+      </div>
       <div className="postgame-teams">
         {sorted.map((team, ti) => {
           const players = [...team.players].sort(
             (a, b) => (POS_ORDER[a.position] ?? 9) - (POS_ORDER[b.position] ?? 9)
           );
+          const bests = teamBests(players, metric);
           return (
-            <div key={ti} className={`postgame-team ${team.is_winner ? "postgame-win" : "postgame-loss"}`}>
-              <div className="postgame-team-header">
+            <section key={ti} className="postgame-team">
+              <div className="pg-grid pg-col-headers" role="row">
                 <span className={`postgame-result ${team.is_winner ? "win" : "loss"}`}>
                   {team.is_winner ? "Victory" : "Defeat"}
+                  <span className="postgame-team-kda">
+                    {players.reduce((s, p) => s + p.kills, 0)} / {players.reduce((s, p) => s + p.deaths, 0)} / {players.reduce((s, p) => s + p.assists, 0)}
+                  </span>
                 </span>
-                <span className="postgame-team-kda">
-                  {players.reduce((s, p) => s + p.kills, 0)} / {players.reduce((s, p) => s + p.deaths, 0)} / {players.reduce((s, p) => s + p.assists, 0)}
-                </span>
-              </div>
-              <div className="pg-col-headers">
-                <span className="pg-col-h pg-h-player">Player</span>
-                <span className="pg-col-h pg-h-kda">KDA</span>
-                <span className="pg-col-h pg-h-dmg">Damage</span>
-                <span className="pg-col-h pg-h-pct">DMG%</span>
-                <span className="pg-col-h pg-h-pct">KP</span>
-                <span className="pg-col-h pg-h-cs">CS</span>
-                <span className="pg-col-h pg-h-vis">Vision</span>
-                <span className="pg-col-h pg-h-gold">Gold</span>
-                <span className="pg-col-h pg-h-items">Items</span>
+                <span>KDA</span>
+                <span>{PG_METRIC[metric].label}</span>
+                <span title="Share of the team's damage">Share</span>
+                <span title="Kill participation">KP</span>
+                <span>CS</span>
+                <span>Vision</span>
+                <span>Gold</span>
+                <span className="pg-h-items">Items</span>
               </div>
               {players.map((p, pi) => (
-                <PostGameRow key={pi} player={p} maxDamage={maxDamage} team={team} onViewPlayer={onViewPlayer} />
+                <PostGameRow key={pi} player={p} metric={metric} metricMax={metricMax} bests={bests} onViewPlayer={onViewPlayer} />
               ))}
-            </div>
+            </section>
           );
         })}
       </div>
@@ -5540,73 +5577,51 @@ function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recor
   );
 }
 
-function StatCell({ value, avg, format }: { value: number; avg: number; format: string }) {
-  const cls = value > avg * 1.15 ? "pg-above" : value < avg * 0.85 ? "pg-below" : "";
-  const display = format === "k" ? formatNumber(value) : value.toString();
-  return <span className={`pg-stat ${cls}`}>{display}</span>;
-}
-
-function PostGameRow({ player: p, maxDamage, team, onViewPlayer }: { player: PostGamePlayer; maxDamage: number; team: PostGameTeam; onViewPlayer?: (puuid: string) => void }) {
+function PostGameRow({ player: p, metric, metricMax, bests, onViewPlayer }: {
+  player: PostGamePlayer; metric: PgMetric; metricMax: number; bests: TeamBests; onViewPlayer?: (puuid: string) => void;
+}) {
   const champInfo = useChampionName(p.champion_id);
-  const kda = p.deaths === 0 ? "Perfect" : ((p.kills + p.assists) / p.deaths).toFixed(1);
-  const dmgPct = (p.total_damage / maxDamage) * 100;
+  const ratio = (p.kills + p.assists) / Math.max(1, p.deaths);
+  const kda = p.deaths === 0 ? "Perfect" : ratio.toFixed(1);
+  const m = PG_METRIC[metric];
+  const value = m.get(p);
+  const best = (v: number, b: number) => (v === b && b > 0 ? "pg-best" : "");
+  const multi = p.penta_kills > 0 ? "Penta" : p.quadra_kills > 0 ? "Quadra" : p.triple_kills > 0 ? "Triple" : null;
 
   return (
-    <div className={`postgame-row ${p.is_local ? "postgame-row-local" : ""} ${p.is_mvp ? "postgame-row-mvp" : ""}`}>
+    <div className={`pg-grid postgame-row ${p.is_local ? "postgame-row-local" : ""}`} role="row">
       <div className="pg-player">
-        <ChampionIcon championId={p.champion_id} size={32} />
+        <ChampionIcon championId={p.champion_id} size={36} />
         <div className="pg-player-info">
-          <span className={`pg-player-name ${onViewPlayer ? "pg-player-link" : ""}`} onClick={(e) => { if (onViewPlayer && p.puuid) { e.stopPropagation(); onViewPlayer(p.puuid); } }}>
-            {p.summoner_name !== "Unknown" ? p.summoner_name : (champInfo?.name || "Unknown")}
-            {p.is_mvp && <span className="mvp-badge">MVP</span>}
+          <span className="pg-player-line">
+            <span className={`pg-player-name ${onViewPlayer ? "pg-player-link" : ""}`} onClick={(e) => { if (onViewPlayer && p.puuid) { e.stopPropagation(); onViewPlayer(p.puuid); } }}>
+              {p.summoner_name !== "Unknown" ? p.summoner_name : (champInfo?.name || "Unknown")}
+            </span>
+            {p.is_mvp && <Badge tone="gold">MVP</Badge>}
+            {multi && <Badge tone="neutral">{multi}</Badge>}
           </span>
           <span className="pg-champ-name">
             {champInfo?.name || ""}
-            {p.position && <> &middot; <PositionIcon pos={p.position} size={12} /> {POSITION_LABELS[p.position.toLowerCase()] || p.position}</>}
-            {p.rank && <> &middot; <RankEmblem rank={p.rank} size={12} /> <span className={`pg-rank rank-${p.rank.split(' ')[0]?.toLowerCase()}`}>{p.rank}</span></>}
+            {p.position && <> &middot; {POSITION_LABELS[p.position.toLowerCase()] || p.position}</>}
+            {p.rank && <> &middot; {p.rank.split(" ").map((w, i) => i === 0 ? titleCase(w) : w).join(" ")}</>}
           </span>
         </div>
       </div>
       <div className="pg-col-kda">
-        <span className="pg-kda">
-          <span className="pg-k">{p.kills}</span>
-          <span className="pg-sep">/</span>
-          <span className="pg-d">{p.deaths}</span>
-          <span className="pg-sep">/</span>
-          <span className="pg-a">{p.assists}</span>
-        </span>
+        <span className={`pg-kda ${best(ratio, bests.kda)}`}>{p.kills} / {p.deaths} / {p.assists}</span>
         <span className="pg-kda-ratio">{kda} KDA</span>
       </div>
       <div className="pg-col-dmg">
-        <StatCell value={p.total_damage} avg={team.avg_damage} format="k" />
+        <span className={`pg-stat ${best(value, bests.metric)}`}>{m.fmt(value)}</span>
         <div className="pg-dmg-bar">
-          <div className="pg-dmg-fill" style={{ width: `${dmgPct}%` }} />
+          <div className={`pg-dmg-fill ${best(value, bests.metric) ? "is-best" : ""}`} style={{ width: `${(value / metricMax) * 100}%` }} />
         </div>
       </div>
-      <div className="pg-col-pct" title="Damage Share">
-        <span className={`pg-pct ${p.damage_share > 0.30 ? "pg-above" : p.damage_share < 0.10 ? "pg-below" : ""}`}>
-          {(p.damage_share * 100).toFixed(0)}%
-        </span>
-      </div>
-      <div className="pg-col-pct" title="Kill Participation">
-        <span className={`pg-pct ${p.kill_participation > 0.70 ? "pg-above" : p.kill_participation < 0.30 ? "pg-below" : ""}`}>
-          {(p.kill_participation * 100).toFixed(0)}%
-        </span>
-      </div>
-      <div className="pg-col-cs">
-        <StatCell value={p.cs} avg={team.avg_cs} format="" />
-      </div>
-      <div className="pg-col-vision" title={`Placed: ${p.wards_placed} | Killed: ${p.wards_killed}`}>
-        <StatCell value={p.vision_score} avg={team.avg_vision} format="" />
-      </div>
-      <div className="pg-col-gold">
-        <StatCell value={p.gold_earned} avg={team.avg_gold} format="k" />
-      </div>
-      {(p.penta_kills > 0 || p.quadra_kills > 0 || p.triple_kills > 0) && (
-        <span className={`multikill-badge ${p.penta_kills > 0 ? "mk-penta" : p.quadra_kills > 0 ? "mk-quadra" : "mk-triple"}`}>
-          {p.penta_kills > 0 ? "PENTA" : p.quadra_kills > 0 ? "QUADRA" : "TRIPLE"}
-        </span>
-      )}
+      <span className={`pg-stat ${best(p.damage_share, bests.share)}`}>{(p.damage_share * 100).toFixed(0)}%</span>
+      <span className={`pg-stat ${best(p.kill_participation, bests.kp)}`}>{(p.kill_participation * 100).toFixed(0)}%</span>
+      <span className={`pg-stat ${best(p.cs, bests.cs)}`}>{p.cs}</span>
+      <span className={`pg-stat ${best(p.vision_score, bests.vision)}`} title={`Placed: ${p.wards_placed} | Killed: ${p.wards_killed}`}>{p.vision_score}</span>
+      <span className={`pg-stat ${best(p.gold_earned, bests.gold)}`}>{formatNumber(p.gold_earned)}</span>
       <div className="pg-col-items">
         <div className="pg-items-row">
           {p.items.map((id, ii) => (

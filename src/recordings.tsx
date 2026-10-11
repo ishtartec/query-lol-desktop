@@ -186,7 +186,11 @@ function KeepButton({ rec, compact }: { rec: Recording; compact?: boolean }) {
 
 // ---------- post-game card ----------
 
-export function RecordingCard({ rec, onWatch }: { rec: Recording; onWatch: (rec: Recording, at?: number) => void }) {
+export function RecordingCard({ rec, onWatch, compact }: {
+  rec: Recording; onWatch: (rec: Recording, at?: number) => void;
+  /** One row, for the post-game summary where the scoreboard matters most. */
+  compact?: boolean;
+}) {
   const [confirming, setConfirming] = useState(false);
   const del = useDeferredDelete(rec.id);
   const best = bestMoment(rec);
@@ -217,6 +221,37 @@ export function RecordingCard({ rec, onWatch }: { rec: Recording; onWatch: (rec:
   }
 
   const len = rec.duration_secs || 1;
+  const keyMoments = rec.moments.filter(m => bucketOf(m)).length;
+  if (compact) {
+    return (
+      <section className="rec-card rec-card-compact" aria-label="Game recording">
+        <button className="rec-card-thumb" onClick={() => onWatch(rec, openAt)} aria-label="Watch recording">
+          <Thumb rec={rec} at={openAt + LEAD} />
+          <span className="rec-thumb-play"><Icon name="play" size={14} /></span>
+        </button>
+        <div className="rec-card-body">
+          <div className="rec-compact-title">Your game is ready to watch</div>
+          <div className="rec-meta">
+            {[best ? `Opens at your ${best.title.toLowerCase()} · ${fmtClock(best.time - LEAD)}` : fmtClock(gameLength(rec)),
+              keyMoments ? `${keyMoments} key moments` : null, fmtSize(rec.bytes)].filter(Boolean).join(" · ")}
+          </div>
+        </div>
+        <div className="rec-compact-actions">
+          <button className="rec-btn rec-watch" onClick={() => onWatch(rec, openAt)}><Icon name="play" />Watch</button>
+          <KeepButton rec={rec} />
+          {confirming ? (
+            <span className="rec-inline-confirm">
+              Delete {fmtSize(rec.bytes)}?
+              <button className="rec-btn rec-danger rec-btn-sm" onClick={() => { setConfirming(false); del.start(); }}>Delete</button>
+              <button className="rec-btn rec-btn-quiet rec-btn-sm" onClick={() => setConfirming(false)}>Cancel</button>
+            </span>
+          ) : (
+            <button className="rec-btn rec-icon" aria-label="Delete recording" onClick={() => setConfirming(true)}><Icon name="trash" size={15} /></button>
+          )}
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="rec-card" aria-label="Game recording">
       <button className="rec-card-thumb" onClick={() => onWatch(rec, openAt)} aria-label="Watch recording">

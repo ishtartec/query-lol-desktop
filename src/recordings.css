@@ -124,6 +124,15 @@
 .rec-confirm-row .rec-btn { flex: 1; height: 32px; font-size: 12px; border-radius: 7px; }
 .rec-retention { font-size: 11px; line-height: 1.45; color: var(--rec-text-3); text-align: center; padding: 0 4px; }
 
+.rec-card-compact { align-items: center; gap: 16px; padding: 12px; }
+.rec-card-compact .rec-card-thumb { width: 168px; }
+.rec-card-compact .rec-thumb-play { width: 36px; height: 36px; }
+.rec-card-compact .rec-card-body { gap: 4px; }
+.rec-compact-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.rec-compact-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.rec-compact-actions .rec-watch, .rec-compact-actions .rec-keep { height: 38px; padding: 0 16px; }
+.rec-compact-actions .rec-icon { width: 38px; height: 38px; }
+
 .rec-deleted {
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px;
