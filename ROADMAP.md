@@ -57,7 +57,7 @@ Closes the learning loop. The data is there — we just need richer synthesis.
 - [x] **Multi-account support** — LP history and per-account state are bucketed by Riot puuid in the persisted config. Auto-switches when the LoL client logs in as a different account; legacy single-account configs are migrated transparently on first connect. No UI changes — accounts share toggles (auto-apply, TTS) but get their own LP history / daily summary / champion baselines.
 - [ ] **Customizable dashboard** — let users hide/show widgets.
 - [ ] **Themes** — light theme, custom accent colors.
-- [ ] **General visual polish pass** — bring every view up to the level of the recording player/library (spacing, type scale, custom controls instead of browser defaults, consistent cards and buttons).
+- [x] **General visual polish pass** — bring every view up to the level of the recording player/library (spacing, type scale, custom controls instead of browser defaults, consistent cards and buttons).
 - [ ] **Auto-mute LoL on app focus** — mute game audio when checking the app.
 - [ ] **Settings export/import** — share configs.
 - [ ] **Cloud sync** — back up LP history and settings.
