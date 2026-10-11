@@ -31,6 +31,7 @@ Closes the learning loop. The data is there — we just need richer synthesis.
 - [ ] **Mistake detection** — heuristics flagging notable inefficiencies: "died with 1500g unspent at 18:45", "first death 0:42 invade", "no vision contribution after 25:00".
 - [ ] **Single-takeaway lesson** — distill the match into one actionable line: "your CS dropped at 14m, focus on wave management".
 - [ ] **Replay marker export** — write timestamps to LoL replay files for key moments (deaths, pivotal fights).
+- [~] **Game recording + review player** (macOS) — records the game window (ScreenCaptureKit → AVAssetWriter, 1920px/60fps at 6 Mbps, ~1.6 GB per 35-min game), keeps the last 10 unless kept, and plays it back with key-moment markers over the gold-lead curve. Post-game card (Watch / Keep / Delete), player, library and match-history badge. Windows backend not started.
 
 ## Champion Select
 
@@ -56,6 +57,7 @@ Closes the learning loop. The data is there — we just need richer synthesis.
 - [x] **Multi-account support** — LP history and per-account state are bucketed by Riot puuid in the persisted config. Auto-switches when the LoL client logs in as a different account; legacy single-account configs are migrated transparently on first connect. No UI changes — accounts share toggles (auto-apply, TTS) but get their own LP history / daily summary / champion baselines.
 - [ ] **Customizable dashboard** — let users hide/show widgets.
 - [ ] **Themes** — light theme, custom accent colors.
+- [ ] **General visual polish pass** — bring every view up to the level of the recording player/library (spacing, type scale, custom controls instead of browser defaults, consistent cards and buttons).
 - [ ] **Auto-mute LoL on app focus** — mute game audio when checking the app.
 - [ ] **Settings export/import** — share configs.
 - [ ] **Cloud sync** — back up LP history and settings.

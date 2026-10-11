@@ -97,6 +97,10 @@ pub struct AppState {
     pub auto_lock: bool,
     pub auto_accept: bool,
     pub tts_enabled: bool,
+    /// Record games to disk (macOS only; off until the user opts in, since
+    /// it triggers the Screen Recording permission prompt).
+    pub record_games: bool,
+    pub recording_supported: bool,
     pub region: String,
     #[serde(skip)]
     pub overlay_position: String,
@@ -232,6 +236,8 @@ impl Default for AppState {
             auto_lock: false,
             auto_accept: false,
             tts_enabled: false,
+            record_games: false,
+            recording_supported: crate::recorder::SUPPORTED,
             region: "euw".to_string(),
             overlay_position: "top-left".to_string(),
             flash_key: "auto".to_string(),
@@ -740,6 +746,27 @@ pub struct LiveGameData {
     pub events: Vec<GameEvent>,
     #[serde(skip)]
     pub snapshots: Vec<PlayerSnapshot>,
+    /// Moments worth jumping to in the game recording.
+    #[serde(skip)]
+    pub moments: Vec<KeyMoment>,
+    /// When the poll that produced `game_time` returned. Pins game time to
+    /// wall-clock time, which the recorder needs for its video offset.
+    #[serde(skip)]
+    pub polled_at: Option<std::time::Instant>,
+}
+
+/// A moment in the game worth jumping to from the recording player. Only
+/// what involves the local player, plus objectives and the ending.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KeyMoment {
+    /// Game time in seconds.
+    pub time: f64,
+    /// kill | death | assist | multikill | objective | end
+    pub kind: String,
+    pub title: String,
+    pub detail: String,
+    /// Objectives and the ending: whether it went to the local player's team.
+    pub ally: bool,
 }
 
 #[derive(Debug, Clone)]

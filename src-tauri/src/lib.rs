@@ -21,6 +21,7 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
     cfg.auto_lock = s.auto_lock;
     cfg.auto_accept = s.auto_accept;
     cfg.tts_enabled = s.tts_enabled;
+    cfg.record_games = s.record_games;
     cfg.flash_key = s.flash_key.clone();
     if let Some(puuid) = s.summoner_puuid.as_deref() {
         cfg.set_lp_history(puuid, s.lp_history.clone());
@@ -104,6 +105,98 @@ fn map_position(pos: &str) -> &'static str {
         "utility" | "support" => "support",
         _ => "mid",
     }
+}
+
+/// What a recording is of: queue, champion and key moments from the live
+/// game, and the result from post-game stats when the game reached them
+/// (the Practice Tool and remakes never do).
+fn recording_info(s: &AppState, post: Option<&models::PostGameStats>) -> recorder::GameInfo {
+    let mut info = recorder::GameInfo::default();
+    let me = |n: &str| {
+        let key = |x: &str| x.split('#').next().unwrap_or(x).trim().to_lowercase();
+        key(n) == key(s.summoner_name.as_deref().unwrap_or(""))
+    };
+    if let Some(lg) = &s.live_game {
+        info.queue = lg.queue_name.clone();
+        if let Some(p) = lg.allies.iter().find(|p| me(&p.summoner_name)) {
+            info.champion_id = p.champion_id;
+            if let Some(l) = &p.live {
+                (info.kills, info.deaths, info.assists) = (l.kills, l.deaths, l.assists);
+            }
+        }
+        if let Some(ld) = &lg.live_data {
+            info.moments = ld.moments.clone();
+            info.win = ld.moments.iter().find(|m| m.kind == "end").map(|m| m.ally);
+        }
+    }
+    if let Some(stats) = post {
+        info.game_id = stats.game_id;
+        info.gold_timeline = stats.gold_timeline.clone();
+        for team in &stats.teams {
+            if let Some(p) = team.players.iter().find(|p| p.is_local) {
+                info.win = Some(team.is_winner);
+                info.champion_id = p.champion_id;
+                (info.kills, info.deaths, info.assists) = (p.kills, p.deaths, p.assists);
+            }
+        }
+    }
+    info
+}
+
+/// Finalises the recording off the async runtime and tells the UI.
+fn finish_recording(rec: &recorder::SharedRecorder, app: &tauri::AppHandle, info: recorder::GameInfo) {
+    let (rec, app) = (rec.clone(), app.clone());
+    tokio::task::spawn_blocking(move || {
+        if recorder::finish(&rec, info).is_some() {
+            let _ = app.emit("recordings-changed", ());
+        }
+    });
+}
+
+#[tauri::command]
+async fn set_record_games(
+    enabled: bool,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    if enabled && recorder::SUPPORTED {
+        // Listing windows asks for the Screen Recording permission now,
+        // rather than as the next game loads.
+        let _ = tokio::task::spawn_blocking(recorder::list_windows).await;
+    }
+    let mut s = state.lock().await;
+    s.record_games = enabled;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    save_config(&app_handle, &s);
+    Ok(())
+}
+
+#[tauri::command]
+async fn list_recordings(app_handle: tauri::AppHandle) -> Result<Vec<recorder::RecordingEntry>, String> {
+    let dir = recorder::recordings_dir(&app_handle);
+    tokio::task::spawn_blocking(move || recorder::list(&dir)).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_recording_kept(id: String, kept: bool, app_handle: tauri::AppHandle) -> Result<(), String> {
+    recorder::set_kept(&recorder::recordings_dir(&app_handle), &id, kept)?;
+    let _ = app_handle.emit("recordings-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_recording(id: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+    recorder::delete(&recorder::recordings_dir(&app_handle), &id)?;
+    let _ = app_handle.emit("recordings-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_recordings_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = recorder::recordings_dir(&app_handle);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    app_handle.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Spike helper: lists capturable windows, to confirm the game window's name.
@@ -343,9 +436,9 @@ async fn poll_loop(
             phase.as_str(),
             "GameStart" | "InProgress" | "PreEndOfGame" | "WaitingForStats" | "EndOfGame" | "Reconnect"
         );
-        if !in_game && rec.lock().map(|r| r.session.is_some()).unwrap_or(false) {
-            let rec = rec.clone();
-            tokio::task::spawn_blocking(move || recorder::finish(&rec, 0));
+        if !in_game && recorder::is_recording(&rec) {
+            let info = recording_info(&*state.lock().await, None);
+            finish_recording(&rec, &app_handle, info);
         }
 
         if phase == "ReadyCheck" {
@@ -689,14 +782,17 @@ async fn poll_loop(
                 }
             }
         } else if phase == "InProgress" || phase == "GameStart" {
-            let (already_in_game, sid, my_name, game_time) = {
+            let (already_in_game, sid, my_name, clock, record) = {
                 let s = state.lock().await;
-                let game_time = s.live_game.as_ref().and_then(|lg| lg.live_data.as_ref()).map(|ld| ld.game_time);
-                (s.status == ConnectionStatus::InGame, s.summoner_id, s.summoner_name.clone().unwrap_or_default(), game_time)
+                let clock = s.live_game.as_ref()
+                    .and_then(|lg| lg.live_data.as_ref())
+                    .and_then(|ld| ld.polled_at.map(|t| (ld.game_time, t)));
+                (s.status == ConnectionStatus::InGame, s.summoner_id, s.summoner_name.clone().unwrap_or_default(), clock,
+                 s.record_games && recorder::SUPPORTED)
             };
-            if recorder::auto_enabled() {
+            if record {
                 let (rec, app) = (rec.clone(), app_handle.clone());
-                let _ = tokio::task::spawn_blocking(move || recorder::tick(&rec, &app, game_time)).await;
+                let _ = tokio::task::spawn_blocking(move || recorder::tick(&rec, &app, clock)).await;
             }
             if !already_in_game {
                 // Fetch live game info once on transition
@@ -743,8 +839,6 @@ async fn poll_loop(
                 match lcu::get_end_of_game_stats(&creds).await {
                     Ok(mut stats) => {
                         s.status = ConnectionStatus::PostGame;
-                        let (rec, game_id) = (rec.clone(), stats.game_id);
-                        tokio::task::spawn_blocking(move || recorder::finish(&rec, game_id));
                         // Compute phase stats and gold timeline from live game snapshots
                         if let Some(ref live_game) = s.live_game {
                             if let Some(ref live_data) = live_game.live_data {
@@ -787,6 +881,10 @@ async fn poll_loop(
                             }
                         }
                         timeline_backfill_tries = 0;
+                        if recorder::is_recording(&rec) {
+                            let info = recording_info(&s, Some(&stats));
+                            finish_recording(&rec, &app_handle, info);
+                        }
                         s.post_game = Some(stats);
                         s.live_game = None; // Clean up after consuming snapshots
                         s.champion_id = None;
@@ -1287,6 +1385,11 @@ pub fn run() {
             set_flash_key,
             speak,
             list_capture_windows,
+            set_record_games,
+            list_recordings,
+            set_recording_kept,
+            delete_recording,
+            open_recordings_folder,
         ])
         .setup(|app| {
             // Load persisted preferences
@@ -1299,6 +1402,7 @@ pub fn run() {
                 s.auto_lock = cfg.auto_lock;
                 s.auto_accept = cfg.auto_accept;
                 s.tts_enabled = cfg.tts_enabled;
+                s.record_games = cfg.record_games;
                 s.flash_key = cfg.flash_key;
                 // lp_history stays empty until the watcher learns the active
                 // puuid; at that point we hydrate from the right bucket.

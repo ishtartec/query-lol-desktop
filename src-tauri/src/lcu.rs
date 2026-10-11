@@ -1865,6 +1865,7 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         return Err(format!("Live client API returned {}", resp.status()));
     }
 
+    let polled_at = std::time::Instant::now();
     let raw: serde_json::Value = resp.json().await
         .map_err(|e| format!("Failed to parse live client data: {}", e))?;
 
@@ -1880,6 +1881,9 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
     let mut player_stats: std::collections::HashMap<String, LivePlayerStats> = std::collections::HashMap::new();
     let mut player_teams: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut player_positions: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    // Display champion name per player, keyed by `name_key` (events name
+    // players inconsistently: game name alone or the full Riot ID).
+    let mut player_champs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     if let Some(players) = players {
         for p in players {
@@ -1944,6 +1948,9 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
                 spell2_id: s2,
                 ward_score,
             });
+            if let Some(champ) = p.get("championName").and_then(|v| v.as_str()) {
+                player_champs.insert(name_key(&name), champ.to_string());
+            }
             player_teams.insert(name.clone(), team);
             if !resolved_pos.is_empty() {
                 player_positions.insert(name, resolved_pos);
@@ -2042,6 +2049,10 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         }
     }
 
+    let moments = raw.get("events").and_then(|e| e.get("Events")).and_then(|e| e.as_array())
+        .map(|evs| key_moments(evs, my_name, &my_team, &player_teams, &player_champs))
+        .unwrap_or_default();
+
     // Preserve existing snapshots and add new ones every ~30s
     let mut snapshots = live_state.live_data.as_ref()
         .map(|d| d.snapshots.clone())
@@ -2071,9 +2082,95 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         enemy_gold,
         events,
         snapshots,
+        moments,
+        polled_at: Some(polled_at),
     });
 
     Ok(())
+}
+
+/// Normalises a player name from the Live Client API for lookups: events
+/// may carry "Name#TAG" where `allPlayers` has the bare game name.
+fn name_key(name: &str) -> String {
+    name.split('#').next().unwrap_or(name).trim().to_lowercase()
+}
+
+/// Extracts the recording's key moments from the live event feed: the local
+/// player's kills, deaths, assists and multikills, objectives, and the end.
+fn key_moments(
+    events: &[serde_json::Value],
+    my_name: &str,
+    my_team: &str,
+    player_teams: &std::collections::HashMap<String, String>,
+    player_champs: &std::collections::HashMap<String, String>,
+) -> Vec<KeyMoment> {
+    let me = name_key(my_name);
+    let is_me = |n: &str| !me.is_empty() && name_key(n) == me;
+    let champ = |n: &str| player_champs.get(&name_key(n)).cloned();
+    let ally = |n: &str| {
+        player_teams.iter().any(|(k, t)| name_key(k) == name_key(n) && t == my_team)
+    };
+    let str_of = |ev: &serde_json::Value, k: &str| ev.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let team_label = |is_ally: bool| if is_ally { "Your team" } else { "Enemy team" };
+
+    let mut out = vec![];
+    for ev in events {
+        let time = ev.get("EventTime").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let killer = str_of(ev, "KillerName");
+        let moment = |kind: &str, title: String, detail: String, ally: bool| KeyMoment {
+            time, kind: kind.to_string(), title, detail, ally,
+        };
+        let m = match ev.get("EventName").and_then(|v| v.as_str()).unwrap_or("") {
+            "ChampionKill" => {
+                let victim = str_of(ev, "VictimName");
+                let assisted = ev.get("Assisters").and_then(|a| a.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str()).any(|n| is_me(n)))
+                    .unwrap_or(false);
+                let victim_c = champ(&victim).unwrap_or(victim.clone());
+                if is_me(&killer) {
+                    moment("kill", "Kill".into(), format!("You killed {victim_c}"), true)
+                } else if is_me(&victim) {
+                    // Turrets and minions are not in `allPlayers`.
+                    let by = champ(&killer).unwrap_or_else(|| "a turret or minions".into());
+                    moment("death", "You died".into(), format!("Killed by {by}"), false)
+                } else if assisted {
+                    let by = champ(&killer).unwrap_or(killer.clone());
+                    moment("assist", "Assist".into(), format!("{by} killed {victim_c}"), true)
+                } else {
+                    continue;
+                }
+            }
+            "Multikill" if is_me(&killer) => {
+                let title = match ev.get("KillStreak").and_then(|v| v.as_i64()).unwrap_or(2) {
+                    2 => "Double kill",
+                    3 => "Triple kill",
+                    4 => "Quadra kill",
+                    _ => "Penta kill",
+                };
+                moment("multikill", title.into(), String::new(), true)
+            }
+            "DragonKill" => {
+                let a = ally(&killer);
+                let kind = str_of(ev, "DragonType");
+                let title = if kind.is_empty() { "Dragon".to_string() } else { format!("{kind} Dragon") };
+                moment("objective", title, team_label(a).into(), a)
+            }
+            "BaronKill" => { let a = ally(&killer); moment("objective", "Baron".into(), team_label(a).into(), a) }
+            "HeraldKill" | "RiftHeraldKill" => { let a = ally(&killer); moment("objective", "Rift Herald".into(), team_label(a).into(), a) }
+            "InhibKilled" => { let a = ally(&killer); moment("objective", "Inhibitor".into(), team_label(a).into(), a) }
+            "Ace" => {
+                let a = str_of(ev, "AcingTeam") == my_team;
+                moment("objective", "Ace".into(), team_label(a).into(), a)
+            }
+            "GameEnd" => {
+                let won = str_of(ev, "Result") == "Win";
+                moment("end", if won { "Victory" } else { "Defeat" }.into(), "Nexus destroyed".into(), won)
+            }
+            _ => continue,
+        };
+        out.push(m);
+    }
+    out
 }
 
 /// Swap a champion from the ARAM bench.

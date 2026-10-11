@@ -22,6 +22,8 @@ pub struct UserConfig {
     pub auto_accept: bool,
     #[serde(default)]
     pub tts_enabled: bool,
+    #[serde(default)]
+    pub record_games: bool,
     #[serde(default = "default_flash_key")]
     pub flash_key: String,
 
