@@ -4647,13 +4647,15 @@ function LaneMatchups({ allies, enemies }: { allies: LiveGamePlayer[]; enemies: 
   return (
     <div className="lane-matchups">
       {pairs.map((m, i) => (
-        <div key={i} className="lane-row">
-          <ChampionIcon championId={m.ally.champion_id} size={20} />
-          <PositionIcon pos={m.pos} size={14} />
-          <span className={`lane-diff ${m.diff > 300 ? "lg-wr-good" : m.diff < -300 ? "lg-wr-bad" : ""}`}>
-            {m.diff > 0 ? "+" : ""}{Math.round(m.diff).toLocaleString()}g
+        <div key={i} className="lane-row" title="Gold difference with your lane opponent">
+          <ChampionIcon championId={m.ally.champion_id} size={32} />
+          <span className="lane-mid">
+            <span className={`lane-diff ${m.diff > 300 ? "lg-wr-good" : m.diff < -300 ? "lg-wr-bad" : ""}`}>
+              {m.diff > 0 ? "+" : m.diff < 0 ? "−" : "±"}{Math.abs(Math.round(m.diff)).toLocaleString()}
+            </span>
+            <span className="lane-pos">{({ TOP: "Top", JNG: "Jungle", MID: "Mid", BOT: "Bot", SUP: "Support" } as Record<string, string>)[m.pos] ?? m.pos}</span>
           </span>
-          <ChampionIcon championId={m.enemy.champion_id} size={20} />
+          <ChampionIcon championId={m.enemy.champion_id} size={32} />
         </div>
       ))}
     </div>
@@ -4775,30 +4777,55 @@ function LiveGameView({ game, onViewPlayer, recording }: { game: LiveGameState; 
 
   return (
     <div className="lg-layout">
-      <div className="lg-header">
-        <h3 className="section-title">In Game</h3>
-        <div className="lg-header-right">
-          {recording && <RecIndicator />}
-          {ld && <span className="lg-timer">{formatGameTime(ld.game_time)}</span>}
-          <span className="lg-queue">{game.queue_name}</span>
+      <section className="lg-state" aria-label="Game state">
+        <div className="q-card lg-state-time">
+          <h3 className="q-label">Game time</h3>
+          <span className="lg-timer">{ld ? formatGameTime(ld.game_time) : "Loading"}</span>
+          <span className="lg-state-meta">
+            {recording && <RecIndicator />}
+            <span className="lg-queue">{game.queue_name}</span>
+          </span>
         </div>
-      </div>
-
-      {ld && (
-        <div className="lg-gold-bar">
-          <span className="lg-gold-ally">{Math.round(allyGold).toLocaleString()}g</span>
-          <div className="lg-gold-track">
-            <div className="lg-gold-fill" style={{ width: `${allyGold / (allyGold + enemyGold + 1) * 100}%` }} />
+        <div className="q-card lg-state-gold">
+          <div className="q-section-head">
+            <h3 className="q-label">Team gold</h3>
+            {ld && (
+              <span className="lg-win-chance">Win chance
+                <span className={`lg-win-prob ${winProb > 0.55 ? "lg-wr-good" : winProb < 0.45 ? "lg-wr-bad" : ""}`}>{(winProb * 100).toFixed(0)}%</span>
+              </span>
+            )}
           </div>
-          <span className="lg-gold-enemy">{Math.round(enemyGold).toLocaleString()}g</span>
-          <span className={`lg-gold-diff ${goldDiff > 0 ? "lg-wr-good" : goldDiff < 0 ? "lg-wr-bad" : ""}`}>
-            {goldDiff > 0 ? "+" : ""}{Math.round(goldDiff).toLocaleString()}
-          </span>
-          <span className={`lg-win-prob ${winProb > 0.55 ? "lg-wr-good" : winProb < 0.45 ? "lg-wr-bad" : ""}`}>
-            {(winProb * 100).toFixed(0)}%
-          </span>
+          {ld ? (
+            <>
+              <div className="lg-gold-bar">
+                <span className="lg-gold-ally">{formatNumber(Math.round(allyGold))}</span>
+                <div className="lg-gold-track">
+                  <div className="lg-gold-fill" style={{ width: `${allyGold / (allyGold + enemyGold + 1) * 100}%` }} />
+                </div>
+                <span className="lg-gold-enemy">{formatNumber(Math.round(enemyGold))}</span>
+              </div>
+              <div className="lg-gold-diff-row">
+                <Badge tone={goldDiff > 300 ? "positive" : goldDiff < -300 ? "negative" : "neutral"}>
+                  {Math.abs(Math.round(goldDiff)).toLocaleString()} gold {goldDiff >= 0 ? "ahead" : "behind"}
+                </Badge>
+              </div>
+            </>
+          ) : <span className="lg-state-empty">Waiting for the game to load…</span>}
         </div>
-      )}
+        <div className="q-card lg-state-obj">
+          <h3 className="q-label">Objectives</h3>
+          {ld ? computeObjectiveSpawns(ld.events, ld.game_time).slice(0, 3).map(o => (
+            <div key={o.kind} className="lg-obj-row">
+              <span className={`lg-obj-mark lg-obj-${o.kind}`} />
+              <span className="lg-obj-name">{o.label}</span>
+              {o.eta <= 0
+                ? <span className="lg-obj-eta is-up">Up</span>
+                : <span className={`lg-obj-eta ${o.eta < 60 ? "is-soon" : ""}`}>{formatGameTime(o.eta)}</span>}
+            </div>
+          )) : <span className="lg-state-empty">—</span>}
+          {ld && <ObjectiveTimers events={ld.events} gameTime={ld.game_time} />}
+        </div>
+      </section>
 
       {ld && <LaneMatchups allies={game.allies} enemies={game.enemies} />}
 
@@ -4827,16 +4854,15 @@ function LiveGameView({ game, onViewPlayer, recording }: { game: LiveGameState; 
 
       <div className="lg-teams">
         <div className="lg-team">
-          <h4 className="draft-team-label" style={{ color: "var(--accent-blue)" }}>Your Team</h4>
+          <h4 className="cs-team-label cs-team-ally">Your team</h4>
           <div className="lg-players">
             {sortByPosition(game.allies).map((p, i) => (
               <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} />
             ))}
           </div>
         </div>
-        <div className="lg-vs">VS</div>
         <div className="lg-team">
-          <h4 className="draft-team-label" style={{ color: "var(--accent-red)" }}>Enemy Team</h4>
+          <h4 className="cs-team-label cs-team-enemy">Enemy team</h4>
           <div className="lg-players">
             {sortByPosition(game.enemies).map((p, i) => (
               <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} isEnemy spellCd={spellCd} />
@@ -4844,8 +4870,6 @@ function LiveGameView({ game, onViewPlayer, recording }: { game: LiveGameState; 
           </div>
         </div>
       </div>
-
-      {ld && <ObjectiveTimers events={ld.events} gameTime={ld.game_time} />}
 
       {recentEvents.length > 0 && (
         <div className="lg-events">
