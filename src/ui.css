@@ -1,0 +1,99 @@
+/* Shared primitives (ui.tsx). Tokens come from App.css :root. */
+
+.q-label {
+  margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.q-label-ally { color: var(--ally); }
+.q-label-enemy { color: var(--enemy); }
+.q-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.q-section-meta { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.q-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 16px 18px;
+}
+
+/* ---------- toggle ---------- */
+.q-toggle { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; user-select: none; }
+.q-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.q-toggle-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.q-toggle-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.q-toggle-hint { font-size: 12px; color: var(--text-muted); }
+.q-toggle-track {
+  flex: none; position: relative; width: 38px; height: 22px; border-radius: 999px;
+  background: var(--border-strong); transition: background .15s ease;
+}
+.q-toggle-knob {
+  position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--text-secondary); transition: left .15s ease, background .15s ease;
+}
+.q-toggle input:checked + .q-toggle-track { background: var(--accent-gold); }
+.q-toggle input:checked + .q-toggle-track .q-toggle-knob { left: 19px; background: var(--bg-primary); }
+.q-toggle input:focus-visible + .q-toggle-track { outline: 2px solid var(--accent-gold); outline-offset: 2px; }
+
+/* ---------- segmented ---------- */
+.q-seg { display: inline-flex; padding: 3px; border-radius: 9px; background: var(--surface-sunken); border: 1px solid var(--border); }
+.q-seg button {
+  border: none; background: transparent; color: var(--text-secondary); cursor: pointer;
+  font: 600 12px Inter, -apple-system, sans-serif; font-variant-numeric: tabular-nums;
+  border-radius: 7px; padding: 0 10px; height: 28px; transition: background .12s ease, color .12s ease;
+}
+.q-seg-sm button { height: 24px; padding: 0 8px; font-size: 11px; border-radius: 6px; }
+.q-seg button:hover { color: var(--text-primary); }
+.q-seg button.is-on { background: var(--surface-3); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.q-seg button:focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 1px; }
+
+/* ---------- select ---------- */
+.q-select { position: relative; }
+.q-select-btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 12px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface-sunken);
+  color: var(--text-primary); font: 600 12px Inter, -apple-system, sans-serif; cursor: pointer;
+  transition: border-color .15s ease;
+}
+.q-select-btn:hover { border-color: #3a4d63; }
+.q-select-btn:focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 2px; }
+.q-select-btn svg { color: var(--text-secondary); }
+.q-select-prefix { color: var(--text-muted); font-weight: 500; }
+.q-select-list {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 100%; max-height: 280px; overflow-y: auto;
+  list-style: none; margin: 0; padding: 4px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border-strong); box-shadow: 0 16px 40px rgba(0,0,0,.5);
+}
+.q-select-list button {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 7px 10px; border: none; border-radius: 7px; background: transparent; cursor: pointer;
+  color: var(--text-primary); font: 500 12px Inter, -apple-system, sans-serif; white-space: nowrap; text-align: left;
+}
+.q-select-list button:hover { background: var(--surface-3); }
+.q-select-list button.is-on { color: var(--accent-gold-text); font-weight: 600; }
+
+/* ---------- badge ---------- */
+.q-badge {
+  display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.q-badge-neutral { background: var(--surface-3); color: #b8c0cc; }
+.q-badge-gold { background: rgba(200,155,60,.15); color: var(--accent-gold-text); font-weight: 700; }
+.q-badge-positive { background: var(--positive-soft); color: var(--positive); }
+.q-badge-negative { background: var(--negative-soft); color: var(--negative); }
+.q-badge-outline { border: 1px solid var(--border-strong); color: var(--text-secondary); }
+
+/* ---------- buttons ---------- */
+.q-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px;
+  border-radius: var(--radius-sm); border: 1px solid transparent; cursor: pointer;
+  font: 600 13px Inter, -apple-system, sans-serif; transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.q-btn:focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 2px; }
+.q-btn-primary { background: var(--accent-gold); color: var(--bg-primary); font-weight: 700; }
+.q-btn-primary:hover { background: var(--accent-gold-hover); }
+.q-btn-secondary { background: transparent; border-color: var(--border-strong); color: #b8c0cc; }
+.q-btn-secondary:hover { border-color: #3a4d63; color: var(--text-primary); }
+.q-btn-icon { width: 36px; padding: 0; }
+.q-btn-icon.is-on { background: var(--surface-3); border-color: #3a4d63; color: var(--text-primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .q-toggle-track, .q-toggle-knob, .q-seg button, .q-btn { transition: none; }
+}

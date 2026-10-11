@@ -1,17 +1,44 @@
 /* === Base === */
 :root {
+  /* Surfaces: depth comes from lightness, not from coloured borders. */
   --bg-primary: #0a0e13;
-  --bg-card: #111820;
-  --bg-card-hover: #161f2a;
+  --bg-card: #10171f;          /* surface 1 */
+  --bg-card-hover: #141d27;
+  --surface-2: #141d27;
+  --surface-3: #1a2431;
+  --surface-sunken: #0c1219;
   --border: #1e2a38;
+  --border-strong: #2a3a4d;
+
+  /* Text. Secondary and muted were raised to clear 4.5:1 on cards. */
   --text-primary: #e8e4de;
-  --text-secondary: #7a8595;
-  --text-muted: #4a5568;
+  --text-secondary: #9aa4b2;
+  --text-muted: #7b8697;
+
+  /* Accent: actions, selection, your own row. */
   --accent-gold: #c89b3c;
+  --accent-gold-hover: #dcae4e;
+  --accent-gold-text: #e0b85a;
+  --accent-gold-soft: rgba(200, 155, 60, 0.12);
+  --accent-gold-line: rgba(200, 155, 60, 0.5);
   --accent-gold-dim: #8b6914;
   --accent-blue: #0397ab;
   --accent-green: #1fad4f;
   --accent-red: #e84057;
+
+  /* Semantic: only for deltas and outcomes; raw values stay white. */
+  --positive: #3fcf85;
+  --positive-soft: rgba(63, 207, 133, 0.13);
+  --negative: #f06b7e;
+  --negative-soft: rgba(240, 107, 126, 0.13);
+
+  /* Teams: labels and edges, never numbers. */
+  --ally: #6fb6ff;
+  --enemy: #ff8a98;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
 
   font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
@@ -81,32 +108,53 @@
 
 /* === Header === */
 .header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 14px; flex-shrink: 0;
+  position: relative; display: flex; align-items: center; justify-content: space-between;
+  height: 60px; border-bottom: 1px solid var(--surface-2);
+  margin: 0 -24px 18px; padding: 0 24px; flex-shrink: 0;
 }
-.header-left { display: flex; align-items: center; gap: 10px; padding-left: 60px; }
+/* Clears the macOS traffic lights (overlay title bar). */
+.header-left { display: flex; align-items: center; gap: 10px; padding-left: 64px; }
 .logo {
-  width: 28px; height: 28px; border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-dim));
+  width: 28px; height: 28px; border-radius: 8px; background: var(--accent-gold);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 14px; color: #0a0e13;
+  font-weight: 800; font-size: 14px; color: var(--bg-primary);
 }
-.app-title { font-size: 15px; font-weight: 700; }
+.app-title { font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
+.header-phase {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 999px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; color: #b8c0cc; white-space: nowrap;
+}
+.header-phase-region { color: var(--text-muted); font-weight: 500; }
 .header-right { display: flex; align-items: center; gap: 10px; -webkit-app-region: no-drag; }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.status-disconnected { background: var(--accent-red); }
-.status-connected { background: var(--accent-green); }
-.status-champ_select { background: var(--accent-gold); }
-.status-in_game { background: #9b59b6; }
-.status-post_game { background: var(--accent-blue); }
-.summoner-name { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.status-disconnected { background: var(--negative); box-shadow: 0 0 0 3px var(--negative-soft); animation: scanPulse 1.5s ease-in-out infinite; }
+.status-connected { background: var(--positive); box-shadow: 0 0 0 3px var(--positive-soft); }
+.status-champ_select { background: var(--accent-gold); box-shadow: 0 0 0 3px var(--accent-gold-soft); }
+.status-in_game { background: #b07cf0; box-shadow: 0 0 0 3px rgba(176,124,240,.16); }
+.status-post_game { background: var(--ally); box-shadow: 0 0 0 3px rgba(111,182,255,.16); }
+.summoner-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 
 .ranked-badge {
-  font-size: 11px; font-weight: 700; padding: 2px 8px;
-  border-radius: 4px; letter-spacing: 0.3px;
+  display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px 0 6px;
+  border-radius: 999px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
+
+/* === Settings menu === */
+.settings-anchor { position: relative; }
+.settings-panel {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50; width: 348px;
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px rgba(0,0,0,.55); padding: 4px 0; animation: settingsIn .14s ease;
+}
+@keyframes settingsIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.settings-group { display: flex; flex-direction: column; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.settings-group:last-child { border-bottom: none; }
+.settings-group .q-label { color: var(--text-muted); }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-row-label { font-size: 13px; font-weight: 600; }
+.settings-row-hint { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 4px; }
 .rank-iron { color: #8a8a8a; background: rgba(138,138,138,0.12); }
 .rank-bronze { color: #b08d57; background: rgba(176,141,87,0.12); }
 .rank-silver { color: #a0b0c0; background: rgba(160,176,192,0.12); }
@@ -188,17 +236,6 @@
 
 .hint { font-size: 12px; color: var(--text-muted); margin-bottom: 24px; }
 
-.select {
-  background: var(--bg-card); color: var(--text-primary);
-  border: 1px solid var(--border); border-radius: 6px;
-  padding: 8px 28px 8px 12px; font-size: 12px; font-weight: 500;
-  cursor: pointer; outline: none;
-  appearance: none; -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237a8595' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 8px center;
-}
-.select:focus { border-color: var(--accent-gold-dim); }
-.select-sm { padding: 5px 24px 5px 8px; font-size: 11px; }
 
 .btn-connect {
   background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-dim));
@@ -209,30 +246,6 @@
 .btn-connect:hover { filter: brightness(1.15); transform: translateY(-1px); }
 .btn-connect:active { transform: translateY(0); }
 .btn-connect:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
-/* === Toolbar === */
-.toolbar {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 14px; flex-shrink: 0;
-}
-.toolbar-toggles { display: flex; gap: 16px; }
-.toggle-label {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 11px; font-weight: 500; color: var(--text-secondary);
-  cursor: pointer; user-select: none;
-}
-.toggle-label input { display: none; }
-.toggle-slider {
-  width: 32px; height: 18px; background: var(--bg-card);
-  border: 1px solid var(--border); border-radius: 9px;
-  position: relative; transition: all 0.2s;
-}
-.toggle-slider::after {
-  content: ""; width: 12px; height: 12px; background: var(--text-muted);
-  border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: all 0.2s;
-}
-.toggle-label input:checked + .toggle-slider { background: var(--accent-gold-dim); border-color: var(--accent-gold); }
-.toggle-label input:checked + .toggle-slider::after { background: var(--accent-gold); left: 16px; }
 
 /* === Waiting === */
 .section-waiting {

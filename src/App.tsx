@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
+import { Toggle, Segmented, Select, GearIcon, useDismiss } from "./ui";
 import { useRecordings, RecordingCard, RecordingPlayer, RecordingsLibrary, RecordingNotice, RecIndicator, WatchPill, type Recording, type ChampionMap, type RecordingStatus } from "./recordings";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
@@ -2517,6 +2518,88 @@ function ChampionIcon({ championId, size = 36, className = "" }: { championId: n
   );
 }
 
+const PHASE_LABEL: Record<AppState["status"], string> = {
+  disconnected: "Looking for the League client",
+  connected: "Lobby",
+  champ_select: "Champion select",
+  in_game: "In game",
+  post_game: "Post-game",
+};
+
+function titleCase(s: string): string {
+  return s.charAt(0) + s.slice(1).toLowerCase();
+}
+
+const OVERLAY_POSITIONS = [
+  { value: "top-left", label: "Top-left" }, { value: "top-right", label: "Top-right" },
+  { value: "bottom-left", label: "Bottom-left" }, { value: "bottom-right", label: "Bottom-right" },
+  { value: "center", label: "Center" }, { value: "off", label: "Off" },
+];
+
+/** Settings live behind the gear instead of a toolbar row on every screen. */
+function SettingsMenu({ state, overlayPos, onOverlayPos }: {
+  state: AppState; overlayPos: string; onOverlayPos: (p: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useDismiss(open, () => setOpen(false));
+  const set = (cmd: string, args: Record<string, unknown>) => invoke(cmd, args).catch(() => {});
+  return (
+    <div className="settings-anchor" ref={ref}>
+      <button type="button" className={`q-btn q-btn-secondary q-btn-icon ${open ? "is-on" : ""}`}
+        aria-label="Settings" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <GearIcon />
+      </button>
+      {open && (
+        <div className="settings-panel" role="dialog" aria-label="Settings">
+          <div className="settings-group">
+            <h4 className="q-label">Champion select</h4>
+            <Toggle label="Auto-apply build" hint="Runes, spells and items when you lock in"
+              checked={state.auto_apply} onChange={() => set("set_auto_apply", { enabled: !state.auto_apply })} />
+            <Toggle label="Auto-lock" hint="Locks your pick when the timer ends"
+              checked={state.auto_lock} onChange={() => set("set_auto_lock", { enabled: !state.auto_lock })} />
+            <Toggle label="Auto-accept" hint="Accepts the ready check for you"
+              checked={state.auto_accept} onChange={() => set("set_auto_accept", { enabled: !state.auto_accept })} />
+          </div>
+          <div className="settings-group">
+            <h4 className="q-label">In game</h4>
+            <Toggle label="Voice cues" hint="Flash up, recall ready, enemy missing"
+              checked={state.tts_enabled} onChange={() => set("set_tts_enabled", { enabled: !state.tts_enabled })} />
+            <div className="settings-row">
+              <span className="settings-row-label">Flash key</span>
+              <Segmented label="Flash key" size="sm" value={state.flash_key}
+                onChange={(key) => set("set_flash_key", { key })}
+                options={[
+                  { value: "auto", label: `Auto${state.flash_key_detected ? ` (${state.flash_key_detected})` : ""}`, title: "Read from your recent games" },
+                  { value: "D", label: "D" }, { value: "F", label: "F" },
+                  { value: "off", label: "OP.GG", title: "Keep OP.GG's order" },
+                ]} />
+            </div>
+            <div className="settings-row">
+              <span className="settings-row-label">Overlay <span className="settings-row-hint">hold TAB</span></span>
+              <Select label="Overlay position" value={overlayPos} options={OVERLAY_POSITIONS}
+                onChange={(position) => { onOverlayPos(position); set("set_overlay_position", { position }); }} />
+            </div>
+          </div>
+          {state.recording_supported && (
+            <div className="settings-group">
+              <h4 className="q-label">Recording</h4>
+              <Toggle label="Record games" hint="Keeps the last 10 · about 1.6 GB each"
+                checked={state.record_games} onChange={() => set("set_record_games", { enabled: !state.record_games })} />
+            </div>
+          )}
+          <div className="settings-group">
+            <div className="settings-row">
+              <span className="settings-row-label">Region <span className="settings-row-hint">for OP.GG data</span></span>
+              <Select label="Region" value={state.region} options={REGIONS}
+                onChange={(region) => set("set_region", { region })} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [state, setState] = useState<AppState>({
     status: "disconnected", summoner_name: null, champion_id: null, champion_locked: false,
@@ -2534,6 +2617,9 @@ function App() {
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string; update: Awaited<ReturnType<typeof check>> } | null>(null);
   const [updating, setUpdating] = useState(false);
   const errorTimeout = useRef<number | null>(null);
+  // The backend does not report the overlay position (it is not persisted),
+  // so the menu keeps it here; the backend starts at top-left too.
+  const [overlayPos, setOverlayPos] = useState("top-left");
   const recordings = useRecordings();
   const [watching, setWatching] = useState<{ id: string; at?: number } | null>(null);
   const [champMap, setChampMap] = useState<ChampionMap>({});
@@ -2618,21 +2704,26 @@ function App() {
       )}
       {/* Header */}
       <header className="header" data-tauri-drag-region>
-        <div className="header-left">
+        <div className="header-left" data-tauri-drag-region>
           <div className="logo">Q</div>
           <span className="app-title">QueryLoL</span>
         </div>
-        <div className="header-right">
+        <div className="header-phase" data-tauri-drag-region>
           <span className={`status-dot status-${state.status}`} />
+          {PHASE_LABEL[state.status]}
+          {isConnected && <span className="header-phase-region">· {REGIONS.find(r => r.value === state.region)?.label ?? state.region.toUpperCase()}</span>}
+        </div>
+        <div className="header-right">
           {isConnected && state.summoner_name && (
             <span className="summoner-name">{state.summoner_name}</span>
           )}
           {isConnected && state.ranked && state.ranked.tier !== "UNRANKED" && (
             <span className={`ranked-badge rank-${state.ranked.tier.toLowerCase()}`}>
-              <RankEmblem rank={state.ranked.tier} size={18} />
-              {state.ranked.tier} {state.ranked.rank} &middot; {state.ranked.lp} LP
+              <RankEmblem rank={state.ranked.tier} size={16} />
+              {titleCase(state.ranked.tier)} {state.ranked.rank} &middot; {state.ranked.lp} LP
             </span>
           )}
+          {isConnected && <SettingsMenu state={state} overlayPos={overlayPos} onOverlayPos={setOverlayPos} />}
         </div>
       </header>
 
@@ -2650,10 +2741,8 @@ function App() {
             </div>
 
             <div className="connect-controls">
-              <select className="select" value={state.region}
-                onChange={(e) => invoke("set_region", { region: e.target.value })}>
-                {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
+              <Select label="Region" prefix="Region" value={state.region} options={REGIONS}
+                onChange={(region) => invoke("set_region", { region })} />
             </div>
 
             <div className="hero-features">
@@ -2678,70 +2767,6 @@ function App() {
             </div>
           </div>
         </section>
-      )}
-
-      {/* Toolbar */}
-      {isConnected && (
-        <div className="toolbar">
-          <select className="select select-sm" value={state.region}
-            onChange={(e) => invoke("set_region", { region: e.target.value })}>
-            {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-          <div className="toolbar-toggles">
-            <label className="toggle-label">
-              <input type="checkbox" checked={state.auto_apply}
-                onChange={() => invoke("set_auto_apply", { enabled: !state.auto_apply })} />
-              <span className="toggle-slider" />
-              Auto-apply
-            </label>
-            <label className="toggle-label">
-              <input type="checkbox" checked={state.auto_lock}
-                onChange={() => invoke("set_auto_lock", { enabled: !state.auto_lock })} />
-              <span className="toggle-slider" />
-              Auto-lock
-            </label>
-            <label className="toggle-label">
-              <input type="checkbox" checked={state.auto_accept}
-                onChange={() => invoke("set_auto_accept", { enabled: !state.auto_accept })} />
-              <span className="toggle-slider" />
-              Auto-accept
-            </label>
-            <label className="toggle-label" title="Voice alerts during the game (Flash up, recall ready, enemy missing)">
-              <input type="checkbox" checked={state.tts_enabled}
-                onChange={() => invoke("set_tts_enabled", { enabled: !state.tts_enabled })} />
-              <span className="toggle-slider" />
-              Voice cues
-            </label>
-            {state.recording_supported && (
-              <label className="toggle-label" title="Record each game so you can review it afterwards. Keeps the last 10 unless you keep them. Asks for Screen Recording permission.">
-                <input type="checkbox" checked={state.record_games}
-                  onChange={() => invoke("set_record_games", { enabled: !state.record_games })} />
-                <span className="toggle-slider" />
-                Record games
-              </label>
-            )}
-            <select className="select select-sm"
-              value={state.flash_key}
-              onChange={(e) => invoke("set_flash_key", { key: e.target.value })}
-              title="Which key Flash goes on when spells are applied. Auto reads it from your recent games.">
-              <option value="auto">Flash: Auto{state.flash_key_detected ? ` (${state.flash_key_detected})` : ""}</option>
-              <option value="D">Flash: D</option>
-              <option value="F">Flash: F</option>
-              <option value="off">Flash: As OP.GG</option>
-            </select>
-            <select className="select select-sm overlay-pos-select"
-              defaultValue="top-left"
-              onChange={(e) => invoke("set_overlay_position", { position: e.target.value })}
-              title="Overlay position (hold TAB in-game)">
-              <option value="off">Overlay: Off</option>
-              <option value="top-left">Overlay: Top-Left</option>
-              <option value="top-right">Overlay: Top-Right</option>
-              <option value="bottom-left">Overlay: Bottom-Left</option>
-              <option value="bottom-right">Overlay: Bottom-Right</option>
-              <option value="center">Overlay: Center</option>
-            </select>
-          </div>
-        </div>
       )}
 
       {/* Waiting / Match History */}
