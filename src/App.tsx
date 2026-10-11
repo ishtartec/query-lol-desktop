@@ -2325,7 +2325,7 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
 
   return (
     <div className="build-card">
-      <h3 className="card-label">Skill Priority</h3>
+      <h3 className="card-label">Skill priority</h3>
       <div className="skills-row">
         {priority.map((slot, i) => (
           <span key={i}>{pip(slot, { opacity: 1 - i * 0.2, fontSize: i === 0 ? 14 : 12 }, "skill-pip")}</span>
@@ -2849,7 +2849,7 @@ function App() {
             <div className="cs-left">
               {state.draft && (
                 <div className="cs-team">
-                  <h4 className="cs-team-label cs-team-ally">Your Team</h4>
+                  <h4 className="cs-team-label cs-team-ally">Your team</h4>
                   {state.draft.allies.map((p, i) => (
                     <div key={i} className={`cs-player ${p.is_local ? "cs-player-local" : ""}`}>
                       <ChampionIcon championId={p.champion_id} size={36} />
@@ -2902,7 +2902,12 @@ function App() {
                   {hasBuild && !state.auto_apply && (
                     <button onClick={handleApply} className="btn-apply">Apply</button>
                   )}
-                  {hasBuild && state.auto_apply && <span className="applied-badge">Applied</span>}
+                  {hasBuild && state.auto_apply && (
+                    <span className="applied-badge">
+                      <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      Applied to client
+                    </span>
+                  )}
                 </div>
 
                 {!hasBuild && (
@@ -3108,7 +3113,7 @@ function App() {
           <div className="cs-right">
             {state.draft && (
               <div className="cs-team">
-                <h4 className="cs-team-label cs-team-enemy">Enemy Team</h4>
+                <h4 className="cs-team-label cs-team-enemy">Enemy team</h4>
                 {state.draft.enemies.length > 0 ? state.draft.enemies.map((p, i) => {
                   const realWr = hasChampion && p.champion_id > 0 ? state.counters[p.champion_id.toString()] : undefined;
                   const wr = realWr;
@@ -3123,17 +3128,15 @@ function App() {
                         {p.position && <span className="cs-player-pos"><PositionIcon pos={p.position} size={12} /> {POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
                       </div>
                       {wr !== undefined && (
-                        <span className={`matchup-badge ${wr > 0.5 ? "matchup-good" : "matchup-bad"}`}>
+                        <Badge tone={wr >= 0.52 ? "positive" : wr <= 0.48 ? "negative" : "neutral"}
+                          title="Your champion's win rate against this pick (OP.GG)">
                           {(wr * 100).toFixed(1)}%
-                        </span>
+                        </Badge>
                       )}
                       {wr === undefined && estimated !== undefined && (
-                        <span
-                          className={`matchup-badge matchup-estimated ${estimated > 0.5 ? "matchup-good" : "matchup-bad"}`}
-                          title="Estimación basada en curvas de poder — OP.GG no tiene datos suficientes para este matchup"
-                        >
-                          ~{(estimated * 100).toFixed(0)}%
-                        </span>
+                        <Badge tone="outline" title="Estimated from power curves: OP.GG has too few games for this matchup">
+                          ≈{(estimated * 100).toFixed(0)}%
+                        </Badge>
                       )}
                     </div>
                   );
@@ -3155,7 +3158,7 @@ function App() {
                 {/* Ban suggestions under enemies */}
                 {!hasChampion && state.ban_phase_active && state.ban_suggestions.length > 0 && (
                   <div style={{ marginTop: 12 }}>
-                    <h4 className="cs-team-label" style={{ color: "var(--accent-red)", marginBottom: 6 }}>Ban These</h4>
+                    <h4 className="cs-team-label cs-team-enemy">Suggested bans</h4>
                     {state.ban_suggestions.map(ban => (
                       <BanCard key={ban.champion_id} ban={ban} />
                     ))}
@@ -4431,8 +4434,8 @@ function DamageCompBar({ allies, enemies }: { allies: DraftPlayer[]; enemies: Dr
 
   return (
     <div className="dmg-comp">
-      <Bar label="Ally" data={ally} color="var(--accent-blue)" />
-      <Bar label="Enemy" data={enemy} color="var(--accent-red)" />
+      <Bar label="Ally" data={ally} color="var(--ally)" />
+      <Bar label="Enemy" data={enemy} color="var(--enemy)" />
     </div>
   );
 }
@@ -5644,10 +5647,12 @@ function ItemOptionRows({ options, current, limit, sequence = false, onSelect }:
     <div className="item-option-icons">
       {ids.map((id, i) => sequence ? (
         <span key={`${id}-${i}`} className="item-core-slot">
-          <ItemIcon id={id} size={22} />
-          {i < ids.length - 1 && <span className="item-arrow-sm">&rarr;</span>}
+          <ItemIcon id={id} size={28} />
+          {i < ids.length - 1 && (
+            <svg className="item-chevron" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
+          )}
         </span>
-      ) : <ItemIcon key={`${id}-${i}`} id={id} size={22} />)}
+      ) : <ItemIcon key={`${id}-${i}`} id={id} size={28} />)}
     </div>
   );
   return (
