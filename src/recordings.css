@@ -31,8 +31,8 @@
 .rec-btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 7px; }
 .rec-icon { width: 36px; height: 36px; border-radius: 8px; border-color: var(--border); color: var(--text-secondary); }
 .rec-icon:hover:not(:disabled) { background: #1a2431; color: var(--text-primary); }
-.rec-danger { background: var(--accent-red); color: #fff; }
-.rec-danger:hover { background: #f05a6f; }
+.rec-danger { background: var(--danger); color: #fff; }
+.rec-danger:hover { background: #e2475d; }
 
 .rec-badge {
   background: rgba(10, 14, 19, .82); border: 1px solid rgba(232, 228, 222, .12); color: var(--text-primary);

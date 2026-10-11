@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
-import { Toggle, Segmented, Select, GearIcon, useDismiss, SectionLabel, Badge } from "./ui";
+import { Toggle, Segmented, Select, GearIcon, useDismiss, SectionLabel, Badge, CheckIcon, WarnIcon } from "./ui";
 import { useRecordings, RecordingCard, RecordingPlayer, RecordingsLibrary, RecordingNotice, RecIndicator, WatchPill, type Recording, type ChampionMap, type RecordingStatus } from "./recordings";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
@@ -2387,7 +2387,7 @@ function BuildSequencePanel({ slots, nextSlot, currentGold, threat, antiShield, 
           <div key={slot.id + "_" + i} className={`bs-slot bs-slot-${slot.state} bs-slot-${slot.category}`}>
             <div className="bs-icon-wrap">
               <img src={itemIconUrl(slot.id)} alt={slot.name} className="bs-icon" />
-              {slot.state === "owned" && <span className="bs-check">✓</span>}
+              {slot.state === "owned" && <span className="bs-check"><CheckIcon size={10} /></span>}
               {slot.state === "next" && (
                 <span className="bs-progress-ring" style={{ background: `conic-gradient(var(--accent-gold) ${(slot.progressPct ?? 0) * 3.6}deg, transparent 0deg)` }} />
               )}
@@ -3066,7 +3066,7 @@ function App() {
               if (recs.length === 0) return null;
               return (
                 <div className="item-recs-panel">
-                  <h4 className="item-recs-title">Situational Items</h4>
+                  <h4 className="item-recs-title">Situational items</h4>
                   {recs.map((r, i) => (
                     <div key={i} className={`item-rec ${r.priority === "high" ? "item-rec-high" : "item-rec-medium"}`}>
                       <div className="item-rec-header">
@@ -3558,7 +3558,7 @@ function TiltGate({ history }: { history: MatchHistoryEntry[] }) {
 
   return (
     <div className="tilt-gate">
-      <div className="tilt-icon">⚠</div>
+      <div className="tilt-icon"><WarnIcon size={18} /></div>
       <div className="tilt-content">
         <div className="tilt-title">{streakLoss} losses in a row in ranked</div>
         <div className="tilt-body">
@@ -4142,7 +4142,7 @@ function LevelPlanTimeline({ yourId, enemyId, position }: { yourId: number; enem
             <div className="lp-detail-action">{focused.action}</div>
             <p className="lp-detail-text">{focused.detail}</p>
             {focused.isEnemySpike && !focused.isSpike && (
-              <div className="lp-detail-warn">⚠ Enemy spike window</div>
+              <div className="lp-detail-warn"><WarnIcon size={12} /> Enemy spike window</div>
             )}
           </div>
         </div>
@@ -4280,7 +4280,7 @@ function WardPlacement({ myPos, enemies }: { myPos: string; enemies: DraftPlayer
   return (
     <div className="ward-placement">
       <div className="ward-placement-header">
-        <span className="ward-placement-title">Ward Placement</span>
+        <span className="ward-placement-title">Ward placement</span>
         {enemyJgl && (
           <span className="ward-placement-vs">
             vs {getJunglerStyle(enemyJgl.champion_id)} jungler
@@ -4306,7 +4306,10 @@ function TrinketRecommendation({ myPos, enemies }: { myPos: string; enemies: Dra
   const info = TRINKET_INFO[rec.kind];
   return (
     <div className={`trinket-rec trinket-${rec.kind}`}>
-      <div className="trinket-rec-icon">{rec.kind === "yellow" ? "👁" : rec.kind === "sweeping" ? "🔍" : "🔭"}</div>
+      <div className="trinket-rec-icon">
+        {/* The trinkets' own icons: Stealth Ward, Oracle Lens, Farsight Alteration. */}
+        <ItemIcon id={rec.kind === "yellow" ? 3340 : rec.kind === "sweeping" ? 3364 : 3363} size={32} />
+      </div>
       <div className="trinket-rec-info">
         <div className="trinket-rec-name">{info.name}</div>
         <div className="trinket-rec-reason">{rec.reason}</div>
@@ -4407,11 +4410,11 @@ function CompCallouts({ allies }: { allies: DraftPlayer[] }) {
   if (callouts.length === 0) return null;
   return (
     <div className="comp-callouts">
-      <div className="comp-callouts-title">Team Composition</div>
+      <div className="comp-callouts-title">Team composition</div>
       <div className="comp-callouts-list">
         {callouts.map((c, i) => (
           <div key={i} className={`comp-callout comp-callout-${c.tone}`}>
-            <span className="comp-callout-icon">{c.tone === "good" ? "✓" : "⚠"}</span>
+            <span className="comp-callout-icon">{c.tone === "good" ? <CheckIcon /> : <WarnIcon />}</span>
             <span className="comp-callout-text">{c.text}</span>
           </div>
         ))}
@@ -5265,7 +5268,7 @@ function GoldDiffTimeline({ timeline, deaths, duration, onDeath }: {
   return (
     <div className="gold-timeline-panel">
       <div className="gold-timeline-header">
-        <h4 className="gold-timeline-title">Gold Advantage</h4>
+        <h4 className="gold-timeline-title">Gold advantage</h4>
         <div className="gold-timeline-stats">
           <span className="gt-stat">
             <span className="gt-stat-label">Final</span>
@@ -5379,8 +5382,8 @@ function DamageProfilePanel({ stats }: { stats: PostGameStats }) {
 
   const split = (phys: number, magic: number, tru: number) => {
     const parts = [
-      { key: "physical", label: "Physical", value: phys, color: "var(--accent-red)" },
-      { key: "magic", label: "Magic", value: magic, color: "#b25ceb" },
+      { key: "physical", label: "Physical", value: phys, color: "var(--dmg-physical)" },
+      { key: "magic", label: "Magic", value: magic, color: "var(--dmg-magic)" },
       { key: "true", label: "True", value: tru, color: "var(--text-primary)" },
     ].filter(p => p.value > 0);
     const total = parts.reduce((a, p) => a + p.value, 0);
@@ -5465,7 +5468,7 @@ function DamageProfilePanel({ stats }: { stats: PostGameStats }) {
     <div className="dprof-row">
       <div className="dprof-card">
         <div className="dprof-header">
-          <h4 className="gold-timeline-title">Damage Dealt</h4>
+          <h4 className="gold-timeline-title">Damage dealt</h4>
           <div className="gold-timeline-stats">
             <span className="gt-stat"><span className="gt-stat-label">Per 1k gold</span>
               <b className="gt-prob">{Math.round(me.total_damage / (gold / 1000))}</b></span>
@@ -5482,7 +5485,7 @@ function DamageProfilePanel({ stats }: { stats: PostGameStats }) {
 
       <div className="dprof-card">
         <div className="dprof-header">
-          <h4 className="gold-timeline-title">Damage Taken</h4>
+          <h4 className="gold-timeline-title">Damage taken</h4>
           <div className="gold-timeline-stats">
             <span className="gt-stat"><span className="gt-stat-label">Mitigated</span>
               <b className="gt-pos">{(me.self_mitigated / 1000).toFixed(1)}k</b></span>
