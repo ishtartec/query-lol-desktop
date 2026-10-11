@@ -101,6 +101,10 @@ pub struct AppState {
     /// it triggers the Screen Recording permission prompt).
     pub record_games: bool,
     pub recording_supported: bool,
+    /// Screen Recording permission granted (macOS). Rechecked while the
+    /// setting is on, since the user grants it in System Settings.
+    pub recording_permission: bool,
+    pub recording: RecordingStatus,
     pub region: String,
     #[serde(skip)]
     pub overlay_position: String,
@@ -238,6 +242,8 @@ impl Default for AppState {
             tts_enabled: false,
             record_games: false,
             recording_supported: crate::recorder::SUPPORTED,
+            recording_permission: false,
+            recording: RecordingStatus::default(),
             region: "euw".to_string(),
             overlay_position: "top-left".to_string(),
             flash_key: "auto".to_string(),
@@ -753,6 +759,14 @@ pub struct LiveGameData {
     /// wall-clock time, which the recorder needs for its video offset.
     #[serde(skip)]
     pub polled_at: Option<std::time::Instant>,
+}
+
+/// What the recorder is doing, for the UI: recording now, or why the last
+/// game was not (fully) recorded.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct RecordingStatus {
+    pub active: bool,
+    pub error: Option<String>,
 }
 
 /// A moment in the game worth jumping to from the recording player. Only

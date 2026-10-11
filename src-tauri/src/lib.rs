@@ -143,11 +143,39 @@ fn recording_info(s: &AppState, post: Option<&models::PostGameStats>) -> recorde
     info
 }
 
+/// Mirrors the recorder's status and the permission into AppState, emitting
+/// only on change. Called every poll.
+async fn sync_recording_status(state: &SharedState, rec: &recorder::SharedRecorder, app: &tauri::AppHandle) {
+    let mut s = state.lock().await;
+    if !s.record_games {
+        return;
+    }
+    let status = recorder::status(rec);
+    let permission = recorder::has_permission();
+    if s.recording != status || s.recording_permission != permission {
+        s.recording = status;
+        s.recording_permission = permission;
+        let _ = app.emit("app-state-changed", s.clone());
+    }
+}
+
+#[tauri::command]
+async fn open_screen_recording_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app_handle
+        .opener()
+        .open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture", None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 /// Finalises the recording off the async runtime and tells the UI.
 fn finish_recording(rec: &recorder::SharedRecorder, app: &tauri::AppHandle, info: recorder::GameInfo) {
     let (rec, app) = (rec.clone(), app.clone());
     tokio::task::spawn_blocking(move || {
-        if recorder::finish(&rec, info).is_some() {
+        let saved = recorder::finish(&rec, info).is_some();
+        let state = app.state::<SharedState>().inner().clone();
+        tauri::async_runtime::block_on(sync_recording_status(&state, &rec, &app));
+        if saved {
             let _ = app.emit("recordings-changed", ());
         }
     });
@@ -159,13 +187,17 @@ async fn set_record_games(
     state: tauri::State<'_, SharedState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    if enabled && recorder::SUPPORTED {
-        // Listing windows asks for the Screen Recording permission now,
-        // rather than as the next game loads.
-        let _ = tokio::task::spawn_blocking(recorder::list_windows).await;
+    if enabled && recorder::SUPPORTED && !recorder::has_permission() {
+        // Ask now rather than as the next game loads. Only the first request
+        // shows a prompt; after that the user must use System Settings.
+        recorder::request_permission();
     }
     let mut s = state.lock().await;
     s.record_games = enabled;
+    s.recording_permission = recorder::has_permission();
+    if !enabled {
+        s.recording.error = None;
+    }
     let _ = app_handle.emit("app-state-changed", s.clone());
     save_config(&app_handle, &s);
     Ok(())
@@ -436,10 +468,14 @@ async fn poll_loop(
             phase.as_str(),
             "GameStart" | "InProgress" | "PreEndOfGame" | "WaitingForStats" | "EndOfGame" | "Reconnect"
         );
-        if !in_game && recorder::is_recording(&rec) {
-            let info = recording_info(&*state.lock().await, None);
-            finish_recording(&rec, &app_handle, info);
+        if !in_game {
+            if recorder::is_recording(&rec) {
+                let info = recording_info(&*state.lock().await, None);
+                finish_recording(&rec, &app_handle, info);
+            }
+            recorder::reset_game(&rec);
         }
+        sync_recording_status(&state, &rec, &app_handle).await;
 
         if phase == "ReadyCheck" {
             let auto_accept = state.lock().await.auto_accept;
@@ -1390,8 +1426,12 @@ pub fn run() {
             set_recording_kept,
             delete_recording,
             open_recordings_folder,
+            open_screen_recording_settings,
         ])
         .setup(|app| {
+            // A crash or forced quit mid-game leaves a video with no metadata.
+            let rec_dir = recorder::recordings_dir(app.handle());
+            std::thread::spawn(move || recorder::recover_orphans(&rec_dir));
             // Load persisted preferences
             let cfg = config::load(app.handle());
             let state = app.state::<SharedState>();
@@ -1403,6 +1443,7 @@ pub fn run() {
                 s.auto_accept = cfg.auto_accept;
                 s.tts_enabled = cfg.tts_enabled;
                 s.record_games = cfg.record_games;
+                s.recording_permission = recorder::has_permission();
                 s.flash_key = cfg.flash_key;
                 // lp_history stays empty until the watcher learns the active
                 // puuid; at that point we hydrate from the right bucket.

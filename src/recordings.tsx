@@ -23,6 +23,7 @@ export interface Recording {
   bytes: number;
   offset_secs: number | null;
   kept: boolean;
+  interrupted: boolean;
   game_id: number;
   champion_id: number;
   queue: string;
@@ -35,6 +36,11 @@ export interface Recording {
 }
 
 export type ChampionMap = Record<string, { key: string; name: string }>;
+
+export interface RecordingStatus {
+  active: boolean;
+  error: string | null;
+}
 
 /** Seconds of lead-in before a moment, so a jump shows how it started. */
 const LEAD = 8;
@@ -112,7 +118,8 @@ const markClass = (m: KeyMoment) =>
     : m.kind === "objective" ? (m.ally ? "rec-mk-obj" : "rec-mk-obj-enemy")
     : "rec-mk-kill";
 
-const resultLabel = (r: Recording) => r.win === true ? "Victory" : r.win === false ? "Defeat" : "Practice";
+const resultLabel = (r: Recording) =>
+  r.win === true ? "Victory" : r.win === false ? "Defeat" : r.interrupted ? "Interrupted" : "Practice";
 const resultClass = (r: Recording) => r.win === true ? "rec-win" : r.win === false ? "rec-loss" : "rec-neutral";
 
 function Icon({ name, size = 16 }: { name: "play" | "pause" | "keep" | "kept" | "trash" | "prev" | "next" | "folder" | "close"; size?: number }) {
@@ -284,7 +291,9 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
   const [selected, setSelected] = useState<KeyMoment | null>(null);
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [confirmDel, setConfirmDel] = useState(false);
-  const len = rec.duration_secs || 1;
+  const [mediaLen, setMediaLen] = useState(0);
+  // Interrupted recordings may not know their length until the video loads.
+  const len = rec.duration_secs || mediaLen || 1;
   const listRef = useRef<HTMLDivElement>(null);
 
   const moments = rec.moments.filter(m => { const b = bucketOf(m); return b && show[b]; });
@@ -392,7 +401,7 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
         <div className="rec-player-main">
           <div className="rec-stage">
             <video ref={video} className="rec-video" src={videoUrl(rec)} preload="auto" playsInline
-              onLoadedMetadata={(e) => { e.currentTarget.currentTime = startAt ?? 0; e.currentTarget.playbackRate = rate; e.currentTarget.play().catch(() => {}); }}
+              onLoadedMetadata={(e) => { setMediaLen(e.currentTarget.duration || 0); e.currentTarget.currentTime = startAt ?? 0; e.currentTarget.playbackRate = rate; e.currentTarget.play().catch(() => {}); }}
               onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
               onTimeUpdate={(e) => { if (!playing) setNow(e.currentTarget.currentTime); }}
               onClick={toggle} />
@@ -508,8 +517,9 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
 
 // ---------- library ----------
 
-export function RecordingsLibrary({ recordings, recordingOn, champions, iconUrl, onWatch }: {
-  recordings: Recording[]; recordingOn: boolean; champions: ChampionMap; iconUrl: (key: string) => string;
+export function RecordingsLibrary({ recordings, recordingOn, permission, status, champions, iconUrl, onWatch }: {
+  recordings: Recording[]; recordingOn: boolean; permission: boolean; status: RecordingStatus;
+  champions: ChampionMap; iconUrl: (key: string) => string;
   onWatch: (rec: Recording, at?: number) => void;
 }) {
   const [tab, setTab] = useState<"all" | "kept">("all");
@@ -537,6 +547,18 @@ export function RecordingsLibrary({ recordings, recordingOn, champions, iconUrl,
         </div>
         <button className="rec-btn rec-btn-quiet" onClick={() => invoke("open_recordings_folder").catch(() => {})}><Icon name="folder" size={14} />Open folder</button>
       </div>
+
+      {recordingOn && !permission ? (
+        <div className="rec-alert" role="status">
+          <div>
+            <div className="rec-alert-title">Screen Recording permission needed</div>
+            <div className="rec-alert-text">Allow QueryLoL in System Settings → Privacy &amp; Security → Screen Recording, then restart QueryLoL.</div>
+          </div>
+          <button className="rec-btn rec-btn-quiet" onClick={() => invoke("open_screen_recording_settings").catch(() => {})}>Open System Settings</button>
+        </div>
+      ) : recordingOn && status.error ? (
+        <RecordingNotice error={status.error} />
+      ) : null}
 
       <div className="rec-storage">
         <div className="rec-storage-top">
@@ -604,6 +626,23 @@ export function RecordingsLibrary({ recordings, recordingOn, champions, iconUrl,
       )}
     </section>
   );
+}
+
+/** Why the last game has no (complete) recording. */
+export function RecordingNotice({ error }: { error: string }) {
+  return (
+    <div className="rec-alert rec-alert-soft" role="status">
+      <div>
+        <div className="rec-alert-title">The last game wasn't fully recorded</div>
+        <div className="rec-alert-text">{error}.</div>
+      </div>
+    </div>
+  );
+}
+
+/** Shown in the live game header while the game is being recorded. */
+export function RecIndicator() {
+  return <span className="rec-live" title="This game is being recorded"><span className="rec-live-dot" />REC</span>;
 }
 
 /** The small "Watch" pill for a match history row. */

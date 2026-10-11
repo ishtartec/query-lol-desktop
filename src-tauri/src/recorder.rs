@@ -7,7 +7,7 @@
 //! H.264 rather than HEVC because WebView2 on Windows only plays HEVC with an
 //! optional extension, and recordings should play on both platforms.
 
-use crate::models::{GoldDiffPoint, KeyMoment};
+use crate::models::{GoldDiffPoint, KeyMoment, RecordingStatus};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -54,6 +54,8 @@ mod imp {
     const AUDIO_BITRATE: u32 = 128_000;
     /// A keyframe every 2s keeps seeking from an event cheap and exact.
     const KEYFRAME_SECS: u32 = 2;
+    /// At most this much is lost if the app dies while recording.
+    const FRAGMENT_SECS: f64 = 10.0;
 
     /// Shared between the capture callbacks (video and audio arrive on
     /// separate queues) and `stop`.
@@ -69,6 +71,9 @@ mod imp {
         last_secs: Mutex<f64>,
         frames: AtomicU64,
         dropped: AtomicU64,
+        /// First append error that was not back-pressure: the writer has
+        /// failed and every later frame would fail too.
+        failure: Mutex<Option<String>>,
     }
 
     impl Sink {
@@ -102,7 +107,15 @@ mod imp {
                 Err(AVWriterError::InputNotReady) => {
                     self.dropped.fetch_add(1, Ordering::Relaxed);
                 }
-                Err(e) => log::warn!("recording: video append failed: {e:?}"),
+                Err(e) => self.fail(format!("video: {e:?}")),
+            }
+        }
+
+        fn fail(&self, msg: String) {
+            let mut f = self.failure.lock().unwrap_or_else(|e| e.into_inner());
+            if f.is_none() {
+                log::error!("recording: writer failed: {msg}");
+                *f = Some(msg);
             }
         }
 
@@ -115,7 +128,7 @@ mod imp {
             if let Some(writer) = guard.as_ref() {
                 match writer.append_sample(self.audio, sample) {
                     Ok(()) | Err(AVWriterError::InputNotReady) => {}
-                    Err(e) => log::warn!("recording: audio append failed: {e:?}"),
+                    Err(e) => self.fail(format!("audio: {e:?}")),
                 }
             }
         }
@@ -155,6 +168,28 @@ mod imp {
             fn sc_initialize_core_graphics();
         }
         INIT.call_once(|| unsafe { sc_initialize_core_graphics() });
+    }
+
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+
+    /// Whether the app may capture the screen. Never prompts.
+    pub fn has_permission() -> bool {
+        unsafe { CGPreflightScreenCaptureAccess() }
+    }
+
+    /// Shows the system prompt (first time) or does nothing (already
+    /// decided: the user has to change it in System Settings).
+    pub fn request_permission() {
+        unsafe { CGRequestScreenCaptureAccess() };
+    }
+
+    /// Length of a movie on disk, for recordings that lost their metadata.
+    pub fn media_duration(path: &Path) -> Option<f64> {
+        let d = avassetwriter::prelude::Asset::from_file_path(path).ok()?.duration().ok()?;
+        (d.timescale > 0).then(|| d.value as f64 / f64::from(d.timescale))
     }
 
     pub fn list_windows() -> Result<Vec<CaptureWindow>, String> {
@@ -222,6 +257,12 @@ mod imp {
             }
             let _ = std::fs::remove_file(path);
             let writer = Writer::create(path, FileType::Mp4).map_err(|e| format!("{e:?}"))?;
+            // Fragmented: if the app dies mid-game the file still plays up to
+            // the last fragment. A plain MP4 writes its index only at the end,
+            // so a crash would leave nothing playable.
+            writer
+                .set_movie_fragment_interval_seconds(FRAGMENT_SECS)
+                .map_err(|e| format!("fragment interval: {e:?}"))?;
             // Keys are the string values of AVFoundation's AVVideo*/AV*Key
             // constants; the bridge passes the dictionary through untouched.
             let video_settings = serde_json::json!({
@@ -258,6 +299,7 @@ mod imp {
                 last_secs: Mutex::new(0.0),
                 frames: AtomicU64::new(0),
                 dropped: AtomicU64::new(0),
+                failure: Mutex::new(None),
             });
             let mut stream = SCStream::new(&filter, &config).map_err(|e| format!("{e:?}"))?;
             stream
@@ -277,6 +319,15 @@ mod imp {
                 path.display()
             );
             Ok(Self { stream, sink, path: path.to_path_buf() })
+        }
+
+        pub fn path(&self) -> &Path {
+            &self.path
+        }
+
+        /// Why the writer failed mid-recording, if it did.
+        pub fn failure(&self) -> Option<String> {
+            self.sink.failure.lock().unwrap_or_else(|e| e.into_inner()).clone()
         }
 
         /// Wall-clock time of video time zero, once the first frame arrived.
@@ -322,6 +373,12 @@ mod imp {
             }
             let path = std::env::temp_dir().join("querylol-recorder-test.mp4");
             let rec = Recorder::start(&query, &path).unwrap();
+            // RECORD_ABORT_AFTER=N: die without stopping, to check that the
+            // fragmented file survives a crash.
+            if let Some(n) = std::env::var("RECORD_ABORT_AFTER").ok().and_then(|v| v.parse().ok()) {
+                std::thread::sleep(std::time::Duration::from_secs(n));
+                std::process::abort();
+            }
             std::thread::sleep(std::time::Duration::from_secs(5));
             let r = rec.stop().unwrap();
             println!("{r:?}");
@@ -335,10 +392,18 @@ mod imp {
     use super::{CaptureWindow, RecordingResult};
     use std::path::Path;
 
+
     pub struct Recorder;
 
     pub fn list_windows() -> Result<Vec<CaptureWindow>, String> {
         Err("recording is only implemented on macOS".into())
+    }
+    pub fn has_permission() -> bool {
+        false
+    }
+    pub fn request_permission() {}
+    pub fn media_duration(_path: &Path) -> Option<f64> {
+        None
     }
 
     impl Recorder {
@@ -351,10 +416,16 @@ mod imp {
         pub fn video_epoch(&self) -> Option<std::time::Instant> {
             None
         }
+        pub fn failure(&self) -> Option<String> {
+            None
+        }
+        pub fn path(&self) -> &Path {
+            Path::new("")
+        }
     }
 }
 
-pub use imp::{list_windows, Recorder};
+pub use imp::{has_permission, list_windows, media_duration, request_permission, Recorder};
 
 /// Whether this platform can record. The UI hides the setting elsewhere.
 pub const SUPPORTED: bool = cfg!(target_os = "macos");
@@ -386,6 +457,9 @@ pub struct RecordingMeta {
     pub offset_secs: Option<f64>,
     /// Chosen by the user: never pruned and not counted toward `KEEP_RECENT`.
     pub kept: bool,
+    /// The app stopped (crash, quit) or the writer failed before the game
+    /// ended. The video plays up to the last fragment written.
+    pub interrupted: bool,
     #[serde(flatten)]
     pub game: GameInfo,
 }
@@ -409,6 +483,32 @@ pub struct Session {
 #[derive(Default)]
 pub struct RecorderState {
     pub session: Option<Session>,
+    /// Shown in the UI; cleared when a recording starts.
+    pub status: RecordingStatus,
+    /// When this game's first start attempt failed for want of a window.
+    waiting_since: Option<std::time::Instant>,
+    /// Gave up on this game; no retries until it ends.
+    gave_up: bool,
+}
+
+/// Free space required to start a recording: a long game plus headroom.
+const MIN_FREE_BYTES: u64 = 4_000_000_000;
+/// How long the game window may take to appear before it is reported.
+const WINDOW_GRACE_SECS: u64 = 90;
+
+#[cfg(unix)]
+fn free_bytes(dir: &Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
+        return None;
+    }
+    Some(st.f_bavail as u64 * st.f_frsize as u64)
+}
+#[cfg(not(unix))]
+fn free_bytes(_dir: &Path) -> Option<u64> {
+    None
 }
 
 pub type SharedRecorder = std::sync::Arc<std::sync::Mutex<RecorderState>>;
@@ -427,17 +527,8 @@ pub fn recordings_dir(app: &tauri::AppHandle) -> PathBuf {
 /// offset does not depend on how stale the poll is by now.
 pub fn tick(rec: &SharedRecorder, app: &tauri::AppHandle, clock: Option<(f64, std::time::Instant)>) {
     let mut st = rec.lock().unwrap_or_else(|e| e.into_inner());
-    if st.session.is_none() {
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        let path = recordings_dir(app).join(format!("game-{stamp}.mp4"));
-        match Recorder::start(DEFAULT_WINDOW_QUERY, &path) {
-            Ok(recorder) => st.session = Some(Session { recorder, created_at: stamp, offset_secs: None }),
-            // The game window appears a few seconds after InProgress.
-            Err(e) => log::debug!("recording not started yet: {e}"),
-        }
+    if st.session.is_none() && !st.gave_up {
+        try_start(&mut st, app);
     }
     let Some(s) = st.session.as_mut() else { return };
     let (Some((game_time, polled_at)), Some(epoch)) = (clock, s.recorder.video_epoch()) else { return };
@@ -452,6 +543,57 @@ pub fn tick(rec: &SharedRecorder, app: &tauri::AppHandle, clock: Option<(f64, st
     }
 }
 
+/// One start attempt. Hard failures (permission, disk) give up for the rest
+/// of the game; a missing window is retried until `WINDOW_GRACE_SECS`.
+fn try_start(st: &mut RecorderState, app: &tauri::AppHandle) {
+    let give_up = |st: &mut RecorderState, why: String| {
+        log::warn!("recording: not recording this game: {why}");
+        st.status = RecordingStatus { active: false, error: Some(why) };
+        st.gave_up = true;
+    };
+    // Checked first so a missing permission never prompts mid-game.
+    if !has_permission() {
+        return give_up(st, "Screen Recording permission is missing".into());
+    }
+    let dir = recordings_dir(app);
+    let _ = std::fs::create_dir_all(&dir);
+    if let Some(free) = free_bytes(&dir) {
+        if free < MIN_FREE_BYTES {
+            return give_up(st, format!("Only {:.1} GB of disk space free (needs 4 GB)", free as f64 / 1e9));
+        }
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    match Recorder::start(DEFAULT_WINDOW_QUERY, &dir.join(format!("game-{stamp}.mp4"))) {
+        Ok(recorder) => {
+            st.session = Some(Session { recorder, created_at: stamp, offset_secs: None });
+            st.status = RecordingStatus { active: true, error: None };
+            st.waiting_since = None;
+        }
+        // The game window appears a few seconds after InProgress.
+        Err(e) if e.starts_with("no on-screen window") => {
+            let since = *st.waiting_since.get_or_insert_with(std::time::Instant::now);
+            if since.elapsed().as_secs() > WINDOW_GRACE_SECS {
+                give_up(st, "Couldn't find the game window to record".into());
+            }
+        }
+        Err(e) => give_up(st, format!("Couldn't start recording: {e}")),
+    }
+}
+
+/// The game is over (or never started): forget this game's attempts.
+pub fn reset_game(rec: &SharedRecorder) {
+    let mut st = rec.lock().unwrap_or_else(|e| e.into_inner());
+    st.waiting_since = None;
+    st.gave_up = false;
+}
+
+pub fn status(rec: &SharedRecorder) -> RecordingStatus {
+    rec.lock().map(|r| r.status.clone()).unwrap_or_default()
+}
+
 pub fn is_recording(rec: &SharedRecorder) -> bool {
     rec.lock().map(|r| r.session.is_some()).unwrap_or(false)
 }
@@ -461,10 +603,31 @@ pub fn is_recording(rec: &SharedRecorder) -> bool {
 /// prunes old recordings.
 pub fn finish(rec: &SharedRecorder, game: GameInfo) -> Option<RecordingResult> {
     let session = rec.lock().unwrap_or_else(|e| e.into_inner()).session.take()?;
-    let mut result = match session.recorder.stop() {
+    let path = session.recorder.path().to_path_buf();
+    let failure = session.recorder.failure();
+    let stopped = session.recorder.stop();
+    let error = match (&stopped, failure) {
+        (_, Some(f)) => Some(format!("Recording failed mid-game ({f})")),
+        (Err(e), None) => Some(format!("Recording failed: {e}")),
+        _ => None,
+    };
+    {
+        let mut st = rec.lock().unwrap_or_else(|e| e.into_inner());
+        st.status = RecordingStatus { active: false, error: error.clone() };
+        st.waiting_since = None;
+        st.gave_up = false;
+    }
+    let mut result = match stopped {
         Ok(r) => r,
+        // Fragments written before the failure still play: keep them.
+        Err(_) if std::fs::metadata(&path).map(|m| m.len() > 0).unwrap_or(false) => RecordingResult {
+            duration_secs: media_duration(&path).unwrap_or(0.0),
+            bytes: std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0),
+            path,
+        },
         Err(e) => {
             log::error!("stopping recording failed: {e}");
+            let _ = std::fs::remove_file(&path);
             return None;
         }
     };
@@ -480,6 +643,7 @@ pub fn finish(rec: &SharedRecorder, game: GameInfo) -> Option<RecordingResult> {
         bytes: result.bytes,
         offset_secs: session.offset_secs,
         kept: false,
+        interrupted: error.is_some(),
         game,
     };
     write_meta(&result.path, &meta);
@@ -567,6 +731,32 @@ pub fn delete(dir: &Path, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Gives metadata to videos left without it by a crash or forced quit, so
+/// they list as interrupted with a real duration. Run at startup, before
+/// any recording begins.
+pub fn recover_orphans(dir: &Path) {
+    for video in videos(dir) {
+        if video.with_extension("json").exists() {
+            continue;
+        }
+        let created_at = video
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.strip_prefix("game-"))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let meta = RecordingMeta {
+            created_at,
+            duration_secs: media_duration(&video).unwrap_or(0.0),
+            bytes: std::fs::metadata(&video).map(|m| m.len() as i64).unwrap_or(0),
+            interrupted: true,
+            ..Default::default()
+        };
+        log::info!("recording: recovered interrupted {}", video.display());
+        write_meta(&video, &meta);
+    }
+}
+
 /// Recordings kept besides the ones the user chose to keep. At ~1.6 GB per
 /// 35-minute game this caps the folder near 16 GB.
 pub const KEEP_RECENT: usize = 10;
@@ -610,6 +800,33 @@ mod tests {
             .collect();
         left.sort();
         assert_eq!(left, ["1.json", "1.mp4", "3.json", "3.mp4", "4.json", "4.mp4"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn recover_orphans_marks_interrupted() {
+        let dir = std::env::temp_dir().join(format!("querylol-orphans-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // RECORD_ORPHAN_SAMPLE: a real (e.g. crashed) mp4, to check the duration too.
+        let sample = std::env::var("RECORD_ORPHAN_SAMPLE").ok();
+        match &sample {
+            Some(src) => { std::fs::copy(src, dir.join("game-1700000000.mp4")).unwrap(); }
+            None => std::fs::write(dir.join("game-1700000000.mp4"), b"not a movie").unwrap(),
+        }
+        std::fs::write(dir.join("42.mp4"), b"x").unwrap();
+        std::fs::write(dir.join("42.json"), r#"{"game_id":42}"#).unwrap();
+        recover_orphans(&dir);
+        let all = list(&dir);
+        let orphan = all.iter().find(|r| r.id == "game-1700000000").unwrap();
+        assert!(orphan.meta.interrupted);
+        assert_eq!(orphan.meta.created_at, 1_700_000_000);
+        if sample.is_some() {
+            println!("recovered duration {:.1}s", orphan.meta.duration_secs);
+            assert!(orphan.meta.duration_secs > 1.0);
+        }
+        // A recording with metadata is left alone.
+        assert!(!all.iter().find(|r| r.id == "42").unwrap().meta.interrupted);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

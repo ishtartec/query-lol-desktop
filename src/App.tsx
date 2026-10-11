@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
-import { useRecordings, RecordingCard, RecordingPlayer, RecordingsLibrary, WatchPill, type Recording, type ChampionMap } from "./recordings";
+import { useRecordings, RecordingCard, RecordingPlayer, RecordingsLibrary, RecordingNotice, RecIndicator, WatchPill, type Recording, type ChampionMap, type RecordingStatus } from "./recordings";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
 import { check } from "@tauri-apps/plugin-updater";
@@ -337,6 +337,8 @@ interface AppState {
   tts_enabled: boolean;
   record_games: boolean;
   recording_supported: boolean;
+  recording_permission: boolean;
+  recording: RecordingStatus;
   region: string;
   flash_key: string;
   flash_key_detected: string | null;
@@ -2523,7 +2525,7 @@ function App() {
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
-    auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, record_games: false, recording_supported: false, region: "euw", flash_key: "auto", flash_key_detected: null,
+    auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, record_games: false, recording_supported: false, recording_permission: false, recording: { active: false, error: null }, region: "euw", flash_key: "auto", flash_key_detected: null,
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2754,7 +2756,8 @@ function App() {
               {state.ranked && <ImprovementPanel history={state.match_history} ranked={state.ranked} />}
               {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
               {state.recording_supported && (recordings.length > 0 || state.record_games) && (
-                <RecordingsLibrary recordings={recordings} recordingOn={state.record_games} champions={champMap} iconUrl={championIconUrl} onWatch={watch} />
+                <RecordingsLibrary recordings={recordings} recordingOn={state.record_games}
+                  permission={state.recording_permission} status={state.recording} champions={champMap} iconUrl={championIconUrl} onWatch={watch} />
               )}
               <MatchHistoryView history={state.match_history} recordingFor={recordingFor} onWatch={watch} />
             </>
@@ -2769,7 +2772,7 @@ function App() {
 
       {/* Live Game */}
       {inGame && state.live_game && (
-        <LiveGameView game={state.live_game} onViewPlayer={viewPlayer} />
+        <LiveGameView game={state.live_game} onViewPlayer={viewPlayer} recording={state.record_games && state.recording.active} />
       )}
 
       {/* Champ select */}
@@ -3136,7 +3139,8 @@ function App() {
       {/* Post-game summary */}
       {inPostGame && state.post_game && (
         <PostGameView stats={state.post_game} showBack={true} onViewPlayer={viewPlayer}
-          recording={recordingFor(state.post_game.game_id)} onWatch={watch} />
+          recording={recordingFor(state.post_game.game_id)} onWatch={watch}
+          recordingError={state.record_games ? state.recording.error : null} />
       )}
 
       {watchedRec && (
@@ -4682,7 +4686,7 @@ function useAlertManager(
   }), [setAlerts]);
 }
 
-function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlayer?: (puuid: string) => void }) {
+function LiveGameView({ game, onViewPlayer, recording }: { game: LiveGameState; onViewPlayer?: (puuid: string) => void; recording?: boolean }) {
   const ld = game.live_data;
   // Calculate total gold from players (unspent + items) instead of backend values
   const allyGold = game.allies.reduce((s, p) => s + playerTotalGold(p), 0);
@@ -4768,6 +4772,7 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
       <div className="lg-header">
         <h3 className="section-title">In Game</h3>
         <div className="lg-header-right">
+          {recording && <RecIndicator />}
           {ld && <span className="lg-timer">{formatGameTime(ld.game_time)}</span>}
           <span className="lg-queue">{game.queue_name}</span>
         </div>
@@ -5454,9 +5459,10 @@ function DamageProfilePanel({ stats }: { stats: PostGameStats }) {
   );
 }
 
-function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch }: {
+function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recordingError }: {
   stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void;
   recording?: Recording; onWatch?: (rec: Recording, at?: number) => void;
+  recordingError?: string | null;
 }) {
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
 
@@ -5474,6 +5480,7 @@ function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch }: {
         <h3 className="section-title">Match Summary</h3>
       </div>
       {recording && onWatch && <RecordingCard rec={recording} onWatch={onWatch} />}
+      {!recording && recordingError && <RecordingNotice error={recordingError} />}
       <div className="postgame-teams">
         {sorted.map((team, ti) => {
           const players = [...team.players].sort(
