@@ -246,7 +246,7 @@
 
 .rec-lib { display: flex; flex-direction: column; gap: 14px; margin: 16px 0; }
 .rec-lib-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-.rec-lib-title { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
+.rec-lib-title { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
 .rec-lib-sub { margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
 
 .rec-storage { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }

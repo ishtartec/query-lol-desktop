@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
-import { Toggle, Segmented, Select, GearIcon, useDismiss } from "./ui";
+import { Toggle, Segmented, Select, GearIcon, useDismiss, SectionLabel, Badge } from "./ui";
 import { useRecordings, RecordingCard, RecordingPlayer, RecordingsLibrary, RecordingNotice, RecIndicator, WatchPill, type Recording, type ChampionMap, type RecordingStatus } from "./recordings";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
@@ -2629,6 +2629,9 @@ function App() {
   const recordingFor = (gameId: number) => gameId > 0 ? recordings.find(r => r.game_id === gameId) : undefined;
 
   const championInfo = useChampionName(state.champion_id);
+  // Practice Tool games are logged as losses with no opponent; they are not
+  // games for any statistic (they produced a fake 3-loss streak).
+  const playedHistory = useMemo(() => state.match_history.filter(m => !isPractice(m)), [state.match_history]);
 
   useEffect(() => {
     invoke<AppState>("get_state").then(setState);
@@ -2774,12 +2777,16 @@ function App() {
         <section className="section-lobby">
           {state.match_history.length > 0 ? (
             <>
-              <LobbyBackground history={state.match_history} />
-              <DailySummary history={state.match_history} lpHistory={state.lp_history} />
-              <TiltGate history={state.match_history} />
-              <ChampionImprovement history={state.match_history} />
-              {state.ranked && <ImprovementPanel history={state.match_history} ranked={state.ranked} />}
-              {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
+              <LobbyBackground history={playedHistory} />
+              <DailySummary history={playedHistory} lpHistory={state.lp_history} />
+              <TiltGate history={playedHistory} />
+              <div className="lobby-grid">
+                <ChampionImprovement history={playedHistory} />
+                <div className="lobby-side">
+                  {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
+                  {state.ranked && <ImprovementPanel history={playedHistory} ranked={state.ranked} />}
+                </div>
+              </div>
               {state.recording_supported && (recordings.length > 0 || state.record_games) && (
                 <RecordingsLibrary recordings={recordings} recordingOn={state.record_games}
                   permission={state.recording_permission} status={state.recording} champions={champMap} iconUrl={championIconUrl} onWatch={watch} />
@@ -3338,18 +3345,12 @@ function DailySummary({ history, lpHistory }: { history: MatchHistoryEntry[]; lp
   const timeWarn = totalSecs > 5 * 3600 ? "danger" : totalSecs > 3 * 3600 ? "warn" : "";
 
   return (
-    <div className="daily-summary">
-      <div className="daily-header">
-        <span className="daily-title">Today</span>
-        <span className={`daily-time ${timeWarn ? `daily-time-${timeWarn}` : ""}`}>
-          {formatPlayedDuration(totalSecs)} played
-          {totalSecs > 5 * 3600 && <span className="daily-time-tip"> · consider a break</span>}
-        </span>
-      </div>
+    <section className="daily-summary q-card" aria-label="Today">
+      <h3 className="q-label daily-title">Today</h3>
       <div className="daily-stats">
         <div className="daily-stat">
           <span className="daily-stat-value">{today.length}</span>
-          <span className="daily-stat-label">Games</span>
+          <span className="daily-stat-label">{today.length === 1 ? "game" : "games"}</span>
         </div>
         <div className="daily-stat">
           <span className={`daily-stat-value ${winRate >= 55 ? "lg-wr-good" : winRate < 45 ? "lg-wr-bad" : ""}`}>
@@ -3362,7 +3363,7 @@ function DailySummary({ history, lpHistory }: { history: MatchHistoryEntry[]; lp
             <span className={`daily-stat-value ${streakIsWin ? "lg-wr-good" : "lg-wr-bad"}`}>
               {streakIsWin ? `${streak}W` : `${streak}L`}
             </span>
-            <span className="daily-stat-label">Streak</span>
+            <span className="daily-stat-label">streak</span>
           </div>
         )}
         {lpNet !== null && (
@@ -3370,22 +3371,26 @@ function DailySummary({ history, lpHistory }: { history: MatchHistoryEntry[]; lp
             <span className={`daily-stat-value ${lpNet > 0 ? "lg-wr-good" : lpNet < 0 ? "lg-wr-bad" : ""}`}>
               {lpNet > 0 ? "+" : ""}{lpNet}
             </span>
-            <span className="daily-stat-label">LP</span>
+            <span className="daily-stat-label">LP today</span>
           </div>
         )}
         {bestKda && (
           <div className="daily-stat daily-stat-mvp">
-            <ChampionIcon championId={bestKda.champ} size={28} />
+            <ChampionIcon championId={bestKda.champ} size={36} />
             <div className="daily-mvp-info">
               <span className="daily-stat-value">
-                {bestKda.k}/{bestKda.d}/{bestKda.a}
+                {bestKda.k} / {bestKda.d} / {bestKda.a}
               </span>
-              <span className="daily-stat-label">Best KDA</span>
+              <span className="daily-stat-label">best game</span>
             </div>
           </div>
         )}
       </div>
-    </div>
+      <span className={`daily-time ${timeWarn ? `daily-time-${timeWarn}` : ""}`}>
+        {formatPlayedDuration(totalSecs)} played
+        {totalSecs > 5 * 3600 && <span className="daily-time-tip"> · consider a break</span>}
+      </span>
+    </section>
   );
 }
 
@@ -3449,54 +3454,46 @@ function ChampionImprovement({ history }: { history: MatchHistoryEntry[] }) {
   if (!baseline) return null;
 
   return (
-    <div className="champ-improvement">
-      <div className="champ-improvement-header">
-        <span className="champ-improvement-title">Top Champions vs Your Baseline</span>
-        <span className="champ-improvement-baseline">
-          KDA {baseline.kda.toFixed(1)} · CS/min {baseline.csPerMin.toFixed(1)} · Gold/min {baseline.goldPerMin.toFixed(0)}
-        </span>
+    <section className="champ-improvement q-card" aria-label="Top champions vs your baseline">
+      <SectionLabel meta={`KDA ${baseline.kda.toFixed(1)} · CS/min ${baseline.csPerMin.toFixed(1)} · Gold/min ${baseline.goldPerMin.toFixed(0)}`}>
+        Top champions vs your baseline
+      </SectionLabel>
+      <div className="ci-table" role="table">
+        <div className="ci-head" role="row">
+          <span role="columnheader" />
+          <span role="columnheader">KDA</span>
+          <span role="columnheader">CS / min</span>
+          <span role="columnheader">Gold / min</span>
+          <span role="columnheader">Win rate</span>
+        </div>
+        {top.map(c => (
+          <div key={c.id} className="ci-row" role="row">
+            <span className="ci-champ" role="cell">
+              <ChampionIcon championId={c.id} size={36} />
+              <span className="ci-champ-text">
+                <ChampionNameLabel championId={c.id} fallback={`Champ ${c.id}`} />
+                <span className="ci-games">{c.stats.games} games</span>
+              </span>
+            </span>
+            <ImprovementMetric value={c.stats.kda.toFixed(1)} delta={deltaPct(c.stats.kda, baseline.kda)} />
+            <ImprovementMetric value={c.stats.csPerMin.toFixed(1)} delta={deltaPct(c.stats.csPerMin, baseline.csPerMin)} />
+            <ImprovementMetric value={c.stats.goldPerMin.toFixed(0)} delta={deltaPct(c.stats.goldPerMin, baseline.goldPerMin)} />
+            <ImprovementMetric value={`${(c.stats.winRate * 100).toFixed(0)}%`} delta={deltaPct(c.stats.winRate, baseline.winRate)} />
+          </div>
+        ))}
       </div>
-      <div className="champ-improvement-list">
-        {top.map(c => {
-          const wrDelta = deltaPct(c.stats.winRate, baseline.winRate);
-          const kdaDelta = deltaPct(c.stats.kda, baseline.kda);
-          const csDelta = deltaPct(c.stats.csPerMin, baseline.csPerMin);
-          const goldDelta = deltaPct(c.stats.goldPerMin, baseline.goldPerMin);
-          return (
-            <div key={c.id} className="champ-improvement-row">
-              <ChampionIcon championId={c.id} size={34} />
-              <div className="champ-improvement-info">
-                <div className="champ-improvement-name">
-                  <ChampionNameLabel championId={c.id} fallback={`Champ ${c.id}`} />
-                  <span className="champ-improvement-games">{c.stats.games} games</span>
-                  <span className={`champ-improvement-wr ${c.stats.winRate >= 0.55 ? "lg-wr-good" : c.stats.winRate < 0.45 ? "lg-wr-bad" : ""}`}>
-                    {(c.stats.winRate * 100).toFixed(0)}% WR
-                  </span>
-                </div>
-                <div className="champ-improvement-metrics">
-                  <ImprovementMetric label="KDA" value={c.stats.kda.toFixed(1)} delta={kdaDelta} />
-                  <ImprovementMetric label="CS/min" value={c.stats.csPerMin.toFixed(1)} delta={csDelta} />
-                  <ImprovementMetric label="Gold/min" value={c.stats.goldPerMin.toFixed(0)} delta={goldDelta} />
-                  <ImprovementMetric label="WR" value={`${(c.stats.winRate * 100).toFixed(0)}%`} delta={wrDelta} />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    </section>
   );
 }
 
-function ImprovementMetric({ label, value, delta }: { label: string; value: string; delta: number }) {
-  const sign = delta > 0 ? "+" : "";
+function ImprovementMetric({ value, delta }: { value: string; delta: number }) {
   const tone = delta >= 5 ? "good" : delta <= -5 ? "bad" : "neutral";
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "±";
   return (
-    <div className={`improvement-metric improvement-metric-${tone}`}>
-      <span className="improvement-metric-label">{label}</span>
-      <span className="improvement-metric-value">{value}</span>
-      <span className="improvement-metric-delta">{sign}{delta.toFixed(0)}%</span>
-    </div>
+    <span className={`ci-cell improvement-metric-${tone}`} role="cell">
+      <span className="ci-value">{value}</span>
+      <span className="ci-delta">{sign}{Math.abs(delta).toFixed(0)}%</span>
+    </span>
   );
 }
 
@@ -3641,6 +3638,11 @@ function inferMainRole(games: MatchHistoryEntry[]): { role: string | null; confi
   return { role: topRole, confidence: topCount / resolved };
 }
 
+/** Role keys as players say them. */
+function roleName(role: string): string {
+  return ({ TOP: "top", JUNGLE: "jungle", MIDDLE: "mid", BOTTOM: "bot", UTILITY: "support" } as Record<string, string>)[role] ?? role.toLowerCase();
+}
+
 function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; ranked: RankedInfo }) {
   const tierKey = ranked.tier.toUpperCase();
   const tierLabel = ranked.tier.charAt(0).toUpperCase() + ranked.tier.slice(1).toLowerCase();
@@ -3708,8 +3710,8 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
 
   const sampleLabel = usingNormals ? `${n} recent SR games` : `${n} ranked games`;
   const subText = roleLabel
-    ? `vs ${tierLabel} ${roleLabel} avg · ${sampleLabel}`
-    : `vs ${tierLabel} avg · ${sampleLabel}`;
+    ? `vs ${tierLabel} ${roleName(roleLabel)} · ${sampleLabel}`
+    : `vs ${tierLabel} · ${sampleLabel}`;
 
   // Empty state: every flagged metric is at or above the role-adjusted target.
   // Surface the closest-to-target metric instead of hiding the panel entirely
@@ -3724,25 +3726,25 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
       .map(m => ({ ...m, lead: (m.val - m.ref) / m.ref }))
       .sort((a, b) => a.lead - b.lead)[0];
     return (
-      <div className="improve-panel">
-        <h4 className="improve-title">Areas to Improve <span className="improve-sub">{subText}</span></h4>
+      <section className="improve-panel q-card" aria-label="Areas to improve">
+        <SectionLabel meta={subText}>Areas to improve</SectionLabel>
         <div className="improve-empty">
           <div className="improve-empty-title">
-            <span className="improve-empty-check">✓</span>
-            On track across the board for {tierLabel}{roleLabel ? ` ${roleLabel}` : ""}
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            On track across the board for {tierLabel}{roleLabel ? ` ${roleName(roleLabel)}` : ""}
           </div>
           <div className="improve-empty-body">
             Closest to baseline: <strong>{closest.metric}</strong> at {closest.fmt(closest.val)} (target {closest.fmt(closest.ref)}, +{(closest.lead * 100).toFixed(0)}%).
             Focus on macro: objective tempo, warding before fights, and teamfight positioning.
           </div>
         </div>
-      </div>
+      </section>
     );
   }
 
   return (
-    <div className="improve-panel">
-      <h4 className="improve-title">Areas to Improve <span className="improve-sub">{subText}</span></h4>
+    <section className="improve-panel q-card" aria-label="Areas to improve">
+      <SectionLabel meta={subText}>Areas to improve</SectionLabel>
       {top3.map((p, i) => (
         <div key={i} className="improve-row">
           <span className="improve-metric">{p.metric}</span>
@@ -3757,7 +3759,7 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
           <span className="improve-tip">{p.tip}</span>
         </div>
       ))}
-    </div>
+    </section>
   );
 }
 
@@ -3778,60 +3780,46 @@ function absoluteLp(tier: string, rank: string, lp: number): number {
 
 function LpChart({ history }: { history: LpEntry[] }) {
   const width = 400;
-  const height = 48;
-  const pad = { top: 6, bottom: 14, left: 8, right: 8 };
+  const height = 90;
+  const pad = { top: 8, bottom: 4 };
 
   const absLps = history.map(h => absoluteLp(h.tier, h.rank, h.lp));
-  const minLp = Math.min(...absLps) - 15;
-  const maxLp = Math.max(...absLps) + 15;
+  const minLp = Math.min(...absLps) - 10;
+  const maxLp = Math.max(...absLps) + 10;
   const range = Math.max(maxLp - minLp, 20);
+  const x = (i: number) => (i / Math.max(history.length - 1, 1)) * width;
+  const y = (abs: number) => pad.top + (1 - (abs - minLp) / range) * (height - pad.top - pad.bottom);
 
-  const points = history.map((h, i) => {
-    const abs = absoluteLp(h.tier, h.rank, h.lp);
-    const x = pad.left + (i / Math.max(history.length - 1, 1)) * (width - pad.left - pad.right);
-    const y = pad.top + (1 - (abs - minLp) / range) * (height - pad.top - pad.bottom);
-    return { x, y, lp: h.lp, tier: h.tier, rank: h.rank };
-  });
-
-  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  const line = absLps.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area = `${line} L${width},${height} L0,${height} Z`;
 
   const first = history[0];
   const last = history[history.length - 1];
-  const absFirst = absoluteLp(first.tier, first.rank, first.lp);
-  const absLast = absoluteLp(last.tier, last.rank, last.lp);
-  const diff = absLast - absFirst;
-  const diffColor = diff >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+  const diff = absLps[absLps.length - 1] - absLps[0];
+  const rankLabel = (e: LpEntry) => `${titleCase(e.tier)} ${e.rank}`;
 
   return (
-    <div className="lp-chart-container">
-      <div className="lp-chart-header">
-        <h3 className="section-title">LP Progress</h3>
-        <span className="lp-diff" style={{ color: diffColor }}>
-          {diff >= 0 ? "+" : ""}{diff} LP {first.tier !== last.tier || first.rank !== last.rank ? `(${last.tier} ${last.rank})` : ""}
-        </span>
+    <section className="lp-chart-container q-card" aria-label="LP progress">
+      <div className="q-section-head">
+        <h3 className="q-label">LP progress</h3>
+        <span className={`lp-diff ${diff >= 0 ? "is-up" : "is-down"}`}>{diff >= 0 ? "+" : "−"}{Math.abs(diff)} LP</span>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="lp-chart-svg">
-        {/* Grid line at current LP */}
-        <line x1={pad.left} y1={points[points.length-1].y} x2={width - pad.right} y2={points[points.length-1].y}
-          stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="4 2" opacity="0.6" />
-
-        {/* Line */}
-        <path d={linePath} fill="none" stroke="var(--accent-gold)" strokeWidth="2" strokeLinejoin="round" />
-
-        {/* Dots */}
-        {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 3 : 1.8}
-            fill={i === points.length - 1 ? "var(--accent-gold)" : "var(--bg-card)"}
-            stroke="var(--accent-gold)" strokeWidth="1.2" />
-        ))}
-
-        {/* Current LP label */}
-        <text x={width - pad.right} y={height - 2} textAnchor="end"
-          fill="var(--text-secondary)" fontSize="9" fontWeight="600">
-          {last.lp} LP
-        </text>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="lp-chart-svg"
+        role="img" aria-label={`LP over the last ${history.length} games, from ${rankLabel(first)} ${first.lp} LP to ${rankLabel(last)} ${last.lp} LP`}>
+        <defs>
+          <linearGradient id="lpFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="var(--accent-gold)" stopOpacity="0.28" />
+            <stop offset="1" stopColor="var(--accent-gold)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#lpFill)" />
+        <path d={line} fill="none" stroke="var(--accent-gold)" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       </svg>
-    </div>
+      <div className="lp-chart-axis">
+        <span>{history.length} games ago · {rankLabel(first)} {first.lp} LP</span>
+        <span>Now · {rankLabel(last)} {last.lp} LP</span>
+      </div>
+    </section>
   );
 }
 
@@ -3852,15 +3840,17 @@ function MatchHistoryView({ history, recordingFor, onWatch }: {
   else if (modeFilter === "aram") modeFiltered = modeFiltered.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM");
   const filtered = champFilter ? modeFiltered.filter(m => m.champion_id === champFilter) : modeFiltered;
   const visible = showAll ? filtered : filtered.slice(0, 10);
+  // Practice Tool games stay in the list but count for nothing.
+  const played = filtered.filter(m => !isPractice(m));
 
-  const wins = filtered.filter(h => h.win).length;
-  const losses = filtered.length - wins;
-  const wr = filtered.length > 0 ? ((wins / filtered.length) * 100).toFixed(0) : "0";
+  const wins = played.filter(h => h.win).length;
+  const losses = played.length - wins;
+  const wr = played.length > 0 ? ((wins / played.length) * 100).toFixed(0) : "0";
 
   // Calculate current streak
   let streakCount = 0;
-  let streakWin = filtered.length > 0 ? filtered[0].win : true;
-  for (const m of filtered) {
+  let streakWin = played.length > 0 ? played[0].win : true;
+  for (const m of played) {
     if (m.win === streakWin) streakCount++;
     else break;
   }
@@ -3868,41 +3858,33 @@ function MatchHistoryView({ history, recordingFor, onWatch }: {
   return (
     <div className="mh-layout">
       <div className="mh-header">
-        <h3 className="section-title">Recent Matches</h3>
+        <div className="mh-header-left">
+          <h3 className="q-label">Recent matches</h3>
+          <Segmented label="Queue filter" value={modeFilter}
+            onChange={(mode) => { setModeFilter(mode); setShowAll(false); }}
+            options={(["all", "ranked", "normal", "aram"] as const).map(mode => ({
+              value: mode,
+              label: <>{mode === "all" ? "All" : mode === "ranked" ? "Ranked" : mode === "normal" ? "Normal" : "ARAM"}
+                <span className="mh-mode-count">{mode === "all" ? history.length
+                  : mode === "ranked" ? history.filter(m => m.queue_id === 420 || m.queue_id === 440).length
+                  : mode === "normal" ? history.filter(m => m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490).length
+                  : history.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM").length}</span></>,
+            }))} />
+        </div>
         <div className="mh-summary">
           {streakCount >= 2 && (
-            <span className={`mh-streak ${streakWin ? "streak-win" : "streak-loss"}`}>
-              {streakCount} {streakWin ? "Win" : "Loss"} Streak
-            </span>
+            <Badge tone={streakWin ? "positive" : "negative"}>{streakCount}{streakWin ? "W" : "L"} streak</Badge>
           )}
-          <span className="mh-wl">
-            <span className="mh-wins">{wins}W</span> <span className="mh-losses">{losses}L</span>
-          </span>
-          <span className="mh-wr">{wr}% WR</span>
+          <span className="mh-wl">{wins}W {losses}L</span>
+          <span className="mh-wr">{wr}%</span>
         </div>
-      </div>
-      {/* Mode filter tabs */}
-      <div className="mh-mode-tabs">
-        {["all", "ranked", "normal", "aram"].map(mode => (
-          <button key={mode} className={`mh-mode-tab ${modeFilter === mode ? "mh-mode-active" : ""}`}
-            onClick={() => { setModeFilter(mode); setShowAll(false); }}>
-            {mode === "all" ? "All" : mode === "ranked" ? "Ranked" : mode === "normal" ? "Normal" : "ARAM"}
-            {mode !== "all" && (
-              <span className="mh-mode-count">
-                {mode === "ranked" ? history.filter(m => m.queue_id === 420 || m.queue_id === 440).length
-                  : mode === "normal" ? history.filter(m => m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490).length
-                  : history.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM").length}
-              </span>
-            )}
-          </button>
-        ))}
       </div>
 
       {/* Champion Stats */}
-      <ChampionStatsBar history={modeFiltered} filter={champFilter} onFilter={setChampFilter} />
+      <ChampionStatsBar history={modeFiltered.filter(m => !isPractice(m))} filter={champFilter} onFilter={setChampFilter} />
 
       <div className="mh-trend">
-        {filtered.slice(0, 15).map((m, i) => (
+        {played.slice(0, 15).map((m, i) => (
           <div key={i} className={`mh-trend-dot ${m.win ? "trend-win" : "trend-loss"}`} title={m.win ? "Win" : "Loss"} />
         ))}
       </div>
@@ -3932,42 +3914,38 @@ function MatchHistoryRow({ match: m, recording, onWatch }: {
   const kda = m.deaths === 0 ? "Perfect" : ((m.kills + m.assists) / m.deaths).toFixed(1);
   const mins = Math.floor(m.duration_secs / 60);
   const ago = timeAgo(m.timestamp);
-  const total = m.kills + m.deaths + m.assists || 1;
 
   return (
-    <div className={`mh-row ${m.win ? "mh-row-win" : "mh-row-loss"}`}
+    <div className="mh-row" role="button" tabIndex={0}
       onClick={() => invoke("view_match_details", { gameId: m.game_id })}
-      style={{ cursor: "pointer" }}>
-      <div className={`mh-result ${m.win ? "win" : "loss"}`}>{m.win ? "W" : "L"}</div>
+      onKeyDown={(e) => { if (e.key === "Enter") invoke("view_match_details", { gameId: m.game_id }); }}>
+      {isPractice(m)
+        ? <span className="mh-result practice" aria-label="Practice">P</span>
+        : <span className={`mh-result ${m.win ? "win" : "loss"}`} aria-label={m.win ? "Win" : "Loss"}>{m.win ? "W" : "L"}</span>}
       <ChampionIcon championId={m.champion_id} size={36} />
       <div className="mh-info">
         <span className="mh-champ">{champInfo?.name || "..."}</span>
         <span className="mh-mode">{queueLabel(m.queue_id, m.game_mode)}</span>
       </div>
       <div className="mh-kda-col">
-        <span className="pg-kda">
-          <span className="pg-k">{m.kills}</span>
-          <span className="pg-sep">/</span>
-          <span className="pg-d">{m.deaths}</span>
-          <span className="pg-sep">/</span>
-          <span className="pg-a">{m.assists}</span>
-        </span>
-        <span className="pg-kda-ratio">{kda} KDA</span>
+        <span className="mh-kda">{m.kills} / {m.deaths} / {m.assists}</span>
+        <span className="mh-kda-ratio">{kda} KDA</span>
       </div>
-      <div className="mh-kda-bar">
-        <div className="mh-kda-bar-k" style={{ width: `${(m.kills / total) * 100}%` }} />
-        <div className="mh-kda-bar-d" style={{ width: `${(m.deaths / total) * 100}%` }} />
-        <div className="mh-kda-bar-a" style={{ width: `${(m.assists / total) * 100}%` }} />
-      </div>
+      <span className="mh-cs">{m.cs} CS{mins > 0 && m.cs > 0 ? ` · ${(m.cs / (m.duration_secs / 60)).toFixed(1)}/min` : ""}</span>
+      <div className="mh-spacer" />
       {recording && onWatch && <WatchPill rec={recording} onWatch={onWatch} />}
       <span className="mh-duration">{mins}m</span>
-      <div className="mh-spacer" />
       <span className="mh-ago">{ago}</span>
     </div>
   );
 }
 
+function isPractice(m: MatchHistoryEntry): boolean {
+  return m.game_mode === "PRACTICETOOL";
+}
+
 function queueLabel(queueId: number, gameMode: string): string {
+  if (gameMode === "PRACTICETOOL") return "Practice Tool";
   // Common queue IDs
   if (queueId === 420) return "Ranked Solo";
   if (queueId === 440) return "Ranked Flex";
