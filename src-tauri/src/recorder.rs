@@ -491,6 +491,10 @@ pub struct RecorderState {
     gave_up: bool,
 }
 
+/// Game time the Live Client clock must reach before it is trusted for the
+/// video offset (it is frozen near zero while the game loads).
+const MIN_CLOCK_SECS: f64 = 5.0;
+
 /// Free space required to start a recording: a long game plus headroom.
 const MIN_FREE_BYTES: u64 = 4_000_000_000;
 /// How long the game window may take to appear before it is reported.
@@ -532,7 +536,11 @@ pub fn tick(rec: &SharedRecorder, app: &tauri::AppHandle, clock: Option<(f64, st
     }
     let Some(s) = st.session.as_mut() else { return };
     let (Some((game_time, polled_at)), Some(epoch)) = (clock, s.recorder.video_epoch()) else { return };
-    if s.offset_secs.is_none() && game_time > 0.0 {
+    // During the loading screen the Live Client API already answers, with a
+    // game time stuck just above zero. Taking that as the clock put the
+    // offset at 0.02 s in a game whose video starts 58.9 s before 0:00,
+    // so every jump landed a minute early. Wait until the clock runs.
+    if s.offset_secs.is_none() && game_time >= MIN_CLOCK_SECS {
         let video_t = if polled_at >= epoch {
             (polled_at - epoch).as_secs_f64()
         } else {
