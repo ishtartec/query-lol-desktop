@@ -1772,6 +1772,11 @@ function computeBuildSequence(
 // defensive item that addresses the dominant threat. Returns null if none.
 
 type ThreatKind = "antiheal" | "mr-squishy" | "mr-bruiser" | "armor-squishy" | "armor-bruiser" | "tenacity" | "anti-shield";
+/** Short labels for the overlay, which cannot show a tooltip. */
+const THREAT_SHORT: Record<ThreatKind, string> = {
+  antiheal: "Antiheal", "mr-squishy": "MR", "mr-bruiser": "MR", "armor-squishy": "Armor",
+  "armor-bruiser": "Armor", tenacity: "Tenacity", "anti-shield": "Shields",
+};
 interface ThreatSuggestion {
   kind: ThreatKind;
   itemId: number;
@@ -6311,41 +6316,43 @@ function OverlayApp() {
   return (
     <div className="overlay">
       {/* Header: ally kills + win prob + gold diff + enemy kills */}
-      <div className="ov-header">
-        <span className="ov-score-ally">{allyKills}</span>
+      <div className="ov-card ov-header">
+        <span className="ov-score ov-score-ally">{allyKills}<span className="ov-score-label">kills</span></span>
         <div className="ov-center">
-          <span className={`ov-win-prob ${ovWinProb > 0.55 ? "lg-wr-good" : ovWinProb < 0.45 ? "lg-wr-bad" : ""}`}>
-            {(ovWinProb * 100).toFixed(0)}%
+          <span className="ov-center-top">
+            <span className={`ov-win-prob ${ovWinProb > 0.55 ? "lg-wr-good" : ovWinProb < 0.45 ? "lg-wr-bad" : ""}`}>
+              {(ovWinProb * 100).toFixed(0)}%
+            </span>
+            {ld && <span className="ov-timer">{formatGameTime(ld.game_time)}</span>}
           </span>
-          <span className={`ov-total-diff ${totalDiff > 0 ? "lg-wr-good" : totalDiff < 0 ? "lg-wr-bad" : ""}`}>
-            {totalDiff > 0 ? "◀◀" : totalDiff < 0 ? "▶▶" : "="} {Math.abs(Math.round(totalDiff)).toLocaleString()}
+          <span className={`ov-total-diff ${totalDiff > 200 ? "is-up" : totalDiff < -200 ? "is-down" : ""}`}>
+            {totalDiff > 0 ? "+" : totalDiff < 0 ? "−" : "±"}{Math.abs(Math.round(totalDiff)).toLocaleString()} gold
           </span>
-          {ld && <span className="ov-timer">{formatGameTime(ld.game_time)}</span>}
         </div>
-        <span className="ov-score-enemy">{enemyKills}</span>
+        <span className="ov-score ov-score-enemy">{enemyKills}<span className="ov-score-label">kills</span></span>
       </div>
 
       {/* Lane matchups */}
-      <div className="ov-lanes">
+      <div className="ov-card ov-lanes">
         {matchups.map((m, i) => (
           <div key={i} className="ov-lane">
             <div className="ov-lane-player ov-lane-ally">
               <div className="ov-champ">
-                <ChampionIcon championId={m.ally.champion_id} size={28} />
+                <ChampionIcon championId={m.ally.champion_id} size={30} />
                 {m.ally.live && <span className="ov-champ-lvl">{m.ally.live.level}</span>}
               </div>
               <span className="ov-lane-gold">{Math.round(m.allyGold).toLocaleString()}</span>
             </div>
             <div className="ov-lane-center">
-              <span className={`ov-lane-diff ${m.diff > 200 ? "lg-wr-good" : m.diff < -200 ? "lg-wr-bad" : ""}`}>
-                {m.diff > 0 ? "◀ " : m.diff < 0 ? " ▶" : ""}{Math.abs(Math.round(m.diff)).toLocaleString()}
+              <span className={`ov-lane-diff ${m.diff > 200 ? "is-up" : m.diff < -200 ? "is-down" : ""}`}>
+                {m.diff > 0 ? "+" : m.diff < 0 ? "−" : "±"}{Math.abs(Math.round(m.diff)).toLocaleString()}
               </span>
             </div>
             <div className="ov-lane-player ov-lane-enemy">
               <span className="ov-lane-gold">{Math.round(m.enemyGold).toLocaleString()}</span>
               <div className="ov-champ">
                 {m.enemy.live && <span className="ov-champ-lvl">{m.enemy.live.level}</span>}
-                <ChampionIcon championId={m.enemy.champion_id} size={28} />
+                <ChampionIcon championId={m.enemy.champion_id} size={30} />
               </div>
             </div>
           </div>
@@ -6357,46 +6364,42 @@ function OverlayApp() {
         <div className="ov-missing">
           {missing.map(m => (
             <span key={`mia_${m.key}`} className="ov-missing-tag">
-              <span className="ov-missing-icon">⚠</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round" /><path d="M12 10v4M12 17.5v.5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
               <span className="ov-missing-pos">{m.pos}</span>
-              <span className="ov-missing-label">MIA</span>
+              <span className="ov-missing-label">missing</span>
               <span className="ov-missing-dur">{Math.floor(m.durationSec / 60)}:{(m.durationSec % 60).toString().padStart(2, "0")}</span>
             </span>
           ))}
           {deadEnemies.map(d => (
             <span key={`dead_${d.key}`} className="ov-dead-tag">
-              <span className="ov-missing-icon">💀</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M9 21h6M10 11h.01M14 11h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
               <span className="ov-missing-pos">{d.pos}</span>
+              <span className="ov-missing-label">dead</span>
               <span className="ov-missing-dur">{d.remaining}s</span>
             </span>
           ))}
         </div>
       )}
 
-      {/* Tactical line: recall + wave + jungle + vision (compact) */}
+      {/* Tactical line + objectives. The overlay is click-through, so
+          everything has to read without hovering: no titles. */}
+      {(recall || waveAdvice || jglInfo || (visionAdvice && visionAdvice.lagging) || ovSpawnsVisible.length > 0) && (
+      <div className="ov-card ov-tac-card">
       {(recall || waveAdvice || jglInfo || (visionAdvice && visionAdvice.lagging)) && (
         <div className="ov-tactical">
           {recall && (
-            <span className={`ov-tac-chip ov-tac-recall ${recall.affordable ? "ov-tac-ready" : ""}`}
-                  title={recall.affordable ? `Recall ready · ${recall.item}` : `${recall.gold}g a ${recall.item}`}>
-              {recall.affordable ? "B" : `${recall.gold}g`} {recall.item}
+            <span className={`ov-tac-chip ov-tac-recall ${recall.affordable ? "ov-tac-ready" : ""}`}>
+              {recall.affordable ? `B · ${recall.item} ready` : `${recall.gold}g to ${recall.item}`}
             </span>
           )}
           {waveAdvice && (
-            <span className={`ov-tac-chip ov-tac-${waveAdvice.tone}`} title="Wave state advisor">
-              {waveAdvice.text}
-            </span>
+            <span className={`ov-tac-chip ov-tac-${waveAdvice.tone}`}>{waveAdvice.text}</span>
           )}
           {jglInfo && enemyJungler && (
-            <span className="ov-tac-chip ov-tac-jgl"
-                  title={`Last seen ${jglInfo.lastSeenSec}s ago`}>
-              JGL: {jglInfo.guess}
-            </span>
+            <span className="ov-tac-chip ov-tac-jgl">Jungler: {jglInfo.guess} · {jglInfo.lastSeenSec}s</span>
           )}
           {visionAdvice && visionAdvice.lagging && (
-            <span className="ov-tac-chip ov-tac-vision" title={`Vision ${visionAdvice.current} / target ${visionAdvice.target}`}>
-              Ward · {visionAdvice.current}/{visionAdvice.target}
-            </span>
+            <span className="ov-tac-chip ov-tac-vision">Ward · {visionAdvice.current}/{visionAdvice.target}</span>
           )}
         </div>
       )}
@@ -6408,15 +6411,12 @@ function OverlayApp() {
             const live = s.eta <= 0;
             const urgent = s.eta > 0 && s.eta <= 30;
             const remaining = live
-              ? "LIVE"
+              ? "Up"
               : `${Math.floor(s.eta / 60)}:${(Math.round(s.eta) % 60).toString().padStart(2, "0")}`;
-            const icon = s.kind === "dragon" ? "🐉" : s.kind === "baron" ? "👹" : s.kind === "voidgrubs" ? "🐛" : "👁";
-            const teamCls = s.lastTeam === "ally" ? "ov-obj-ally-last" : s.lastTeam === "enemy" ? "ov-obj-enemy-last" : "";
             return (
               <span key={`${s.kind}_${i}`}
-                className={`ov-obj-chip ov-obj-${s.kind} ${live ? "ov-obj-live" : ""} ${urgent ? "ov-obj-urgent" : ""} ${teamCls}`}
-                title={s.lastTeam ? `Last taken by ${s.lastTeam === "ally" ? "your team" : "enemy"}` : `Next ${s.label}`}>
-                <span className="ov-obj-icon">{icon}</span>
+                className={`ov-obj-chip ov-obj-${s.kind} ${live ? "ov-obj-live" : ""} ${urgent ? "ov-obj-urgent" : ""}`}>
+                <span className="ov-obj-mark" />
                 <span className="ov-obj-label">{s.label}</span>
                 <span className="ov-obj-eta">{remaining}</span>
               </span>
@@ -6424,41 +6424,44 @@ function OverlayApp() {
           })}
         </div>
       )}
+      </div>
+      )}
 
       {/* Compact build strip */}
       {ovBuildSlots.length > 0 && (
-        <div className="ov-build">
+        <div className="ov-card ov-build">
           {ovBuildSlots.map((slot, i) => (
-            <div key={slot.id + "_" + i} className={`ov-build-slot ov-build-${slot.state}`} title={slot.name}>
-              <img src={itemIconUrl(slot.id)} alt="" className="ov-build-icon" />
-              {slot.state === "owned" && <span className="ov-build-check">✓</span>}
-              {slot.state === "next" && (
-                <span className="ov-build-ring" style={{ background: `conic-gradient(var(--accent-gold) ${(slot.progressPct ?? 0) * 3.6}deg, transparent 0deg)` }} />
-              )}
-              {slot.state === "next" && slot.goldNeeded != null && slot.goldNeeded > 0 && (
-                <span className="ov-build-need">{slot.goldNeeded}g</span>
-              )}
-              {slot.state === "next" && slot.goldNeeded === 0 && (
-                <span className="ov-build-ready">B</span>
-              )}
+            <div key={slot.id + "_" + i} className={`ov-build-slot ov-build-${slot.state}`}>
+              <span className="ov-build-icon-wrap">
+                <img src={itemIconUrl(slot.id)} alt="" className="ov-build-icon" />
+                {slot.state === "next" && (
+                  <span className="ov-build-ring" style={{ background: `conic-gradient(var(--accent-gold) ${(slot.progressPct ?? 0) * 3.6}deg, transparent 0deg)` }} />
+                )}
+              </span>
+              <span className="ov-build-tag">
+                {slot.state === "owned" ? "Done"
+                  : slot.state === "next" ? (slot.goldNeeded ? `${slot.goldNeeded}g` : "Buy")
+                  : ""}
+              </span>
             </div>
           ))}
+          {(ovThreat || ovShield || ovPen) && <span className="ov-build-sep" />}
           {ovThreat && (
-            <div className={`ov-build-threat ov-threat-${ovThreat.kind}`} title={`${ovThreat.itemName} · ${ovThreat.reason}`}>
+            <div className={`ov-build-threat ov-threat-${ovThreat.kind}`}>
               <img src={itemIconUrl(ovThreat.itemId)} alt="" className="ov-build-icon" />
-              <span className="ov-build-threat-tag">!</span>
+              <span className="ov-build-tag">{THREAT_SHORT[ovThreat.kind]}</span>
             </div>
           )}
           {ovShield && (
-            <div className="ov-build-threat ov-threat-anti-shield" title={`${ovShield.itemName} · ${ovShield.reason}`}>
+            <div className="ov-build-threat ov-threat-anti-shield">
               <img src={itemIconUrl(ovShield.itemId)} alt="" className="ov-build-icon" />
-              <span className="ov-build-threat-tag">S</span>
+              <span className="ov-build-tag">{THREAT_SHORT["anti-shield"]}</span>
             </div>
           )}
           {ovPen && (
             <div className="ov-build-threat ov-build-pen">
               <img src={itemIconUrl(ovPen.itemId)} alt="" className="ov-build-icon" />
-              <span className="ov-build-pen-tag">+{ovPen.gainPercent}%</span>
+              <span className="ov-build-tag">+{ovPen.gainPercent}%</span>
             </div>
           )}
         </div>
@@ -6466,12 +6469,12 @@ function OverlayApp() {
 
       {/* Compact level plan — current + next 4 levels */}
       {myPlan && currentEntry && (
-        <div className="ov-plan">
+        <div className="ov-card ov-plan">
           <div className="ov-plan-header">
-            <span className="ov-plan-header-title">PLAN</span>
+            <span className="ov-plan-header-title">Level plan</span>
             {nextSpike && (
               <span className={`ov-plan-next ${nextSpike.isSpike ? "ov-plan-next-you" : "ov-plan-next-enemy"}`}>
-                ⚡ Lv {nextSpike.level}
+                {nextSpike.isSpike ? "Your" : "Enemy"} spike at {nextSpike.level}
               </span>
             )}
           </div>
@@ -6484,11 +6487,9 @@ function OverlayApp() {
               >
                 <span className="ov-plan-lvl">{entry.level}</span>
                 <span className="ov-plan-action">{entry.action}</span>
-                {(entry.isSpike || entry.isEnemySpike) && (
-                  <span className="ov-plan-bolt">⚡</span>
-                )}
-                <span className="ov-plan-adv">
-                  {entry.advantage > 0 ? "+" : ""}{entry.advantage.toFixed(1)}
+                {(entry.isSpike || entry.isEnemySpike) && <span className="ov-plan-bolt" aria-hidden="true" />}
+                <span className={`ov-plan-adv ${entry.advantage >= 0.5 ? "is-up" : entry.advantage <= -0.5 ? "is-down" : ""}`}>
+                  {entry.advantage > 0 ? "+" : entry.advantage < 0 ? "−" : "±"}{Math.abs(entry.advantage).toFixed(1)}
                 </span>
               </div>
             );

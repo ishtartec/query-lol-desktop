@@ -9,6 +9,9 @@ async function init() {
 
   // Force overlay detection via a global flag before rendering
   (window as any).__QUERYLOL_OVERLAY__ = label === "overlay";
+  // The overlay window is transparent; without this the app's opaque page
+  // background fills all of it and hides the game around the cards.
+  if (label === "overlay") document.documentElement.classList.add("is-overlay");
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>

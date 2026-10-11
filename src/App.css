@@ -49,6 +49,7 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+:root.is-overlay, :root.is-overlay body { background: transparent; }
 
 /* Hide native scrollbar */
 ::-webkit-scrollbar { width: 6px; }
@@ -1296,137 +1297,42 @@
   color: var(--text-muted);
 }
 
-/* ==== Overlay: compact build strip ==== */
-.ov-build {
-  display: flex;
-  gap: 4px;
-  padding: 3px 4px 12px;
-  margin: 2px 4px 4px;
-  justify-content: flex-start;
-}
-.ov-build-slot {
-  position: relative;
-  width: 28px; height: 28px;
-  flex: 0 0 28px;
-  border-radius: 3px;
-  border: 1px solid transparent;
-}
-.ov-build-icon {
-  width: 100%; height: 100%; display: block; border-radius: 2px;
-}
-.ov-build-owned { border-color: rgba(42, 222, 106, 0.4); }
-.ov-build-next  { border-color: var(--accent-gold); box-shadow: 0 0 6px rgba(200, 155, 60, 0.4); }
-.ov-build-future .ov-build-icon { filter: grayscale(0.7) brightness(0.55); }
-.ov-build-check {
-  position: absolute; top: -3px; right: -3px;
-  width: 12px; height: 12px;
-  background: #2ade6a; color: #0d1117;
-  font-size: 8px; font-weight: 900; line-height: 12px;
-  text-align: center; border-radius: 50%;
-  border: 1px solid var(--bg-primary);
-}
+/* ==== Overlay: build strip ==== */
+.ov-build { display: flex; align-items: flex-end; gap: 6px; padding: 10px 12px; }
+.ov-build-slot, .ov-build-threat { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.ov-build-icon-wrap { position: relative; width: 40px; height: 40px; isolation: isolate; }
+.ov-build-icon { width: 40px; height: 40px; border-radius: 9px; display: block; }
+.ov-build-owned .ov-build-icon { opacity: .4; }
+.ov-build-next .ov-build-icon { box-shadow: 0 0 0 2px var(--accent-gold); }
+/* Progress toward the next item as a ring under the icon's edge. */
 .ov-build-ring {
-  position: absolute; inset: -2px;
-  border-radius: 50%;
-  -webkit-mask: radial-gradient(circle, transparent 64%, #000 66%);
-          mask: radial-gradient(circle, transparent 64%, #000 66%);
-  pointer-events: none;
+  position: absolute; inset: -4px; border-radius: 12px; z-index: -1;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
 }
-.ov-build-need {
-  position: absolute;
-  bottom: -10px; left: 50%; transform: translateX(-50%);
-  font-size: 8px; font-weight: 800;
-  color: #fbbf24;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.ov-build-ready {
-  position: absolute;
-  bottom: -10px; left: 50%; transform: translateX(-50%);
-  font-size: 8px; font-weight: 900;
-  color: #2ade6a; letter-spacing: 0.5px;
-  animation: bsReadyPulse 1.2s ease-in-out infinite;
-}
-.ov-build-threat {
-  position: relative;
-  width: 28px; height: 28px;
-  flex: 0 0 28px;
-  border-radius: 3px;
-  margin-left: 6px;
-  border: 1px solid rgba(232, 64, 87, 0.6);
-  box-shadow: 0 0 6px rgba(232, 64, 87, 0.3);
-  animation: ovThreatPulse 2.4s ease-in-out infinite;
-}
+.ov-build-tag { font-size: 10px; font-weight: 800; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; min-height: 12px; }
+.ov-build-owned .ov-build-tag { color: var(--positive); }
+.ov-build-next .ov-build-tag { color: var(--accent-gold-text); }
+.ov-build-sep { width: 1px; align-self: stretch; background: rgba(232,228,222,.12); margin: 0 2px; }
+.ov-build-threat .ov-build-icon { width: 34px; height: 34px; border-radius: 8px; box-shadow: 0 0 0 2px var(--negative); }
+.ov-build-threat .ov-build-tag { color: var(--negative); }
+.ov-build-pen .ov-build-icon { box-shadow: 0 0 0 2px #7c8cff; }
+.ov-build-pen .ov-build-tag { color: #9aa8ff; }
 
 /* ==== Overlay: upcoming objective spawns ==== */
-.ov-objs {
-  display: flex; gap: 4px;
-  padding: 2px 4px;
-  margin: 2px 4px;
-  flex-wrap: wrap;
-}
+.ov-objs { display: flex; gap: 6px; flex-wrap: wrap; }
 .ov-obj-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 3px 7px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(200, 155, 60, 0.25);
-  border-radius: 12px;
-  font-size: 10px; font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 0.3px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  height: 26px; padding: 0 10px; border-radius: 8px; background: var(--surface-2);
+  display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600;
 }
-.ov-obj-icon { font-size: 12px; line-height: 1; }
-.ov-obj-label { font-size: 9px; letter-spacing: 0.6px; opacity: 0.85; }
-.ov-obj-eta { font-weight: 800; }
-.ov-obj-dragon { border-color: rgba(247, 173, 47, 0.45); }
-.ov-obj-baron { border-color: rgba(178, 92, 235, 0.45); }
-.ov-obj-voidgrubs { border-color: rgba(132, 204, 22, 0.45); }
-.ov-obj-herald { border-color: rgba(56, 189, 248, 0.45); }
-.ov-obj-urgent {
-  border-color: var(--accent-red);
-  box-shadow: 0 0 8px rgba(232, 64, 87, 0.4);
-  animation: ovObjUrgent 1.2s ease-in-out infinite;
-}
-.ov-obj-live {
-  border-color: #2ade6a;
-  background: rgba(42, 222, 106, 0.15);
-  box-shadow: 0 0 8px rgba(42, 222, 106, 0.35);
-}
-.ov-obj-live .ov-obj-eta { color: #4be38a; }
-.ov-obj-ally-last { border-style: dashed; border-color: rgba(3, 151, 171, 0.55); }
-.ov-obj-enemy-last { border-style: dashed; border-color: rgba(232, 64, 87, 0.55); }
-@keyframes ovObjUrgent {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-}
-.ov-threat-antiheal { border-color: rgba(247, 173, 47, 0.7); box-shadow: 0 0 6px rgba(247, 173, 47, 0.35); }
-.ov-threat-mr-squishy, .ov-threat-mr-bruiser { border-color: rgba(178, 92, 235, 0.7); box-shadow: 0 0 6px rgba(178, 92, 235, 0.35); }
-.ov-threat-armor-squishy, .ov-threat-armor-bruiser { border-color: rgba(232, 64, 87, 0.7); box-shadow: 0 0 6px rgba(232, 64, 87, 0.35); }
-.ov-threat-tenacity { border-color: rgba(56, 189, 248, 0.7); box-shadow: 0 0 6px rgba(56, 189, 248, 0.35); }
-.ov-threat-anti-shield { border-color: rgba(132, 204, 22, 0.7); box-shadow: 0 0 6px rgba(132, 204, 22, 0.35); }
-.ov-build-pen { border-color: rgba(56, 189, 248, 0.7); }
-.ov-build-pen-tag {
-  position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
-  padding: 0 3px; height: 13px;
-  background: var(--accent-gold); color: #0a0e13;
-  font-size: 9px; font-weight: 900; line-height: 13px;
-  text-align: center; border-radius: 7px; white-space: nowrap;
-  border: 1.5px solid var(--bg-primary);
-}
-.ov-build-threat-tag {
-  position: absolute; top: -5px; right: -5px;
-  width: 14px; height: 14px;
-  background: var(--accent-red); color: #fff;
-  font-size: 9px; font-weight: 900; line-height: 14px;
-  text-align: center; border-radius: 50%;
-  border: 1.5px solid var(--bg-primary);
-}
-@keyframes ovThreatPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
+.ov-obj-mark { width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg); background: var(--text-muted); }
+.ov-obj-dragon .ov-obj-mark { background: var(--accent-gold); }
+.ov-obj-baron .ov-obj-mark { background: #9d7bd8; }
+.ov-obj-herald .ov-obj-mark, .ov-obj-voidgrubs .ov-obj-mark { background: #7c8cff; }
+.ov-obj-eta { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.ov-obj-urgent .ov-obj-eta { color: var(--accent-gold-text); }
+.ov-obj-live { background: rgba(63,207,133,.14); }
+.ov-obj-live .ov-obj-eta { color: var(--positive); }
 
 .spell-cd-wrap:hover { border-color: var(--text-secondary); }
 .spell-cd-img {
@@ -1857,90 +1763,54 @@
 .postgame-layout .perf-bar-fill.perf-above { background: var(--positive); }
 .postgame-layout .perf-bar-fill.perf-below { background: var(--negative); }
 
-/* === Overlay === */
+/* ==== Overlay (TAB) ====
+   A transparent, click-through window over the game: stacked cards at
+   high opacity, nothing that needs hovering, no emoji. */
 .overlay {
-  background: rgba(10, 14, 19, 0.9);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-family: Inter, -apple-system, sans-serif;
-  color: var(--text-primary);
-  display: flex; flex-direction: column; gap: 8px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  min-width: 280px;
+  font-family: Inter, -apple-system, sans-serif; color: var(--text-primary);
+  display: flex; flex-direction: column; gap: 8px; width: 340px; box-sizing: border-box;
+}
+.ov-card {
+  background: rgba(10, 14, 19, 0.9); border: 1px solid rgba(232, 228, 222, 0.1);
+  border-radius: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
-.ov-header {
-  display: flex; align-items: center; justify-content: space-between;
-}
-.ov-score-ally {
-  font-size: 22px; font-weight: 800; color: var(--accent-blue);
-  min-width: 30px; text-align: center;
-}
-.ov-score-enemy {
-  font-size: 22px; font-weight: 800; color: var(--accent-red);
-  min-width: 30px; text-align: center;
-}
-.ov-center {
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
-}
-.ov-win-prob {
-  font-size: 18px; font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
+.ov-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; }
+.ov-score { display: flex; flex-direction: column; align-items: center; width: 44px; font-size: 22px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ov-score-ally { color: var(--ally); }
+.ov-score-enemy { color: var(--enemy); }
+.ov-score-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.ov-center { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ov-center-top { display: flex; align-items: baseline; gap: 8px; }
+.ov-win-prob { font-size: 22px; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.ov-timer { font-size: 12px; font-weight: 600; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .ov-total-diff {
-  font-size: 12px; font-weight: 700;
-  font-variant-numeric: tabular-nums;
+  height: 20px; padding: 0 8px; border-radius: 999px; display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--surface-3); color: #b8c0cc;
 }
-.ov-timer {
-  font-size: 9px; font-weight: 600; color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
+.ov-total-diff.is-up { background: rgba(63,207,133,.16); color: var(--positive); }
+.ov-total-diff.is-down { background: rgba(240,107,126,.16); color: var(--negative); }
 
-.ov-lanes {
-  display: flex; flex-direction: column; gap: 3px;
-}
-.ov-lane {
-  display: flex; align-items: center; gap: 0;
-  padding: 3px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-}
-.ov-lane:last-child { border-bottom: none; }
-.ov-lane-player {
-  display: flex; align-items: center; gap: 6px;
-  flex: 1;
-}
-.ov-lane-ally { justify-content: flex-start; }
+.ov-lanes { display: flex; flex-direction: column; padding: 4px 10px; }
+.ov-lane { display: grid; grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr); align-items: center; height: 40px; }
+.ov-lane-player { display: flex; align-items: center; gap: 8px; }
 .ov-lane-enemy { justify-content: flex-end; }
-.ov-lane-gold {
-  font-size: 11px; font-weight: 600; color: var(--text-secondary);
-  font-variant-numeric: tabular-nums; min-width: 38px;
-}
-.ov-lane-ally .ov-lane-gold { text-align: right; }
-.ov-lane-enemy .ov-lane-gold { text-align: left; }
-.ov-champ {
-  position: relative; flex-shrink: 0;
-}
-.ov-champ img {
-  border-radius: 6px; border: 1.5px solid var(--border);
-}
+.ov-lane-gold { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ov-champ { position: relative; flex-shrink: 0; }
+.ov-champ img { border-radius: 8px; display: block; }
 .ov-champ-lvl {
-  position: absolute; bottom: -2px; right: -4px;
-  font-size: 8px; font-weight: 800; color: var(--text-primary);
-  background: rgba(10, 14, 19, 0.9); border-radius: 3px;
-  padding: 0 3px; line-height: 1.4;
-  border: 1px solid var(--border);
+  position: absolute; bottom: -3px; right: -3px; min-width: 14px; height: 14px; padding: 0 2px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; background: var(--bg-primary); border: 1px solid var(--border-strong); border-radius: 4px;
 }
-.ov-lane-enemy .ov-champ-lvl { right: auto; left: -4px; }
-.ov-lane-center {
-  min-width: 70px; text-align: center;
-}
+.ov-lane-enemy .ov-champ-lvl { right: auto; left: -3px; }
+.ov-lane-center { display: flex; justify-content: center; }
 .ov-lane-diff {
-  font-size: 11px; font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
+  height: 20px; padding: 0 8px; border-radius: 999px; display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; background: var(--surface-3); color: #b8c0cc;
 }
+.ov-lane-diff.is-up { background: rgba(63,207,133,.16); color: var(--positive); }
+.ov-lane-diff.is-down { background: rgba(240,107,126,.16); color: var(--negative); }
 
 /* ==== Level Plan Timeline ==== */
 
@@ -2452,199 +2322,56 @@
   line-height: 1.5;
 }
 
-/* ==== Overlay: missing enemies tracker ==== */
-.ov-missing {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 2px 4px;
-  margin: 2px 4px 0;
+/* ==== Overlay: missing and dead enemies ==== */
+.ov-missing { display: flex; flex-wrap: wrap; gap: 6px; }
+.ov-missing-tag, .ov-dead-tag {
+  height: 26px; padding: 0 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
-.ov-missing-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  background: rgba(232, 64, 87, 0.18);
-  border: 1px solid rgba(232, 64, 87, 0.4);
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #ff6b7d;
-  letter-spacing: 0.4px;
-  animation: ovMiaPulse 1.2s ease-in-out infinite;
-}
-@keyframes ovMiaPulse {
-  0%, 100% { box-shadow: 0 0 0 rgba(232, 64, 87, 0); }
-  50%      { box-shadow: 0 0 6px rgba(232, 64, 87, 0.5); }
-}
-.ov-missing-icon { font-size: 11px; }
-.ov-missing-pos { color: var(--accent-gold); }
-.ov-missing-label { font-size: 9px; opacity: 0.85; }
-.ov-missing-dur {
-  font-variant-numeric: tabular-nums;
-  margin-left: auto;
-  padding-left: 4px;
-  border-left: 1px solid rgba(232, 64, 87, 0.3);
-}
-.ov-dead-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  background: rgba(74, 85, 104, 0.25);
-  border: 1px solid rgba(74, 85, 104, 0.5);
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #b9c0cb;
-  letter-spacing: 0.4px;
-}
-.ov-dead-tag .ov-missing-pos { color: var(--accent-gold); }
+/* Solid orange: it has to read against any part of the map. */
+.ov-missing-tag { background: rgba(224,137,74,.92); color: var(--bg-primary); }
+.ov-dead-tag { background: rgba(10,14,19,.9); border: 1px solid rgba(232,228,222,.12); color: #b8c0cc; }
+.ov-missing-pos { font-weight: 800; }
+.ov-missing-label { font-weight: 600; }
 
-/* ==== Overlay: tactical chips (recall / wave / jungle / vision) ==== */
-.ov-tactical {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 2px 4px;
-  margin: 2px 4px 0;
-}
+/* ==== Overlay: tactical chips and objectives card ==== */
+.ov-tac-card { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; }
+.ov-tactical { display: flex; flex-wrap: wrap; gap: 6px; }
 .ov-tac-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(200, 155, 60, 0.18);
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  height: 24px; padding: 0 9px; border-radius: 999px; display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+  background: var(--surface-3); color: #b8c0cc;
 }
-.ov-tac-recall { border-color: rgba(200, 155, 60, 0.4); color: var(--accent-gold); }
-.ov-tac-recall.ov-tac-ready {
-  background: rgba(200, 155, 60, 0.18);
-  animation: ovMiaPulse 1.6s ease-in-out infinite;
-}
-.ov-tac-good { border-color: rgba(42, 222, 106, 0.4); color: #4be38a; }
-.ov-tac-bad { border-color: rgba(232, 64, 87, 0.4); color: #ff6b7d; }
-.ov-tac-neutral { border-color: rgba(74, 85, 104, 0.6); color: #b9c0cb; }
-.ov-tac-jgl { border-color: rgba(3, 151, 171, 0.4); color: #56c8d9; }
-.ov-tac-vision { border-color: rgba(232, 64, 87, 0.4); color: #ff6b7d; }
+.ov-tac-recall { background: rgba(200,155,60,.16); color: var(--accent-gold-text); }
+.ov-tac-recall.ov-tac-ready { background: rgba(200,155,60,.92); color: var(--bg-primary); font-weight: 800; }
+.ov-tac-good { background: rgba(63,207,133,.16); color: var(--positive); }
+.ov-tac-bad, .ov-tac-vision { background: rgba(240,107,126,.16); color: var(--negative); }
 
-/* ==== Overlay: compact level plan (multi-row) ==== */
-.ov-plan {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 4px 6px 5px;
-  margin: 3px 4px 4px;
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(200, 155, 60, 0.18);
-  border-radius: 4px;
-  font-size: 10px;
-  line-height: 1;
-}
-.ov-plan-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1px 2px 3px;
-  border-bottom: 1px solid rgba(200, 155, 60, 0.12);
-  margin-bottom: 2px;
-}
-.ov-plan-header-title {
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--accent-gold);
-}
-.ov-plan-row {
-  display: grid;
-  grid-template-columns: 22px 1fr auto auto;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  color: var(--text-secondary);
-  font-weight: 600;
-  min-height: 16px;
-}
-.ov-plan-row-now {
-  background: rgba(200, 155, 60, 0.14);
-  border-left: 2px solid var(--accent-gold);
-  padding-left: 2px;
-  color: var(--text-primary);
-}
-.ov-plan-row-spike {
-  background: rgba(42, 222, 106, 0.08);
-}
-.ov-plan-row-espike {
-  background: rgba(232, 64, 87, 0.08);
-}
-.ov-plan-row-now.ov-plan-row-spike {
-  background: linear-gradient(90deg, rgba(200, 155, 60, 0.18), rgba(42, 222, 106, 0.14));
-}
-.ov-plan-row-now.ov-plan-row-espike {
-  background: linear-gradient(90deg, rgba(200, 155, 60, 0.18), rgba(232, 64, 87, 0.14));
-}
-.ov-plan-lvl {
-  font-weight: 800;
-  color: var(--accent-gold);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  font-size: 10px;
-}
-.ov-plan-row-now .ov-plan-lvl {
-  color: var(--accent-gold);
-  text-shadow: 0 0 4px rgba(200, 155, 60, 0.5);
-}
-.ov-plan-action {
-  color: inherit;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.ov-plan-bolt {
-  font-size: 9px;
-}
-.ov-plan-row-spike .ov-plan-bolt { color: #4be38a; }
-.ov-plan-row-espike .ov-plan-bolt { color: #ff6b7d; }
-.ov-plan-adv {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  min-width: 28px;
-  text-align: right;
-}
-.ov-plan-next {
-  font-size: 8px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-}
-.ov-plan-next-you {
-  background: rgba(42, 222, 106, 0.18);
-  color: #4be38a;
-}
-.ov-plan-next-enemy {
-  background: rgba(232, 64, 87, 0.18);
-  color: #ff6b7d;
-}
-/* Category colors → apply to advantage number via row context */
-.ov-plan-cat-dominant  .ov-plan-adv { color: #2ade6a; }
-.ov-plan-cat-strong    .ov-plan-adv { color: #7ed99d; }
-.ov-plan-cat-even      .ov-plan-adv { color: #8892a0; }
-.ov-plan-cat-careful   .ov-plan-adv { color: #e0a868; }
-.ov-plan-cat-weak      .ov-plan-adv { color: #e84057; }
-.ov-plan-cat-hard-weak .ov-plan-adv { color: #ff5c6f; }
+/* ==== Overlay: level plan ==== */
+.ov-plan { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; }
+.ov-plan-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 2px; }
+.ov-plan-header-title { font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-secondary); }
+.ov-plan-next { font-size: 11px; font-weight: 700; }
+.ov-plan-next-you { color: var(--positive); }
+.ov-plan-next-enemy { color: var(--negative); }
+.ov-plan-row { display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 8px; border-radius: 7px; }
+.ov-plan-row-now { background: rgba(200,155,60,.16); }
+.ov-plan-lvl { width: 18px; font-size: 11px; font-weight: 800; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ov-plan-row-now .ov-plan-lvl { color: var(--accent-gold-text); }
+.ov-plan-action { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A spike level gets a small dot instead of a lightning emoji. */
+.ov-plan-bolt { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.ov-plan-row-spike .ov-plan-bolt { background: var(--positive); }
+.ov-plan-row-espike .ov-plan-bolt { background: var(--negative); }
+.ov-plan-adv { font-size: 11px; font-weight: 800; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ov-plan-adv.is-up { color: var(--positive); }
+.ov-plan-adv.is-down { color: var(--negative); }
+
+/* Active buff timers at the bottom of the overlay. */
+.overlay .obj-timers { border-top: none; padding: 0; }
+.overlay .obj-timer { height: 26px; background: rgba(10,14,19,.9); border: 1px solid rgba(232,228,222,.12); }
+.overlay .obj-timer-ally { color: var(--ally); }
+.overlay .obj-timer-enemy { color: var(--enemy); }
 
 /* ==== Champ select centre panels: one card surface, one title style ==== */
 .cs-center .matchup-panel, .cs-center .item-recs-panel, .cs-center .prediction-card,
