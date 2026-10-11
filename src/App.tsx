@@ -2634,6 +2634,12 @@ function App() {
   const recordingFor = (gameId: number) => gameId > 0 ? recordings.find(r => r.game_id === gameId) : undefined;
 
   const championInfo = useChampionName(state.champion_id);
+  useEffect(() => {
+    if (!playerProfile) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPlayerProfile(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [playerProfile]);
   // Practice Tool games are logged as losses with no opponent; they are not
   // games for any statistic (they produced a fake 3-loss streak).
   const playedHistory = useMemo(() => state.match_history.filter(m => !isPractice(m)), [state.match_history]);
@@ -2824,9 +2830,9 @@ function App() {
                   .filter(champ => !state.draft?.allies.some(a => a.champion_id === champ.champion_id))
                   .sort((a, b) => b.win_rate - a.win_rate)
                   .map(champ => (
-                    <div key={champ.champion_id} className="aram-bench-chip aram-bench-available"
+                    <button type="button" key={champ.champion_id} className="aram-bench-chip aram-bench-available"
                       onClick={() => invoke("swap_aram_bench", { championId: champ.champion_id })}
-                      title="Click to swap">
+                      title="Swap this champion in">
                       <ChampionIcon championId={champ.champion_id} size={32} />
                       <div className="aram-bench-info">
                         <ChampionNameLabel championId={champ.champion_id} fallback="..." />
@@ -2834,7 +2840,7 @@ function App() {
                           {(champ.win_rate * 100).toFixed(1)}%
                         </span>
                       </div>
-                    </div>
+                    </button>
                   ))}
               </div>
             </div>
@@ -3191,28 +3197,33 @@ function App() {
       {/* Loading overlay */}
       {profileLoading && !playerProfile && (
         <div className="profile-overlay">
-          <div className="profile-panel" style={{ textAlign: "center", padding: 48 }}>
-            <div className="spinner" style={{ margin: "0 auto 12px" }} />
-            <p className="waiting-text">Loading player profile...</p>
+          <div className="profile-panel profile-loading" role="status">
+            <div className="spinner" />
+            <p className="waiting-text">Loading player profile…</p>
           </div>
         </div>
       )}
 
       {/* Player Profile Overlay */}
       {playerProfile && (
-        <div className="profile-overlay">
-          <div className="profile-panel">
+        <div className="profile-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setPlayerProfile(null); }}>
+          <div className="profile-panel" role="dialog" aria-modal="true" aria-label={`Profile of ${playerProfile.name || "player"}`}>
             <div className="profile-header">
               <div className="profile-info">
-                <h2 className="profile-name">{playerProfile.name || "Unknown"}</h2>
-                {playerProfile.rank && (
-                  <span className={`ranked-badge rank-${playerProfile.rank.split(' ')[0]?.toLowerCase()}`}>
-                    <RankEmblem rank={playerProfile.rank} size={16} />
-                    {playerProfile.rank}
-                  </span>
-                )}
+                <span className="q-label">Player profile</span>
+                <div className="profile-title-row">
+                  <h2 className="profile-name">{playerProfile.name || "Unknown"}</h2>
+                  {playerProfile.rank && (
+                    <span className={`ranked-badge rank-${playerProfile.rank.split(' ')[0]?.toLowerCase()}`}>
+                      <RankEmblem rank={playerProfile.rank} size={16} />
+                      {playerProfile.rank.split(" ").map((w, i) => i === 0 ? titleCase(w) : w).join(" ")}
+                    </span>
+                  )}
+                </div>
               </div>
-              <button className="q-btn q-btn-secondary pg-back" onClick={() => setPlayerProfile(null)}>Close</button>
+              <button className="q-btn q-btn-secondary q-btn-icon" aria-label="Close profile" onClick={() => setPlayerProfile(null)}>
+                <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+              </button>
             </div>
             {playerProfile.matches.length > 0 ? (
               <MatchHistoryView history={playerProfile.matches} />
@@ -3266,7 +3277,7 @@ function ReasonChipCounter({ ids }: { ids: number[] }) {
 function RecommendationCard({ rec }: { rec: RankedRecommendation }) {
   return (
     <button
-      className="cs-rec-card rec-clickable"
+      className="cs-rec-card"
       type="button"
       title={`Meta ${(rec.meta_wr * 100).toFixed(1)}% · Counter ${rec.counter_bonus >= 0 ? "+" : ""}${(rec.counter_bonus * 100).toFixed(1)} · Synergy ${rec.synergy_bonus >= 0 ? "+" : ""}${(rec.synergy_bonus * 100).toFixed(0)} · Comfort ${rec.comfort_games}g`}
       onClick={() => invoke("pick_champion", { championId: rec.champion_id })}
@@ -4896,17 +4907,14 @@ function LiveGameView({ game, onViewPlayer, recording }: { game: LiveGameState; 
 function BanCard({ ban }: { ban: BanSuggestion }) {
   const info = useChampionName(ban.champion_id);
   return (
-    <div className="rec-card ban-card rec-clickable" onClick={() => invoke("ban_champion", { championId: ban.champion_id })} title="Click to ban">
-      <ChampionIcon championId={ban.champion_id} size={36} className="rec-icon" />
-      <div className="rec-info">
-        <span className="rec-name">{info?.name || "..."}</span>
-        <div className="rec-stats">
-          <span className="rec-wr">{(ban.win_rate * 100).toFixed(1)}% WR</span>
-          <span className="ban-pr">{(ban.pick_rate * 100).toFixed(1)}% PR</span>
-        </div>
-      </div>
-      <span className="ban-threat">BAN</span>
-    </div>
+    <button type="button" className="ban-card" onClick={() => invoke("ban_champion", { championId: ban.champion_id })}>
+      <ChampionIcon championId={ban.champion_id} size={36} />
+      <span className="ban-info">
+        <span className="ban-name">{info?.name || "..."}</span>
+        <span className="ban-stats">{(ban.win_rate * 100).toFixed(1)}% WR · {(ban.pick_rate * 100).toFixed(1)}% PR</span>
+      </span>
+      <span className="ban-threat">Ban</span>
+    </button>
   );
 }
 
