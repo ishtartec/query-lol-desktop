@@ -299,7 +299,7 @@ mod imp {
     }
 
     #[cfg(test)]
-    mod tests {
+    mod capture_tests {
         use super::*;
 
         /// `RECORD_QUERY="Finder" cargo test recorder -- --ignored --nocapture`
@@ -427,8 +427,72 @@ pub fn finish(rec: &SharedRecorder, game_id: i64) -> Option<RecordingResult> {
         "offset_secs": offset,
         "duration_secs": result.duration_secs,
         "bytes": result.bytes,
+        "kept": false,
     });
     let _ = std::fs::write(result.path.with_extension("json"), meta.to_string());
     log::info!("recording saved: {result:?}");
+    if let Some(dir) = result.path.parent() {
+        prune(dir, KEEP_RECENT);
+    }
     Some(result)
+}
+
+/// Recordings kept besides the ones the user chose to keep. At ~1.6 GB per
+/// 35-minute game this caps the folder near 16 GB.
+pub const KEEP_RECENT: usize = 10;
+
+/// Deletes the oldest recordings beyond `keep`, never touching one whose
+/// metadata says `"kept": true`; kept recordings do not count toward `keep`.
+pub fn prune(dir: &std::path::Path, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut videos: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "mp4"))
+        .filter(|p| !is_kept(p))
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+        .collect();
+    videos.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, video) in videos.into_iter().skip(keep) {
+        log::info!("recording: pruning {}", video.display());
+        let _ = std::fs::remove_file(&video);
+        let _ = std::fs::remove_file(video.with_extension("json"));
+    }
+}
+
+fn is_kept(video: &std::path::Path) -> bool {
+    std::fs::read_to_string(video.with_extension("json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("kept")?.as_bool())
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prune_keeps_recent_and_kept() {
+        let dir = std::env::temp_dir().join(format!("querylol-prune-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 0 is the oldest; 1 is kept by the user.
+        for i in 0..5 {
+            let video = dir.join(format!("{i}.mp4"));
+            std::fs::write(&video, b"x").unwrap();
+            let kept = i == 1;
+            std::fs::write(video.with_extension("json"), format!(r#"{{"kept":{kept}}}"#)).unwrap();
+            let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000 + i);
+            std::fs::File::options().write(true).open(&video).unwrap().set_modified(t).unwrap();
+        }
+        prune(&dir, 2);
+        let mut left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, ["1.json", "1.mp4", "3.json", "3.mp4", "4.json", "4.mp4"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
