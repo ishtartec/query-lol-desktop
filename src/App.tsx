@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
+import { useRecordings, RecordingCard, RecordingPlayer, RecordingsLibrary, WatchPill, type Recording, type ChampionMap } from "./recordings";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
 import { check } from "@tauri-apps/plugin-updater";
@@ -334,6 +335,8 @@ interface AppState {
   auto_lock: boolean;
   auto_accept: boolean;
   tts_enabled: boolean;
+  record_games: boolean;
+  recording_supported: boolean;
   region: string;
   flash_key: string;
   flash_key_detected: string | null;
@@ -2520,7 +2523,7 @@ function App() {
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
-    auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, region: "euw", flash_key: "auto", flash_key_detected: null,
+    auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, record_games: false, recording_supported: false, region: "euw", flash_key: "auto", flash_key_detected: null,
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2529,13 +2532,20 @@ function App() {
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string; update: Awaited<ReturnType<typeof check>> } | null>(null);
   const [updating, setUpdating] = useState(false);
   const errorTimeout = useRef<number | null>(null);
+  const recordings = useRecordings();
+  const [watching, setWatching] = useState<{ id: string; at?: number } | null>(null);
+  const [champMap, setChampMap] = useState<ChampionMap>({});
+  const watch = (rec: Recording, at?: number) => setWatching({ id: rec.id, at });
+  // Follows the live list, so Keep reflects at once and a deletion closes it.
+  const watchedRec = watching ? recordings.find(r => r.id === watching.id) ?? null : null;
+  const recordingFor = (gameId: number) => gameId > 0 ? recordings.find(r => r.game_id === gameId) : undefined;
 
   const championInfo = useChampionName(state.champion_id);
 
   useEffect(() => {
     invoke<AppState>("get_state").then(setState);
     ensureVersion().then(() => {
-      loadChampionData();
+      loadChampionData().then(setChampMap);
       loadRuneData().then(() => setRunesLoaded(true));
       loadItemData();
     });
@@ -2700,6 +2710,14 @@ function App() {
               <span className="toggle-slider" />
               Voice cues
             </label>
+            {state.recording_supported && (
+              <label className="toggle-label" title="Record each game so you can review it afterwards. Keeps the last 10 unless you keep them. Asks for Screen Recording permission.">
+                <input type="checkbox" checked={state.record_games}
+                  onChange={() => invoke("set_record_games", { enabled: !state.record_games })} />
+                <span className="toggle-slider" />
+                Record games
+              </label>
+            )}
             <select className="select select-sm"
               value={state.flash_key}
               onChange={(e) => invoke("set_flash_key", { key: e.target.value })}
@@ -2735,7 +2753,10 @@ function App() {
               <ChampionImprovement history={state.match_history} />
               {state.ranked && <ImprovementPanel history={state.match_history} ranked={state.ranked} />}
               {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
-              <MatchHistoryView history={state.match_history} />
+              {state.recording_supported && (recordings.length > 0 || state.record_games) && (
+                <RecordingsLibrary recordings={recordings} recordingOn={state.record_games} champions={champMap} iconUrl={championIconUrl} onWatch={watch} />
+              )}
+              <MatchHistoryView history={state.match_history} recordingFor={recordingFor} onWatch={watch} />
             </>
           ) : (
             <div className="section-waiting">
@@ -3114,7 +3135,13 @@ function App() {
 
       {/* Post-game summary */}
       {inPostGame && state.post_game && (
-        <PostGameView stats={state.post_game} showBack={true} onViewPlayer={viewPlayer} />
+        <PostGameView stats={state.post_game} showBack={true} onViewPlayer={viewPlayer}
+          recording={recordingFor(state.post_game.game_id)} onWatch={watch} />
+      )}
+
+      {watchedRec && (
+        <RecordingPlayer key={`${watchedRec.id}-${watching?.at ?? 0}`} rec={watchedRec} startAt={watching?.at}
+          champions={champMap} onClose={() => setWatching(null)} />
       )}
 
       {/* Loading overlay */}
@@ -3781,7 +3808,11 @@ function LpChart({ history }: { history: LpEntry[] }) {
 
 // --- Match History View ---
 
-function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
+function MatchHistoryView({ history, recordingFor, onWatch }: {
+  history: MatchHistoryEntry[];
+  recordingFor?: (gameId: number) => Recording | undefined;
+  onWatch?: (rec: Recording, at?: number) => void;
+}) {
   const [champFilter, setChampFilter] = useState<number | null>(null);
   const [modeFilter, setModeFilter] = useState<string>("all");
   const [showAll, setShowAll] = useState(false);
@@ -3848,7 +3879,7 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
       </div>
       <div className="mh-list">
         {visible.map((m, i) => (
-          <MatchHistoryRow key={i} match={m} />
+          <MatchHistoryRow key={i} match={m} recording={recordingFor?.(m.game_id)} onWatch={onWatch} />
         ))}
         {!showAll && filtered.length > 10 && (
           <button className="btn-show-more" onClick={() => setShowAll(true)}>
@@ -3865,7 +3896,9 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
   );
 }
 
-function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
+function MatchHistoryRow({ match: m, recording, onWatch }: {
+  match: MatchHistoryEntry; recording?: Recording; onWatch?: (rec: Recording, at?: number) => void;
+}) {
   const champInfo = useChampionName(m.champion_id);
   const kda = m.deaths === 0 ? "Perfect" : ((m.kills + m.assists) / m.deaths).toFixed(1);
   const mins = Math.floor(m.duration_secs / 60);
@@ -3897,6 +3930,7 @@ function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
         <div className="mh-kda-bar-d" style={{ width: `${(m.deaths / total) * 100}%` }} />
         <div className="mh-kda-bar-a" style={{ width: `${(m.assists / total) * 100}%` }} />
       </div>
+      {recording && onWatch && <WatchPill rec={recording} onWatch={onWatch} />}
       <span className="mh-duration">{mins}m</span>
       <div className="mh-spacer" />
       <span className="mh-ago">{ago}</span>
@@ -5105,7 +5139,11 @@ function fmtClock(secs: number): string {
   return `${Math.floor(secs / 60)}m${String(Math.round(secs % 60)).padStart(2, "0")}s`;
 }
 
-function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPoint[]; deaths: DeathImpact[]; duration: number }) {
+function GoldDiffTimeline({ timeline, deaths, duration, onDeath }: {
+  timeline: GoldDiffPoint[]; deaths: DeathImpact[]; duration: number;
+  /** When the game was recorded: open the recording at this death. */
+  onDeath?: (gameTime: number) => void;
+}) {
   // The readout is drawn into the SVG rather than using <title> tooltips:
   // WKWebView (Tauri's macOS engine) never renders those, so on macOS a <title>
   // is invisible, while WebView2 on Windows would show a second native tooltip.
@@ -5245,6 +5283,8 @@ function GoldDiffTimeline({ timeline, deaths, duration }: { timeline: GoldDiffPo
             fill={d.is_ally ? "var(--accent-red)" : "var(--accent-blue)"}
             opacity={hover?.kind === "death" && hover.idx === i ? 1 : 0.7}
             pointerEvents="all"
+            style={onDeath ? { cursor: "pointer" } : undefined}
+            onClick={onDeath ? () => onDeath(d.game_time) : undefined}
             onMouseEnter={() => setHover({ kind: "death", idx: i })} />
         ))}
 
@@ -5414,7 +5454,10 @@ function DamageProfilePanel({ stats }: { stats: PostGameStats }) {
   );
 }
 
-function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void }) {
+function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch }: {
+  stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void;
+  recording?: Recording; onWatch?: (rec: Recording, at?: number) => void;
+}) {
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
 
   const maxDamage = Math.max(
@@ -5430,6 +5473,7 @@ function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats;
         )}
         <h3 className="section-title">Match Summary</h3>
       </div>
+      {recording && onWatch && <RecordingCard rec={recording} onWatch={onWatch} />}
       <div className="postgame-teams">
         {sorted.map((team, ti) => {
           const players = [...team.players].sort(
@@ -5465,7 +5509,8 @@ function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats;
       </div>
 
       {stats.gold_timeline.length > 0 && (
-        <GoldDiffTimeline timeline={stats.gold_timeline} deaths={stats.death_events} duration={stats.game_duration_secs} />
+        <GoldDiffTimeline timeline={stats.gold_timeline} deaths={stats.death_events} duration={stats.game_duration_secs}
+          onDeath={recording && onWatch ? (t) => onWatch(recording, Math.max(0, t - 8 + (recording.offset_secs ?? 0))) : undefined} />
       )}
 
       <DamageProfilePanel stats={stats} />
