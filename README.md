@@ -146,6 +146,14 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **Damage profile** — two cards: what you dealt (physical / magic / true split, the enemy team's real resistances, and how much of your damage they absorbed after your own penetration) and what you took (the incoming split, your finished armor and MR, total mitigated). Flags a genuine mismatch, e.g. 92% magic damage into a team averaging 190 MR with no penetration bought — and stays quiet when you are not the damage source
 - **Player profiles** — click any player name to view their ranked info and match history
 
+### Game Recording (macOS)
+- **Automatic** — with *Record games* on, every game is recorded from the loading screen to the end; a REC badge shows in the live game view
+- **Review player** — the timeline sits over the gold-lead curve, with markers for your kills, deaths, assists, multikills and objectives. Click a marker, a key moment in the side list, or a death on the post-game gold chart to jump 8 seconds before it. Speeds 0.5×–2×, keys ← → (moments), J / L (±5 s), Space
+- **Post-game card** — Watch, Keep or Delete right after the game; it opens at your best moment
+- **Library** — in the lobby, with disk usage, a Kept tab and a Watch button on match history rows that were recorded
+- **Storage** — 1080p60 H.264 at 6 Mbps, about 1.6 GB per 35-minute game. The last 10 games are kept automatically; kept recordings are never deleted. If the app quits mid-game, the video is still playable up to the last 10 seconds
+- Needs macOS 13 or later and the Screen Recording permission (asked when you turn it on)
+
 ### Ready Check
 - **Auto-accept** — automatically accepts the ready check when a match is found
 
@@ -155,6 +163,7 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - Auto-lock toggle
 - Auto-accept toggle
 - Voice cues toggle (TTS audio alerts during the game)
+- Record games toggle (macOS)
 - Overlay position selector (Off / Top-Left / Top-Right / Bottom-Left / Bottom-Right / Center)
 - All settings persisted across sessions
 
@@ -185,6 +194,7 @@ Pre-built binaries for **Windows** (.exe) and **macOS** (.dmg) are available fro
    xattr -cr /Applications/QueryLoL.app
    ```
 4. Open QueryLoL from Applications
+5. To record games, turn on *Record games* and allow QueryLoL under System Settings → Privacy & Security → Screen Recording, then restart the app
 
 ### In-Game Overlay
 
