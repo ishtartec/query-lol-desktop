@@ -2,6 +2,7 @@ mod config;
 mod lcu;
 mod models;
 mod opgg;
+mod recorder;
 mod tts;
 
 use models::{AppState, ConnectionStatus};
@@ -103,6 +104,12 @@ fn map_position(pos: &str) -> &'static str {
         "utility" | "support" => "support",
         _ => "mid",
     }
+}
+
+/// Spike helper: lists capturable windows, to confirm the game window's name.
+#[tauri::command]
+async fn list_capture_windows() -> Result<Vec<recorder::CaptureWindow>, String> {
+    tokio::task::spawn_blocking(recorder::list_windows).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -299,6 +306,7 @@ async fn poll_loop(
     state: SharedState,
     app_handle: tauri::AppHandle,
 ) {
+    let rec = app_handle.state::<recorder::SharedRecorder>().inner().clone();
     let mut last_champion_id: i64 = 0;
     let mut last_draft_hash: u64 = 0;
     let mut base_build: Option<BaseBuild> = None;
@@ -328,6 +336,17 @@ async fn poll_loop(
                 break;
             }
         };
+
+        // A game that ends without reaching EndOfGame (remake, reconnect
+        // loop) must not leave the recording running into the lobby.
+        let in_game = matches!(
+            phase.as_str(),
+            "GameStart" | "InProgress" | "PreEndOfGame" | "WaitingForStats" | "EndOfGame" | "Reconnect"
+        );
+        if !in_game && rec.lock().map(|r| r.session.is_some()).unwrap_or(false) {
+            let rec = rec.clone();
+            tokio::task::spawn_blocking(move || recorder::finish(&rec, 0));
+        }
 
         if phase == "ReadyCheck" {
             let auto_accept = state.lock().await.auto_accept;
@@ -670,10 +689,15 @@ async fn poll_loop(
                 }
             }
         } else if phase == "InProgress" || phase == "GameStart" {
-            let (already_in_game, sid, my_name) = {
+            let (already_in_game, sid, my_name, game_time) = {
                 let s = state.lock().await;
-                (s.status == ConnectionStatus::InGame, s.summoner_id, s.summoner_name.clone().unwrap_or_default())
+                let game_time = s.live_game.as_ref().and_then(|lg| lg.live_data.as_ref()).map(|ld| ld.game_time);
+                (s.status == ConnectionStatus::InGame, s.summoner_id, s.summoner_name.clone().unwrap_or_default(), game_time)
             };
+            if recorder::auto_enabled() {
+                let (rec, app) = (rec.clone(), app_handle.clone());
+                let _ = tokio::task::spawn_blocking(move || recorder::tick(&rec, &app, game_time)).await;
+            }
             if !already_in_game {
                 // Fetch live game info once on transition
                 match lcu::get_live_game(&creds, sid, &my_name).await {
@@ -719,6 +743,8 @@ async fn poll_loop(
                 match lcu::get_end_of_game_stats(&creds).await {
                     Ok(mut stats) => {
                         s.status = ConnectionStatus::PostGame;
+                        let (rec, game_id) = (rec.clone(), stats.game_id);
+                        tokio::task::spawn_blocking(move || recorder::finish(&rec, game_id));
                         // Compute phase stats and gold timeline from live game snapshots
                         if let Some(ref live_game) = s.live_game {
                             if let Some(ref live_data) = live_game.live_data {
@@ -1237,6 +1263,7 @@ pub fn run() {
     let state: SharedState = Arc::new(Mutex::new(AppState::default()));
 
     tauri::Builder::default()
+        .manage(recorder::SharedRecorder::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -1259,6 +1286,7 @@ pub fn run() {
             set_tts_enabled,
             set_flash_key,
             speak,
+            list_capture_windows,
         ])
         .setup(|app| {
             // Load persisted preferences
