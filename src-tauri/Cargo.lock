@@ -3249,7 +3249,7 @@ dependencies = [
 
 [[package]]
 name = "query-lol-desktop"
-version = "0.24.0"
+version = "0.24.1"
 dependencies = [
  "avassetwriter",
  "base64 0.22.1",
