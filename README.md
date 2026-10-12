@@ -164,7 +164,7 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 - **Library** — in the lobby, with disk usage, a Kept tab, delete with undo, and a Watch button on match history rows that were recorded
 - **Storage** — 1080p60 H.264 at 6 Mbps with AAC audio, about 1.6 GB per 35-minute game, encoded on the GPU. The last 10 games are kept automatically; kept recordings are never deleted. Recording is skipped when less than 4 GB of disk is free. On macOS, if the app quits mid-game the video is still playable up to the last 10 seconds
 - **macOS** — needs macOS 13 or later and the Screen Recording permission (asked when you turn it on)
-- **Windows (beta)** — Windows Graphics Capture + Media Foundation; records only the game's sound (Windows 10 2004 or later, otherwise all system audio). Use **Borderless** or **Windowed** display mode: exclusive Fullscreen may produce no video
+- **Windows (beta)** — Windows Graphics Capture + Media Foundation. Records the game window with only the game's own audio, so voice chat and music stay out (Windows 10 2004 or later; older versions record all system audio). Use **Borderless** or **Windowed** display mode: exclusive Fullscreen may produce no video
 
 ### Ready Check
 - **Auto-accept** — automatically accepts the ready check when a match is found
