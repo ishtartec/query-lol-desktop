@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <title>QueryLoL — The League of Legends coach that plans every level</title>
-  <meta name="description" content="QueryLoL is a free, open-source League of Legends companion: a coach-style level-by-level game plan for all 172 champions, real-time in-game voice callouts, an overlay packed with live advisors, smurf &amp; premade detection, and post-game analysis. ~15MB native app for Windows &amp; macOS — no account, no Electron, no telemetry." />
-  <meta name="keywords" content="League of Legends companion app, LoL overlay, op.gg desktop alternative, free lol overlay, lol coaching app, build optimizer, smurf detection, premade detection, level by level plan, Tauri, LCU" />
+  <meta name="description" content="QueryLoL is a free, open-source League of Legends companion: a coach-style level-by-level game plan for all 172 champions, real-time in-game voice callouts, an overlay packed with live advisors, smurf &amp; premade detection, post-game analysis and built-in game recording with a review timeline. ~15MB native app for Windows &amp; macOS — no account, no Electron, no telemetry." />
+  <meta name="keywords" content="League of Legends companion app, LoL overlay, op.gg desktop alternative, free lol overlay, lol coaching app, build optimizer, smurf detection, premade detection, level by level plan, lol game recorder, lol replay review, Tauri, LCU" />
   <meta name="author" content="ishtartec" />
   <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#070a0f" />
@@ -18,7 +18,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="QueryLoL" />
   <meta property="og:title" content="QueryLoL — The League of Legends coach that plans every level" />
-  <meta property="og:description" content="A coach-style level-by-level plan for all 172 champions, real-time voice callouts, a live-advisor overlay, smurf &amp; premade detection, and post-game analysis. Free, open source, ~15MB. No account, no Electron." />
+  <meta property="og:description" content="A coach-style level-by-level plan for all 172 champions, real-time voice callouts, a live-advisor overlay, smurf &amp; premade detection, post-game analysis and game recording. Free, open source, ~15MB. No account, no Electron." />
   <meta property="og:url" content="https://ishtartec.github.io/query-lol-desktop/" />
   <meta property="og:image" content="https://ishtartec.github.io/query-lol-desktop/screenshots/champ-select-build.png" />
   <meta property="og:image:width" content="2532" />
@@ -45,10 +45,10 @@
     "name": "QueryLoL",
     "applicationCategory": "GameApplication",
     "operatingSystem": "Windows, macOS",
-    "description": "A free, open-source League of Legends companion app: a coach-style level-by-level game plan for all 172 champions, real-time in-game voice callouts, a live-advisor overlay, smurf and premade detection, and post-game analysis.",
+    "description": "A free, open-source League of Legends companion app: a coach-style level-by-level game plan for all 172 champions, real-time in-game voice callouts, a live-advisor overlay, smurf and premade detection, post-game analysis, and game recording with a key-moment review timeline.",
     "url": "https://ishtartec.github.io/query-lol-desktop/",
     "downloadUrl": "https://github.com/ishtartec/query-lol-desktop/releases/latest",
-    "softwareVersion": "0.16.0",
+    "softwareVersion": "0.24.0",
     "license": "https://github.com/ishtartec/query-lol-desktop",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "author": { "@type": "Organization", "name": "ishtartec" }
@@ -78,6 +78,11 @@
         "@type": "Question",
         "name": "Do I need an account or login?",
         "acceptedAnswer": { "@type": "Answer", "text": "No account and no sign-up. QueryLoL reads your local League client directly and talks to public data sources like OP.GG and Data Dragon." }
+      },
+      {
+        "@type": "Question",
+        "name": "Can QueryLoL record my games?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes, optionally. Turn on Record games and every game is recorded in 1080p60 on your GPU, about 1.6 GB per 35-minute game. The review player marks your kills, deaths, assists and objectives on a timeline so you can jump straight to them. The last 10 games are kept automatically, plus any you choose to keep. Available on macOS, and in beta on Windows." }
       },
       {
         "@type": "Question",
@@ -240,6 +245,23 @@
       </div>
     </section>
 
+    <!-- SPOTLIGHT 05 -->
+    <section class="spotlight">
+      <div class="spot-media reveal">
+        <div class="frame"><img src="screenshots/recording-player.png" alt="Recording review player with kills, deaths and objectives marked over the gold-lead curve" loading="lazy" /></div>
+      </div>
+      <div class="spot-copy reveal">
+        <span class="num">05</span>
+        <p class="section-eyebrow">Game recording</p>
+        <h2 class="section-title">Watch the moments that decided it</h2>
+        <p>Turn on <em>Record games</em> and every game is captured in the background, hardware-encoded so it doesn't cost you frames. Afterwards the timeline sits over your gold-lead curve with a marker for each kill, death, assist, multikill and objective — click one, or a death on the post-game chart, and the video starts 8 seconds before it.</p>
+        <ul class="ticks">
+          <li>1080p60, about <strong>1.6 GB</strong> per 35-minute game</li>
+          <li>Keeps the last 10 automatically; keep the ones you want forever</li>
+          <li>macOS, and Windows in beta (records only the game's sound)</li>
+        </ul>
+      </div>
+    </section>
     <!-- FEATURE BENTO -->
     <section id="features" class="band">
       <p class="section-eyebrow">Everything in the box</p>
@@ -263,11 +285,15 @@
         </article>
         <article class="cell">
           <h3>Post-Game</h3>
-          <p>Full scoreboard with MVP &amp; multikills · gold-advantage timeline · elo comparison · early/mid/late phase splits.</p>
+          <p>Full scoreboard with MVP &amp; multikills · gold-advantage timeline · damage dealt &amp; taken profile · elo comparison · early/mid/late phase splits.</p>
+        </article>
+        <article class="cell">
+          <h3>Game Recording</h3>
+          <p>Automatic 1080p60 recording · key-moment timeline over the gold curve · jump to any death from the post-game chart · library with keep &amp; delete.</p>
         </article>
         <article class="cell">
           <h3>Profile &amp; Mental</h3>
-          <p>Daily summary &amp; play-time nudges · tilt gate · role-aware improvement priorities · LP chart · per-champion deltas.</p>
+          <p>Daily summary &amp; play-time nudges · tilt gate · role-aware improvement priorities · LP chart · per-champion deltas · Practice Tool kept out of your stats.</p>
         </article>
       </div>
     </section>
@@ -287,6 +313,7 @@
             <tr><th scope="row">Account required</th><td class="us"><span class="yes">No</span></td><td>Often</td></tr>
             <tr><th scope="row">Telemetry &amp; ads</th><td class="us"><span class="yes">None</span></td><td>Common</td></tr>
             <tr><th scope="row">Per-level game plan</th><td class="us"><span class="yes">Yes — 172 champions</span></td><td>Rare</td></tr>
+            <tr><th scope="row">Game recording &amp; review</th><td class="us"><span class="yes">Built in, with key-moment timeline</span></td><td>Separate app</td></tr>
             <tr><th scope="row">In-game voice callouts</th><td class="us"><span class="yes">Yes</span></td><td>Rare</td></tr>
             <tr><th scope="row">Open source</th><td class="us"><span class="yes">Yes</span></td><td><span class="no">No</span></td></tr>
           </tbody>
@@ -316,6 +343,10 @@
           <p>No account and no sign-up. QueryLoL reads your local League client directly and pulls public data from sources like OP.GG and Data Dragon.</p>
         </details>
         <details>
+          <summary>Can it record my games?</summary>
+          <p>Yes, if you turn on <em>Record games</em>. Each game is recorded in 1080p60 on your GPU (about 1.6&nbsp;GB per 35 minutes) and opens in a review player where your kills, deaths, assists and objectives are markers you can jump to. The last 10 games are kept automatically, plus any you mark to keep. Available on macOS, and in beta on Windows — there, use Borderless or Windowed display mode.</p>
+        </details>
+        <details>
           <summary>How is the app only ~15MB?</summary>
           <p>It's built with Tauri (Rust) and uses your OS's native webview instead of bundling a full Chromium runtime like Electron or Overwolf apps — so it stays tiny and light on resources.</p>
         </details>
@@ -325,7 +356,7 @@
     <!-- FINAL CTA -->
     <section class="closer">
       <h2>Stop reacting. Start planning.</h2>
-      <p>One small download. Every level mapped, every callout spoken, every lobby scouted.</p>
+      <p>One small download. Every level mapped, every callout spoken, every lobby scouted, every game ready to rewatch.</p>
       <div class="cta-row center">
         <a class="btn btn-lg" href="https://github.com/ishtartec/query-lol-desktop/releases/latest" target="_blank" rel="noopener">Download for Windows &amp; macOS</a>
       </div>

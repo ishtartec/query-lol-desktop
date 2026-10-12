@@ -2,7 +2,7 @@
 
 A desktop companion app for League of Legends that auto-configures optimal builds, provides counter-based pick/ban suggestions, real-time in-game tracking, and post-game analysis — all in real time.
 
-Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Overwolf, no Electron.
+Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Overwolf, no Electron. Optionally records your games and lets you jump straight to every kill, death and objective.
 
 **🌐 Website:** https://ishtartec.github.io/query-lol-desktop/ · **⬇️ [Download latest release](https://github.com/ishtartec/query-lol-desktop/releases/latest)**
 
@@ -29,6 +29,11 @@ Real-time recommended build, win probability, gold diff, and a full scoreboard w
 Full match scoreboard for both teams — damage, KP, CS, vision and gold per player — plus a role-adjusted performance breakdown (here vs Gold UTILITY) across KDA, CS/min, gold/min, damage share, vision/min and kill participation.
 
 ![Post-game match summary with role-adjusted performance breakdown](docs/screenshots/post-game.png)
+
+### Game Recording & Review
+Every game recorded in the background. The review player puts your kills, deaths, assists and objectives on a timeline over the gold-lead curve, so one click takes you 8 seconds before any of them.
+
+![Recording review player with key moments over the gold-lead curve](docs/screenshots/recording-player.png)
 
 ### Home Dashboard
 Today's recap, your top champions vs your own baseline, role-aware areas to improve (benchmarked against your rank and detected position), LP progress, and recent match history.
@@ -84,6 +89,8 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **Improvement priorities** — top 3 areas to improve based on your ranked history vs elo benchmarks, with visual bars and actionable advice
 - **Match history** — recent games with champion icon, result, KDA, duration, and relative timestamps
 - **Mode filters** — filter by All, Ranked, Normal, or ARAM
+- **Practice Tool excluded** — Practice Tool games appear in the history marked "P" but never count towards win rate, streaks, the daily summary or improvement stats
+- **Recordings library** — your recorded games with disk usage, a Kept tab, and Watch / Keep / Delete on each (delete can be undone for a few seconds)
 - **Champion filter** — filter match history by your top 5 most-played champions
 - **Win/loss stats** — win rate percentage and current win/loss streak detection
 - **LP progress chart** — SVG line chart tracking LP changes over time (up to 50 data points) with bezier curves and color-coded gains/losses
@@ -93,7 +100,7 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 ### Live Game
 - **Team compositions** — blue vs red side with champion icons and summoner names, sorted by lane (top → jungle → mid → bot → support)
 - **Player ranks** — rank emblems and tier text for every player in the match
-- **Player labels** — automatic badges: OTP, Autofill/1st Time, Win Streak, Loss Streak, Tilted, High WR
+- **Player labels** — automatic badges: OTP, Autofill/1st Time, Win Streak, Loss Streak, Tilted, High WR. "1st Time" needs at least 5 readable recent games, so a match history that failed to load never reads as a first-timer
 - **Ranked stats** — W/L record, win rate, and current win/loss streak
 - **Champion proficiency** — games played, win rate, and KDA on the picked champion
 - **Smurf detection** — automatic analysis of enemy accounts using account level, win rate, games played, KDA, and champion diversity to flag likely smurfs with a 0-100 confidence score
@@ -118,7 +125,7 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **Wave state advisor** — during lane phase, recommends an action based on your CS diff vs lane opponent: *Push prio · roam* / *Push wave* / *Hold wave* / *Last-hit safe* / *Freeze cerca torre*
 - **Enemy jungle tracker** — infers jungler activity from kill/assist/death events. Shows `JGL: farmeando` / `JGL: posible gank o obj` / `JGL: obj/invadiendo` based on time since last seen + game minute heuristics
 - **Vision target advisor** — compares your ward score against the Gold-elo benchmark for your role (SUP 1.5/min, JNG 0.9/min, others 0.6/min). Soft red warning when you're <70% of target
-- **Voice cues (TTS)** — optional audio alerts for time-critical events that you can't see in the visual overlay during play. Uses macOS `say` (Samantha voice) or Windows SAPI (en-US). Toggle from the toolbar. Currently speaks:
+- **Voice cues (TTS)** — optional audio alerts for time-critical events that you can't see in the visual overlay during play. Uses macOS `say` (Samantha voice) or Windows SAPI (en-US). Toggle from the settings menu. Currently speaks:
   - *"Caitlyn missing"* when an enemy laner has been MIA ≥8s (45s cooldown per enemy)
   - *"Caitlyn completed Wit's End"* when an enemy buys a ≥2500g item (60s cooldown per item)
   - *"Recall ready, Lost Chapter"* when you can afford a key item (90s cooldown)
@@ -136,7 +143,7 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **Kill participation** — percentage of team kills involved in
 - **CS & vision score** — with ward placement and ward kill breakdown on hover
 - **Gold earned** — formatted with "k" suffix
-- **Performance highlighting** — stats color-coded green (>115% of team avg) or red (<85% of team avg)
+- **Performance highlighting** — the best damage, KP, CS, vision and gold in each team are marked in gold; raw numbers stay neutral so wins and losses read from the outcome, not from a sea of red and green
 - **MVP badge** — awarded to the top performer based on a composite score
 - **Multikill badges** — triple, quadra, and penta kill indicators
 - **Final items** — complete end-game item build for each player with tooltips
@@ -146,24 +153,26 @@ Today's recap, your top champions vs your own baseline, role-aware areas to impr
 - **Damage profile** — two cards: what you dealt (physical / magic / true split, the enemy team's real resistances, and how much of your damage they absorbed after your own penetration) and what you took (the incoming split, your finished armor and MR, total mitigated). Flags a genuine mismatch, e.g. 92% magic damage into a team averaging 190 MR with no penetration bought — and stays quiet when you are not the damage source
 - **Player profiles** — click any player name to view their ranked info and match history
 
-### Game Recording (macOS)
-- **Automatic** — with *Record games* on, every game is recorded from the loading screen to the end; a REC badge shows in the live game view
+### Game Recording (macOS, Windows beta)
+- **Automatic** — with *Record games* on (off by default), every game is recorded from the loading screen to the end, Practice Tool included; a REC badge shows in the live game view
 - **Review player** — the timeline sits over the gold-lead curve, with markers for your kills, deaths, assists, multikills and objectives. Click a marker, a key moment in the side list, or a death on the post-game gold chart to jump 8 seconds before it. Speeds 0.5×–2×, keys ← → (moments), J / L (±5 s), Space
 - **Post-game card** — Watch, Keep or Delete right after the game; it opens at your best moment
-- **Library** — in the lobby, with disk usage, a Kept tab and a Watch button on match history rows that were recorded
-- **Storage** — 1080p60 H.264 at 6 Mbps, about 1.6 GB per 35-minute game. The last 10 games are kept automatically; kept recordings are never deleted. If the app quits mid-game, the video is still playable up to the last 10 seconds
-- Needs macOS 13 or later and the Screen Recording permission (asked when you turn it on)
+- **Library** — in the lobby, with disk usage, a Kept tab, delete with undo, and a Watch button on match history rows that were recorded
+- **Storage** — 1080p60 H.264 at 6 Mbps with AAC audio, about 1.6 GB per 35-minute game, encoded on the GPU. The last 10 games are kept automatically; kept recordings are never deleted. Recording is skipped when less than 4 GB of disk is free. On macOS, if the app quits mid-game the video is still playable up to the last 10 seconds
+- **macOS** — needs macOS 13 or later and the Screen Recording permission (asked when you turn it on)
+- **Windows (beta)** — Windows Graphics Capture + Media Foundation; records only the game's sound (Windows 10 2004 or later, otherwise all system audio). Use **Borderless** or **Windowed** display mode: exclusive Fullscreen may produce no video
 
 ### Ready Check
 - **Auto-accept** — automatically accepts the ready check when a match is found
 
-### Settings (Toolbar)
+### Settings (gear menu in the header)
 - Region selector
 - Auto-apply toggle
 - Auto-lock toggle
 - Auto-accept toggle
 - Voice cues toggle (TTS audio alerts during the game)
-- Record games toggle (macOS)
+- Record games toggle (macOS and Windows)
+- Flash key (auto-detected from your recent games, or forced to D / F)
 - Overlay position selector (Off / Top-Left / Top-Right / Bottom-Left / Bottom-Right / Center)
 - All settings persisted across sessions
 
@@ -183,7 +192,7 @@ Pre-built binaries for **Windows** (.exe) and **macOS** (.dmg) are available fro
 2. Run the installer — Windows SmartScreen will show a warning because the app is not code-signed yet
 3. Click **"More info"** → **"Run anyway"** to proceed with the installation
 4. Launch QueryLoL from the Start Menu or desktop shortcut
-5. Set League of Legends to **Borderless** display mode (Settings → Video) for the in-game overlay to work
+5. Set League of Legends to **Borderless** display mode (Settings → Video) for the in-game overlay to work. Game recording also needs Borderless or Windowed
 
 ### macOS
 
@@ -198,7 +207,7 @@ Pre-built binaries for **Windows** (.exe) and **macOS** (.dmg) are available fro
 
 ### In-Game Overlay
 
-During a match, hold **TAB** to show a compact overlay with gold diff, enemy KDA/items/spells, and objective timers. The overlay position can be configured from the toolbar dropdown (Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, or Off). Requires **Borderless** display mode in League of Legends.
+During a match, hold **TAB** to show a compact overlay with gold diff, enemy KDA/items/spells, and objective timers. The overlay position can be configured from the settings menu (gear icon) (Top-Left, Top-Right, Bottom-Left, Bottom-Right, Center, or Off). Requires **Borderless** display mode in League of Legends.
 
 ---
 
@@ -212,6 +221,7 @@ During a match, hold **TAB** to show a compact overlay with gold diff, enemy KDA
 | HTTP client | Reqwest (Rust) |
 | Async runtime | Tokio (Rust) |
 | Serialization | Serde (Rust) |
+| Game recording | ScreenCaptureKit + AVAssetWriter (macOS), Windows Graphics Capture + Media Foundation + WASAPI (Windows) |
 
 ### Data Sources
 - **Riot LCU** — local League client API for game state, summoner info, applying builds, match history
@@ -278,7 +288,8 @@ pnpm tauri build
 8. **Voice cues** — `say` on macOS or Windows SAPI for time-critical audio alerts (missing enemies, enemy item completions, recall ready, jungle rotations, vision reminders). Throttled with per-event cooldowns.
 9. **Overlay** — a second transparent window (hold TAB) shows compact live game info on top of the game (Windows borderless windowed).
 10. **Post-game analysis** — computes gold timeline, death impacts, per-phase stats, and elo comparison from collected snapshots.
-11. **State sync** — the backend emits `app-state-changed` events to the React frontend, which re-renders reactively.
+11. **Game recording** — when the game window appears, it is captured and hardware-encoded to MP4 next to a JSON file with the key moments, gold timeline and the offset between video time and game time, so every marker lands on the right frame.
+12. **State sync** — the backend emits `app-state-changed` events to the React frontend, which re-renders reactively.
 
 ---
 

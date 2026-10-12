@@ -3,7 +3,7 @@
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://ishtartec.github.io/query-lol-desktop/</loc>
-    <lastmod>2026-06-21</lastmod>
+    <lastmod>2026-10-12</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
     <image:image>
@@ -17,6 +17,10 @@
     <image:image>
       <image:loc>https://ishtartec.github.io/query-lol-desktop/screenshots/post-game.png</image:loc>
       <image:title>QueryLoL post-game analysis</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://ishtartec.github.io/query-lol-desktop/screenshots/recording-player.png</image:loc>
+      <image:title>QueryLoL game recording review player</image:title>
     </image:image>
   </url>
 </urlset>
