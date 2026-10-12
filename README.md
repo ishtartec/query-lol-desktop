@@ -26,9 +26,13 @@ Real-time recommended build, win probability, gold diff, and a full scoreboard w
 ![Live game scoreboard and recommended build](docs/screenshots/live-game.png)
 
 ### Post-Game Analysis
-Full match scoreboard for both teams — damage, KP, CS, vision and gold per player — plus a role-adjusted performance breakdown (here vs Gold UTILITY) across KDA, CS/min, gold/min, damage share, vision/min and kill participation.
+Full match scoreboard for both teams — damage, KP, CS, vision and gold per player, with the best in each team marked in gold, plus MVP and multikill badges.
 
-![Post-game match summary with role-adjusted performance breakdown](docs/screenshots/post-game.png)
+![Post-game scoreboard for both teams](docs/screenshots/post-game.png)
+
+Below it: the gold-advantage curve with the win probability and every kill and death, what your damage ran into (here 87% physical into 103 average armor, half of it absorbed), and a role-adjusted performance breakdown (vs Gold UTILITY) across KDA, CS/min, gold/min, vision/min, damage share and kill participation.
+
+![Gold advantage, damage profile and role-adjusted performance](docs/screenshots/post-game-analysis.png)
 
 ### Game Recording & Review
 Every game recorded in the background. The review player puts your kills, deaths, assists and objectives on a timeline over the gold-lead curve, so one click takes you 8 seconds before any of them.
@@ -36,7 +40,7 @@ Every game recorded in the background. The review player puts your kills, deaths
 ![Recording review player with key moments over the gold-lead curve](docs/screenshots/recording-player.png)
 
 ### Home Dashboard
-Today's recap, your top champions vs your own baseline, role-aware areas to improve (benchmarked against your rank and detected position), LP progress, and recent match history.
+Today's recap, your top champions vs your own baseline, LP progress, role-aware areas to improve (benchmarked against your rank and detected position), your recordings library and recent match history.
 
 ![Home dashboard with role-aware improvement panel and LP progress](docs/screenshots/home-dashboard.png)
 
