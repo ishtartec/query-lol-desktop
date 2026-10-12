@@ -25,6 +25,9 @@ npx tsc --noEmit
 # Rust type-check only
 cd src-tauri && cargo check
 
+# Regenerate every icon from src-tauri/icons/QueryLoL.icon (needs Xcode 26+)
+./scripts/build-icons.sh
+
 # Release a new version (bumps version in 3 files, commits, tags, pushes)
 ./scripts/release.sh 0.X.0
 ```
@@ -104,6 +107,7 @@ All HTTP requests happen in Rust only. Frontend communicates with backend via `i
 - **`championStats` reports live effective values**: armor, magic resist and health are polluted by shred, buffs and shields, so they cannot be used to measure item values (measured Trinity Force at -20 armor). Attack damage and ability power are almost never shredded and resolve exactly.
 
 - **Windows recording is untested on real hardware** (written and compiled from macOS). Things to confirm first: League's exclusive *Fullscreen* mode may deliver no Graphics Capture frames (the recording then fails with "no frames were captured" — Borderless/Windowed should work); whether the fragmented MP4 seeks and reports its duration in WebView2; whether `SetIsBorderRequired(false)` removes the yellow border for an unpackaged app (Windows 11 only); that the GOP/CBR `ICodecAPI` values are honoured by the GPU's encoder (warnings in the log otherwise).
+- **App icon (Liquid Glass)**: the source is the Icon Composer document `src-tauri/icons/QueryLoL.icon` (layers: gem, tail, ring over a navy gradient); `scripts/build-icons.sh` derives everything else. macOS 26+ uses the committed `icons/Assets.car` (listed in `bundle.icon`; the bundler copies it and sets `CFBundleIconName` from it), older macOS the `icon.icns` drawn on the 824/1024 grid. The `.car` is committed rather than letting Tauri compile the `.icon`, because Xcode 27's `actool` fails with "Bad file descriptor" whenever its stdout is a pipe — exactly how the bundler runs it — and CI may lack Xcode 26. Don't add `CFBundleIconName` to `src-tauri/Info.plist`: it overrides the bundler's value, and a name that is not in the `.car` silently falls back to the icns (that is what the earlier icon did). If `actool` fails even with output to a file, a stale `ibtoold` daemon is the usual cause: `pkill -f ibtoold`.
 - **Swift runtime rpath**: `screencapturekit` / `avassetwriter` ship Swift bridges that need `/usr/lib/swift` at load time. The crates emit that rpath with `rustc-link-arg`, which Cargo never propagates from a dependency, so `build.rs` adds it; without it the app aborts at launch with `Library not loaded: libswift_Concurrency.dylib`.
 - **Screen Recording permission (TCC)**: checked with `CGPreflightScreenCaptureAccess` before every start so a game never prompts mid-load; requested once when the setting is turned on. A grant only takes effect after the app restarts. In `pnpm tauri dev` the terminal is the responsible process, so its permission is what counts — a missing-permission bug will not reproduce in dev.
 - **Live Client event names**: `KillerName` / `VictimName` / `Assisters` may be a bare game name or a full `Name#TAG` depending on client version; `allPlayers` keys by `riotIdGameName`. `key_moments` compares with `name_key()` (tag stripped, lower-cased) for that reason.

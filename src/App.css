@@ -121,11 +121,8 @@
 }
 /* Clears the macOS traffic lights (overlay title bar). */
 .header-left { display: flex; align-items: center; gap: 10px; padding-left: 64px; }
-.logo {
-  width: 28px; height: 28px; border-radius: 8px; background: var(--accent-gold);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 14px; color: var(--bg-primary);
-}
+/* The app icon itself (rendered from src-tauri/icons/QueryLoL.icon). */
+.logo { width: 28px; height: 28px; display: block; pointer-events: none; }
 .app-title { font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
 .header-phase {
   position: absolute; left: 50%; transform: translateX(-50%);

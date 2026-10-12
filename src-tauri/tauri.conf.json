@@ -52,13 +52,10 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
+      "icons/Assets.car",
       "icons/icon.ico"
     ],
-    "macOS": {
-      "files": {
-        "Resources/Assets.car": "resources/Assets.car"
-      }
-    },
+    "macOS": {},
     "createUpdaterArtifacts": true
   },
   "plugins": {

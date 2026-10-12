@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
+import logoUrl from "./assets/logo.png";
 
 // --- Types ---
 
@@ -2721,7 +2722,7 @@ function App() {
       {/* Header */}
       <header className="header" data-tauri-drag-region>
         <div className="header-left" data-tauri-drag-region>
-          <div className="logo">Q</div>
+          <img className="logo" src={logoUrl} alt="" width={28} height={28} draggable={false} />
           <span className="app-title">QueryLoL</span>
         </div>
         <div className="header-phase" data-tauri-drag-region>
