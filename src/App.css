@@ -240,7 +240,6 @@
 
 .hint { font-size: 12px; color: var(--text-muted); margin-bottom: 24px; }
 
-
 .btn-connect {
   background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-dim));
   color: #0a0e13; border: none; border-radius: 6px;
@@ -361,16 +360,6 @@
   min-height: 0;
 }
 
-/* Matchup analysis */
-.matchup-list { display: flex; flex-direction: column; gap: 4px; }
-.matchup-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 8px; background: var(--bg-primary);
-  border-radius: 6px; font-size: 12px;
-}
-.matchup-row .draft-champ-name { flex: 1; font-size: 11px; }
-.matchup-wr { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
-
 .cs-left, .cs-right { width: 236px; flex-shrink: 0; overflow-y: auto; }
 
 .cs-center {
@@ -478,40 +467,6 @@
 /* === Recommendations === */
 .section-recs { animation: slideUp 0.3s ease; }
 .recs-list { display: flex; flex-direction: column; gap: 6px; }
-/* Prediction card */
-.prediction-card {
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: 10px; padding: 12px 16px;
-}
-.prediction-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
-}
-.prediction-wr { display: flex; align-items: center; gap: 8px; }
-.pred-team { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.pred-ally { color: var(--accent-blue); }
-.pred-enemy { color: var(--accent-red); }
-.pred-vs { font-size: 10px; font-weight: 700; color: var(--text-muted); }
-
-.prediction-bars { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.pred-bar-row { display: flex; align-items: center; gap: 8px; }
-.pred-bar-label {
-  font-size: 10px; font-weight: 600; color: var(--text-muted);
-  width: 32px; flex-shrink: 0;
-}
-.pred-bar {
-  flex: 1; height: 8px; background: var(--bg-primary);
-  border-radius: 4px; overflow: hidden;
-}
-.pred-bar-ally { height: 100%; background: var(--accent-blue); border-radius: 4px; opacity: 0.8; }
-.pred-bar-enemy { height: 100%; background: var(--accent-red); border-radius: 4px; opacity: 0.8; }
-
-.prediction-tip {
-  font-size: 11px; color: var(--text-secondary); font-weight: 500;
-  line-height: 1.4; padding: 8px 10px;
-  background: var(--bg-primary); border-radius: 6px;
-}
-
 /* Ban cards. Their old rec-card / rec-icon class names collided with
    recordings.css, which restyled them as recording cards. */
 .ban-card {
@@ -546,28 +501,7 @@
 }
 
 /* === Build section === */
-.section-build { animation: slideUp 0.25s ease; display: flex; flex-direction: column; gap: 14px; }
 
-.champion-card {
-  display: flex; align-items: center; gap: 16px; min-height: 108px;
-  padding: 0 22px; background: var(--bg-card);
-  border: 1px solid var(--border); border-radius: var(--radius-lg);
-  background-size: cover; background-position: 60% 20%;
-  position: relative; overflow: hidden;
-}
-.champion-card::before {
-  content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(10,14,19,.97) 0%, rgba(10,14,19,.86) 45%, rgba(10,14,19,.35) 100%);
-  z-index: 0;
-}
-.champion-card > * { position: relative; z-index: 1; }
-.champion-avatar {
-  width: 64px; height: 64px; border-radius: 14px; overflow: hidden; flex-shrink: 0;
-  box-shadow: 0 0 0 2px rgba(200,155,60,.65);
-}
-.champion-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.champion-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.champion-name { font-size: 28px; font-weight: 700; letter-spacing: -.4px; line-height: 1.1; }
 .position-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 500; color: #b8c0cc; }
 .btn-apply {
   height: 36px; padding: 0 16px; border: none; border-radius: var(--radius-sm);
@@ -600,12 +534,6 @@
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 16px 18px;
 }
-.card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.card-label {
-  font-size: 11px; font-weight: 700; color: var(--text-secondary);
-  text-transform: uppercase; letter-spacing: .08em; margin: 0;
-}
-.build-card > .card-label { margin-bottom: 12px; }
 
 /* Alt tabs: the build options as a segmented control. */
 .alt-tabs { display: inline-flex; padding: 2px; border-radius: var(--radius-sm); background: var(--surface-sunken); border: 1px solid var(--border); }
@@ -620,35 +548,8 @@
 .alt-tab-active { background: var(--surface-3); color: var(--accent-gold-text); box-shadow: inset 0 0 0 1px var(--border-strong); }
 .alt-tab-active .alt-tab-style { color: var(--text-secondary); }
 
-/* Spells */
-.spells-row { display: flex; gap: 10px; }
-.spell-slot { width: 40px; height: 40px; border-radius: 9px; overflow: hidden; }
-.spell-slot img { width: 100%; height: 100%; display: block; }
-
-/* Skills */
-.skills-row { display: flex; gap: 6px; align-items: center; }
-.skill-pip {
-  width: 28px; height: 28px; border-radius: 5px;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; color: #0a0e13;
-  cursor: help;
-}
-
 /* Level-by-level order (levels 1-15) from OP.GG */
-.skill-levels {
-  display: flex; gap: 3px; flex-wrap: wrap;
-  margin-top: 10px; padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-.skill-lvl { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.skill-lvl-num { font-size: 8px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.skill-lvl-pip { position: relative; display: flex; }
-.skill-pip-sm {
-  width: 18px; height: 18px; border-radius: 4px;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; color: #0a0e13;
-  cursor: help;
-}
+
 .skill-evolve {
   position: absolute; top: -4px; right: -4px;
   min-width: 10px; height: 10px; padding: 0 1px; border-radius: 3px;
@@ -664,74 +565,15 @@
 }
 
 /* === Runes === */
-.runes-layout { display: flex; gap: 20px; align-items: flex-start; }
-.rune-tree { flex: 1; min-width: 0; }
-.rune-tree-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.tree-icon { width: 18px; height: 18px; border-radius: 50%; }
-.rune-divider { width: 1px; background: var(--surface-2); align-self: stretch; }
-.rune-slots { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.rune-slots-shards { gap: 6px; flex-direction: column; align-items: stretch; }
-.rune-pip {
-  width: 34px; height: 34px; border-radius: 50%; overflow: hidden;
-  background: var(--surface-sunken); display: flex; align-items: center; justify-content: center;
-}
-.rune-pip.keystone { width: 50px; height: 50px; box-shadow: 0 0 0 2px rgba(200,155,60,.6); }
-.rune-pip img { width: 100%; height: 100%; display: block; }
+
 .rune-id { font-size: 8px; color: var(--text-muted); font-family: monospace; }
-.shard-chip {
-  height: 26px; padding: 0 10px; border-radius: 7px; background: var(--surface-2);
-  font-size: 12px; font-weight: 500; color: #b8c0cc; white-space: nowrap;
-  display: flex; align-items: center; gap: 6px;
-}
-.shard-icon { width: 14px; height: 14px; }
 
 /* === Items === */
-.items-sections { display: flex; flex-direction: column; gap: 14px; }
-.items-top-row { display: flex; gap: 24px; }
-.items-half { flex: 1; min-width: 0; }
-.items-group { display: flex; flex-direction: column; gap: 6px; }
-.items-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .08em; }
+
 .items-row { display: flex; gap: 6px; align-items: center; }
 .item-slot { width: 34px; height: 34px; border-radius: 7px; overflow: hidden; background: var(--surface-sunken); }
 .item-slot img { width: 100%; height: 100%; display: block; }
 .item-arrow { color: var(--text-muted); font-size: 10px; margin: 0 1px; }
-
-.item-option-row {
-  display: flex; align-items: center; gap: 8px; min-height: 42px;
-  padding: 0 10px; border-radius: 10px; border: 1px solid transparent;
-  transition: background .12s ease, border-color .12s ease;
-}
-.item-option-row:hover { background: var(--surface-2); }
-.item-option-active { background: rgba(200,155,60,.08); border-color: rgba(200,155,60,.5); }
-.item-option-active:hover { background: rgba(200,155,60,.11); }
-.item-option-icons { display: flex; gap: 4px; align-items: center; }
-.item-option-icons img { border-radius: 7px; }
-.item-core-slot { display: flex; align-items: center; gap: 4px; }
-.item-chevron { color: #4a5568; }
-.item-arrow-sm { color: var(--text-muted); font-size: 9px; }
-.item-opt-pr { font-size: 12px; color: var(--text-muted); margin-left: auto; font-variant-numeric: tabular-nums; }
-.item-opt-wr { font-size: 13px; font-weight: 700; min-width: 50px; text-align: right; font-variant-numeric: tabular-nums; }
-.item-opt-matchup { color: var(--accent-gold-text); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; font-weight: 700; }
-
-/* === Matchup build adjustment === */
-.mbuild-title { display: flex; align-items: center; gap: 5px; }
-.mbuild-title img { border-radius: 3px; }
-.mbuild-games { font-size: 9px; font-weight: 600; color: var(--text-muted); }
-.mbuild-none { font-size: 10px; color: var(--text-secondary); margin: 2px 0 0; }
-.mbuild-legend { font-size: 9px; color: var(--text-muted); margin-bottom: 4px; }
-.mbuild-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
-.mbuild-cat {
-  font-size: 9px; font-weight: 700; color: var(--text-secondary);
-  text-transform: uppercase; letter-spacing: 0.5px; min-width: 52px;
-}
-.mbuild-row img { display: block; border-radius: 3px; }
-.mbuild-out { opacity: 0.4; filter: grayscale(1); }
-.mbuild-share { font-size: 10px; color: var(--text-secondary); }
-.mbuild-share strong { color: var(--text-primary); }
-.mbuild-tag {
-  margin-left: auto; font-size: 9px; font-weight: 700; color: var(--accent-gold);
-  border: 1px solid var(--accent-gold-dim); border-radius: 3px; padding: 0 4px;
-}
 
 /* === Toast === */
 .toast-error {
@@ -1318,91 +1160,6 @@
   flex-shrink: 0;
 }
 
-/* === Damage Composition === */
-.dmg-comp { display: flex; flex-direction: column; gap: 6px; }
-.dmg-row { display: flex; align-items: center; gap: 10px; }
-.dmg-label { font-size: 12px; font-weight: 600; min-width: 52px; }
-.dmg-bar { flex: 1; display: flex; gap: 2px; height: 20px; border-radius: 6px; overflow: hidden; }
-.dmg-ad, .dmg-ap {
-  color: #0a0e13; font-size: 11px; font-weight: 700; display: flex; align-items: center;
-  justify-content: center; white-space: nowrap; font-variant-numeric: tabular-nums;
-}
-.dmg-ad { background: var(--dmg-physical); }
-.dmg-ap { background: var(--dmg-magic); }
-.dmg-warn { font-size: 12px; font-weight: 600; color: var(--accent-gold-text); white-space: nowrap; }
-
-/* === Matchup Analysis === */
-.matchup-panel {
-  margin-top: 12px; padding: 10px 14px;
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
-}
-.matchup-header {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
-}
-.matchup-vs {
-  font-size: 10px; font-weight: 800; color: var(--text-muted);
-  letter-spacing: 1px;
-}
-.matchup-summary {
-  font-size: 11px; font-weight: 600; color: var(--text-primary);
-  margin-left: auto;
-}
-.matchup-phases {
-  display: flex; flex-direction: column; gap: 3px;
-}
-.matchup-phase {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 8px; border-radius: 5px; font-size: 10px;
-}
-.matchup-range {
-  font-weight: 700; min-width: 48px; flex-shrink: 0;
-}
-.matchup-tip {
-  color: var(--text-secondary);
-}
-.matchup-you { background: var(--positive-soft); }
-.matchup-you .matchup-range { color: var(--positive); }
-.matchup-enemy { background: var(--negative-soft); }
-.matchup-enemy .matchup-range { color: var(--negative); }
-.matchup-even {
-  background: rgba(122, 133, 149, 0.08);
-}
-.matchup-even .matchup-range { color: var(--text-secondary); }
-
-/* === Adaptive Item Recommendations === */
-.item-recs-panel {
-  margin-top: 12px; padding: 10px 14px;
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
-}
-.item-recs-title {
-  font-size: 11px; font-weight: 700; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px;
-}
-.item-rec {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 10px; border-radius: 6px; margin-bottom: 4px;
-}
-.item-rec-high {
-  background: rgba(240, 107, 126, 0.1); border: 1px solid rgba(240, 107, 126, 0.2);
-}
-.item-rec-medium {
-  background: rgba(255, 165, 0, 0.08); border: 1px solid rgba(255, 165, 0, 0.15);
-}
-.item-rec-header {
-  display: flex; flex-direction: column; gap: 1px;
-}
-.item-rec-cat {
-  font-size: 11px; font-weight: 700;
-}
-.item-rec-high .item-rec-cat { color: var(--negative); }
-.item-rec-medium .item-rec-cat { color: #e0a868; }
-.item-rec-reason {
-  font-size: 10px; color: var(--text-secondary);
-}
-.item-rec-items {
-  display: flex; gap: 4px;
-}
-
 /* === Improvement Priorities === */
 .improve-panel { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 10px; }
 .improve-row { display: grid; grid-template-columns: 80px 64px 84px minmax(0, 1fr); align-items: center; gap: 10px; padding: 4px 0; }
@@ -1563,9 +1320,6 @@
 .gt-pos { color: var(--accent-blue); font-weight: 700; }
 .gt-neg { color: var(--accent-red); font-weight: 700; }
 .gt-prob { color: var(--accent-gold); font-weight: 700; }
-/* Post-game damage profile. Prefixed `dprof-` on purpose: the champ-select
-   damage-composition panel already owns .dmg-row / .dmg-bar / .dmg-resist /
-   .dmg-legend-item, and reusing those names silently restyled it. */
 /* Two fixed columns, not auto-fit: the full-width note (grid-column 1 / -1)
    keeps every auto-fit track alive, so the cards filled only two of three. */
 .dprof-row {
@@ -1739,443 +1493,10 @@
 
 /* ==== Level Plan Timeline ==== */
 
-.level-plan {
-  margin-top: 10px;
-  background: linear-gradient(180deg, rgba(17,24,32,0.95) 0%, rgba(12,17,22,0.95) 100%);
-  border: 1px solid rgba(200,155,60,0.18);
-  border-radius: 6px;
-  padding: 10px 12px 12px;
-  position: relative;
-}
-.level-plan::before {
-  content: "";
-  position: absolute; inset: 0;
-  background: radial-gradient(circle at 0% 0%, rgba(200,155,60,0.06), transparent 40%),
-              radial-gradient(circle at 100% 100%, rgba(111, 182, 255,0.05), transparent 40%);
-  pointer-events: none;
-}
-.level-plan-header {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(200,155,60,0.15);
-  position: relative;
-}
-.level-plan-title {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 10px; font-weight: 700;
-  letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--accent-gold);
-}
-.level-plan-title svg { color: var(--accent-gold); }
-.level-plan-vs {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; color: var(--text-muted);
-}
-.lp-vs-label {
-  font-size: 9px; font-weight: 600; letter-spacing: 1px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-.level-plan-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  position: relative;
-}
-.level-plan-timeline {
-  display: flex; flex-direction: column;
-  flex: 1 1 auto;
-  min-width: 0;
-  gap: 2px;
-  position: relative;
-}
-.lp-row {
-  display: grid;
-  grid-template-columns: 28px 1fr 60px 36px;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 6px;
-  min-height: 22px;
-  border-radius: 4px;
-  position: relative;
-  cursor: default;
-  opacity: 1;
-  transition: background 0.12s ease, transform 0.12s ease;
-}
-.lp-row:hover,
-.lp-row.lp-focus {
-  background: rgba(200,155,60,0.08);
-  transform: translateX(2px);
-}
-.lp-connector {
-  position: absolute;
-  left: 19px; top: -2px;
-  width: 2px; height: 4px;
-  background: currentColor;
-  opacity: 0.4;
-}
-.lp-node-wrap {
-  display: flex; align-items: center; justify-content: center;
-  position: relative; z-index: 1;
-}
-.lp-node {
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--bg-card);
-  border: 1.5px solid currentColor;
-  font-size: 10px; font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  position: relative;
-  transition: all 0.15s ease;
-}
-.lp-node-hex {
-  width: 22px; height: 22px;
-  border-radius: 3px;
-  transform: rotate(45deg);
-  border-width: 2px;
-  box-shadow: 0 0 8px currentColor;
-}
-.lp-node-hex .lp-level-num {
-  transform: rotate(-45deg);
-}
-.lp-node-icon {
-  position: absolute;
-  bottom: -4px; right: -4px;
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  background: var(--bg-primary);
-  display: flex; align-items: center; justify-content: center;
-  color: currentColor;
-}
-.lp-spike .lp-node-hex {
-  animation: lpSpikePulse 2.4s ease-in-out infinite;
-}
 @keyframes lpSpikePulse {
   0%, 100% { box-shadow: 0 0 6px currentColor; }
   50%      { box-shadow: 0 0 14px currentColor, 0 0 20px currentColor; }
 }
-.lp-enemy-spike .lp-node {
-  border-style: dashed;
-}
-.lp-focus .lp-node {
-  transform: scale(1.15);
-}
-.lp-focus.lp-node-hex {
-  transform: rotate(45deg) scale(1.15);
-}
-.lp-action {
-  font-size: 11px; font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lp-adv-track {
-  position: relative;
-  height: 4px;
-  background: rgba(255,255,255,0.05);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.lp-adv-center {
-  position: absolute;
-  left: 50%; top: 0; bottom: 0;
-  width: 1px;
-  background: rgba(255,255,255,0.18);
-}
-.lp-adv-fill {
-  position: absolute;
-  top: 0; bottom: 0;
-  background: currentColor;
-  border-radius: 1px;
-  opacity: 0.85;
-  transition: width 0.25s ease, left 0.25s ease;
-}
-.lp-adv-num {
-  font-size: 10px; font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  color: currentColor;
-  opacity: 0.85;
-}
-
-/* Category colors (applied via currentColor) */
-.lp-cat-dominant  { color: var(--positive); }
-.lp-cat-strong    { color: #7ed99d; }
-.lp-cat-even      { color: #8892a0; }
-.lp-cat-careful   { color: #e0a868; }
-.lp-cat-weak      { color: #e84057; }
-.lp-cat-hard-weak { color: #ff5c6f; }
-
-/* Detail card */
-.level-plan-detail {
-  flex: 0 0 160px;
-  width: 160px;
-}
-.lp-detail-card {
-  background: rgba(10,14,19,0.9);
-  border: 1px solid currentColor;
-  border-radius: 6px;
-  padding: 10px;
-  transition: border-color 0.2s ease;
-  position: relative;
-  overflow: hidden;
-}
-.lp-detail-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, currentColor, transparent 60%);
-  opacity: 0.08;
-  pointer-events: none;
-}
-.lp-detail-head {
-  display: flex; justify-content: space-between; align-items: baseline;
-  margin-bottom: 6px;
-  position: relative;
-}
-.lp-detail-level {
-  font-size: 9px; font-weight: 700;
-  letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--text-muted);
-}
-.lp-detail-adv {
-  font-size: 16px; font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: currentColor;
-  text-shadow: 0 0 8px currentColor;
-}
-.lp-detail-action {
-  font-size: 15px; font-weight: 700;
-  color: currentColor;
-  margin-bottom: 8px;
-  letter-spacing: 0.3px;
-  position: relative;
-}
-.lp-detail-text {
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-primary);
-  margin: 0;
-  opacity: 0.85;
-  position: relative;
-}
-.lp-detail-warn {
-  margin-top: 8px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent-red);
-  padding: 4px 6px;
-  background: rgba(240, 107, 126,0.1);
-  border-radius: 2px;
-  position: relative;
-}
-
-@media (max-width: 900px) {
-  .level-plan-body { grid-template-columns: 1fr; }
-  .level-plan-detail { position: relative; }
-}
-
-/* ==== Ward Placement ==== */
-.ward-placement {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-top: 8px;
-}
-.ward-placement-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 8px;
-}
-.ward-placement-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent-gold);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-.ward-placement-vs {
-  font-size: 10px;
-  color: var(--text-muted);
-  text-transform: capitalize;
-}
-.ward-placement-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.ward-tip {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 4px 6px;
-  background: var(--bg-primary);
-  border-radius: 4px;
-  font-size: 11px;
-}
-.ward-tip-time {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent-gold);
-  font-variant-numeric: tabular-nums;
-  min-width: 32px;
-}
-.ward-tip-spot {
-  flex: 1;
-  color: var(--text-primary);
-  line-height: 1.3;
-}
-
-/* ==== Trinket Recommendation ==== */
-.trinket-rec {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  margin-top: 8px;
-  border-radius: 6px;
-}
-.trinket-rec.trinket-yellow {
-  background: rgba(200, 155, 60, 0.08);
-  border-left-color: var(--accent-gold);
-}
-.trinket-rec.trinket-sweeping {
-  background: rgba(240, 107, 126, 0.08);
-  border-left-color: var(--accent-red);
-}
-.trinket-rec.trinket-blue {
-  background: rgba(111, 182, 255, 0.08);
-  border-left-color: var(--accent-blue);
-}
-.trinket-rec-icon {
-  font-size: 22px;
-  flex-shrink: 0;
-}
-.trinket-rec-info { flex: 1; min-width: 0; }
-.trinket-rec-name {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 2px;
-}
-.trinket-rec-reason {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-/* ==== All Lanes Matchup ==== */
-.all-lanes {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-top: 8px;
-}
-.all-lanes-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent-gold);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-.all-lanes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.all-lanes-row {
-  display: grid;
-  grid-template-columns: 60px 24px 22px 24px 70px 1fr;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-}
-.all-lanes-favored { background: rgba(63, 207, 133, 0.08); }
-.all-lanes-unfavored { background: rgba(240, 107, 126, 0.08); }
-.all-lanes-even { background: rgba(255,255,255,0.02); }
-.all-lanes-pos {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-muted);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.all-lanes-vs {
-  font-size: 9px;
-  color: var(--text-muted);
-  text-align: center;
-}
-.all-lanes-verdict {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-align: center;
-}
-.all-lanes-verdict-favored { color: var(--accent-green); }
-.all-lanes-verdict-unfavored { color: var(--accent-red); }
-.all-lanes-verdict-even { color: var(--text-muted); }
-.all-lanes-delta {
-  font-size: 9px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-/* ==== Comp Callouts (champ select) ==== */
-.comp-callouts {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-top: 8px;
-}
-.comp-callouts-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent-gold);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-.comp-callouts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.comp-callout {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  line-height: 1.3;
-}
-.comp-callout-good {
-  background: rgba(63, 207, 133, 0.1);
-  color: var(--text-primary);
-}
-.comp-callout-warn {
-  background: rgba(240, 107, 126, 0.1);
-  color: var(--text-primary);
-}
-.comp-callout-icon {
-  flex-shrink: 0;
-  font-weight: 700;
-  font-size: 12px;
-}
-.comp-callout-good .comp-callout-icon { color: var(--accent-green); }
-.comp-callout-warn .comp-callout-icon { color: var(--accent-red); }
-.comp-callout-text { flex: 1; }
 
 /* ==== Daily Summary ==== */
 .daily-summary { display: flex; align-items: center; gap: 32px; padding: 16px 22px; margin-bottom: 16px; }
@@ -2293,23 +1614,6 @@
 .overlay .obj-timer-ally { color: var(--ally); }
 .overlay .obj-timer-enemy { color: var(--enemy); }
 
-/* ==== Champ select centre panels: one card surface, one title style ==== */
-.cs-center .matchup-panel, .cs-center .item-recs-panel, .cs-center .prediction-card,
-.cs-center .comp-callouts, .cs-center .all-lanes, .cs-center .ward-placement,
-.cs-center .level-plan, .cs-center .trinket-rec, .cs-center .dmg-comp {
-  margin: 0; background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 16px 18px; box-shadow: none;
-}
-.cs-center .item-recs-title, .cs-center .comp-callouts-title, .cs-center .all-lanes-title,
-.cs-center .ward-placement-title, .cs-center .level-plan-title {
-  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text-secondary);
-}
-.cs-center .level-plan-title svg { color: var(--accent-gold); }
-.cs-center .matchup-summary { font-size: 13px; }
-.cs-center .matchup-phase { font-size: 12px; padding: 6px 10px; border-radius: 8px; }
-.cs-center .matchup-header img, .cs-center .trinket-rec img { border-radius: 6px; }
-
 /* ==== Live game: build sequence panel and alerts on the visual system ==== */
 .lg-layout .bs-panel {
   margin: 0; gap: 12px; padding: 16px 18px;
@@ -2338,35 +1642,6 @@
 .lg-alert { padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; border: none; }
 .lg-alert-info { background: rgba(111,182,255,.1); color: var(--ally); border: none; }
 .lg-alert-warning { background: var(--negative-soft); color: var(--negative); border: none; }
-
-/* ==== Level plan: calmer surface, semantic category colours ==== */
-.level-plan::before, .lp-detail-card::before { display: none; }
-.cs-center .level-plan-header { border-bottom: 1px solid var(--surface-2); padding-bottom: 10px; margin-bottom: 12px; }
-.level-plan-vs img { border-radius: 6px; }
-.lp-row { min-height: 28px; padding: 4px 8px; border-radius: 8px; }
-.lp-row:hover, .lp-row.lp-focus { background: var(--surface-2); transform: none; }
-.lp-node-hex { box-shadow: none; }
-.lp-spike .lp-node-hex { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent); }
-.lp-action { font-size: 13px; }
-.lp-cat-dominant  { color: var(--positive); }
-.lp-cat-strong    { color: #8fdcb2; }
-.lp-cat-even      { color: var(--text-secondary); }
-.lp-cat-careful   { color: #e0a868; }
-.lp-cat-weak      { color: var(--negative); }
-.lp-cat-hard-weak { color: #ff5c6f; }
-.level-plan-detail { flex: 0 0 190px; width: 190px; }
-.lp-detail-card {
-  background: var(--surface-2); border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
-  border-radius: var(--radius-md); padding: 12px 14px;
-}
-.lp-detail-level { font-size: 11px; letter-spacing: .08em; color: var(--text-secondary); }
-.lp-detail-adv { font-size: 18px; font-weight: 800; text-shadow: none; }
-.lp-detail-action { font-size: 16px; }
-.lp-detail-text { font-size: 13px; color: var(--text-secondary); opacity: 1; }
-.lp-detail-warn {
-  display: inline-flex; margin-top: 10px; padding: 4px 8px; border: none; border-radius: 999px;
-  background: var(--negative-soft); color: var(--negative); font-size: 11px;
-}
 
 /* ==== Visual polish: remaining components ==== */
 
@@ -2411,68 +1686,6 @@
 .tilt-icon { color: var(--negative); display: flex; }
 .tilt-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
 .tilt-body { font-size: 13px; color: var(--text-secondary); opacity: 1; }
-
-/* Game analysis (prediction) */
-.pred-team { font-size: 15px; font-weight: 700; }
-.pred-ally { color: var(--ally); }
-.pred-enemy { color: var(--enemy); }
-.pred-vs { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
-.pred-bar-label { font-size: 12px; color: var(--text-secondary); }
-.pred-bar { height: 8px; border-radius: 4px; background: var(--surface-sunken); }
-.pred-bar-ally { background: var(--ally); border-radius: 4px; }
-.pred-bar-enemy { background: var(--enemy); border-radius: 4px; }
-.prediction-tip { font-size: 13px; color: var(--text-secondary); background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
-
-/* Team composition callouts */
-.comp-callouts-list { display: flex; flex-direction: column; gap: 6px; }
-.comp-callout { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px; background: var(--surface-2); color: var(--text-primary); }
-.comp-callout-icon { display: flex; }
-.comp-callout-good .comp-callout-icon { color: var(--positive); }
-.comp-callout-warn .comp-callout-icon { color: #e0a868; }
-
-/* All lanes */
-.all-lanes-row { padding: 8px 10px; border-radius: 10px; font-size: 13px; }
-.all-lanes-row img { border-radius: 7px; }
-.all-lanes-favored { background: var(--positive-soft); }
-.all-lanes-unfavored { background: var(--negative-soft); }
-.all-lanes-even { background: var(--surface-2); }
-.all-lanes-pos { font-size: 11px; font-weight: 700; color: var(--text-muted); }
-.all-lanes-verdict { font-size: 12px; font-weight: 600; }
-.all-lanes-verdict-favored { color: var(--positive); }
-.all-lanes-verdict-unfavored { color: var(--negative); }
-.all-lanes-verdict-even { color: var(--text-secondary); }
-
-/* Ward placement and trinket */
-.ward-tip { font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--surface-2); }
-.ward-tip:last-child { border-bottom: none; }
-.ward-tip-time { font-weight: 700; color: var(--accent-gold-text); font-variant-numeric: tabular-nums; }
-.ward-tip-spot { color: var(--text-primary); }
-.trinket-rec { display: flex; align-items: center; gap: 12px; }
-.trinket-rec-icon { display: flex; font-size: 0; }
-.trinket-rec-icon img { border-radius: 8px; }
-.trinket-rec-name { font-size: 14px; font-weight: 600; }
-.trinket-rec-reason { font-size: 12px; color: var(--text-secondary); }
-
-/* Situational items */
-.item-rec { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: none; margin-top: 6px; }
-.item-rec-high, .item-rec-medium { background: var(--surface-2); border: none; }
-.item-rec-cat { font-size: 13px; font-weight: 700; }
-.item-rec-high .item-rec-cat { color: var(--negative); }
-.item-rec-medium .item-rec-cat { color: #e0a868; }
-.item-rec-reason { font-size: 12px; color: var(--text-secondary); }
-.item-rec-items img { border-radius: 6px; }
-
-/* Matchup build card */
-.mbuild-games, .mbuild-legend { font-size: 12px; color: var(--text-muted); }
-.mbuild-none { font-size: 13px; }
-.mbuild-cat { font-size: 11px; letter-spacing: .06em; color: var(--text-secondary); min-width: 64px; }
-.mbuild-share { font-size: 12px; }
-.mbuild-row { padding: 4px 0; gap: 8px; }
-.mbuild-row img { border-radius: 6px; }
-.mbuild-tag {
-  height: 20px; padding: 0 8px; border-radius: 999px; border: none; display: inline-flex; align-items: center;
-  background: var(--accent-gold-soft); color: var(--accent-gold-text); font-size: 10px;
-}
 
 /* Damage profile internals */
 .dprof-bar { height: 10px; border-radius: 5px; gap: 2px; background: var(--surface-sunken); }

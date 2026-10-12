@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
+import { Fragment, useEffect, useLayoutEffect, useState, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
 import { Toggle, Segmented, Select, GearIcon, useDismiss, SectionLabel, Badge, CheckIcon, WarnIcon } from "./ui";
@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
+import "./champ-select.css";
 import logoUrl from "./assets/logo.png";
 
 // --- Types ---
@@ -2299,9 +2300,9 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
     return () => { cancelled = true; };
   }, [championId]);
 
-  function pip(slot: string, extra: React.CSSProperties, className: string, evolve?: string) {
+  function pip(slot: string, className: string, evolve?: string) {
     const el = (
-      <span className={className} style={{ background: SKILL_COLORS[slot] || "#555", ...extra }}>{slot}</span>
+      <span className={className} style={{ background: SKILL_COLORS[slot] || "#555" }}>{slot}</span>
     );
     const sp = spells.find(x => x.key === slot);
     if (!sp) return el;
@@ -2332,26 +2333,27 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
   }
 
   return (
-    <div className="build-card">
-      <h3 className="card-label">Skill priority</h3>
-      <div className="skills-row">
+    <div className="csel-group csel-skills">
+      <span className="csel-sub">Skills</span>
+      <div className="csel-prio">
         {priority.map((slot, i) => (
-          <span key={i}>{pip(slot, { opacity: 1 - i * 0.2, fontSize: i === 0 ? 14 : 12 }, "skill-pip")}</span>
+          <Fragment key={i}>
+            {i > 0 && <span className="csel-chev">›</span>}
+            {pip(slot, "csel-key")}
+          </Fragment>
         ))}
       </div>
       {levels.length > 0 && (
-        <div className="skill-levels">
+        <div className="csel-levels" style={{ gridTemplateColumns: `repeat(${levels.length}, minmax(0, 1fr))` }}>
           {levels.map((token, i) => {
             // Champions with evolutions report the combined choice, e.g. "R-Q"
             // = level R and evolve Q.
             const [slot, evolve] = token.split("-");
             return (
-              <div key={i} className="skill-lvl">
-                <span className="skill-lvl-num">{i + 1}</span>
-                <div className="skill-lvl-pip">
-                  {pip(slot, { fontSize: 10 }, "skill-pip-sm", evolve)}
-                  {evolve && <span className="skill-evolve">{evolve}</span>}
-                </div>
+              <div key={i} className="csel-level">
+                <small>{i + 1}</small>
+                {pip(slot, "csel-key-sm", evolve)}
+                {evolve && <span className="skill-evolve">{evolve}</span>}
               </div>
             );
           })}
@@ -2700,6 +2702,12 @@ function App() {
   const inPostGame = state.status === "post_game";
   const hasChampion = state.champion_id && state.champion_id > 0 && championInfo;
   const hasBuild = state.build;
+  const isAram = state.game_mode === "aram";
+  const laneOpponent = hasChampion && state.draft ? pickLaneOpponent(state.assigned_position, state.draft.enemies) : null;
+  const lanePairs = useMemo(
+    () => state.draft && !isAram ? pairLanes(state.draft.allies, state.draft.enemies) : [],
+    [state.draft, isAram],
+  );
 
   const rankedRecs = useMemo(() => {
     if (state.recommendations.length === 0) return [];
@@ -2871,6 +2879,7 @@ function App() {
                         <ChampionNameLabel championId={p.champion_id} fallback={p.is_local ? "You" : "..."} />
                         {p.position && <span className="cs-player-pos"><PositionIcon pos={p.position} size={12} /> {POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
                       </div>
+                      <LaneVerdict pair={lanePairs.find(l => l.ally.champion_id === p.champion_id && p.champion_id > 0)} />
                     </div>
                   ))}
                   {state.draft.ally_bans.length > 0 && (
@@ -2885,6 +2894,9 @@ function App() {
                   )}
                 </div>
               )}
+              {state.draft && (
+                <TeamCompPanel allies={state.draft.allies} prediction={isAram ? null : state.prediction} showCallouts={!isAram} />
+              )}
             </div>
 
             {/* Center: Build */}
@@ -2898,20 +2910,35 @@ function App() {
               )}
 
             {hasChampion && championInfo && (
-              <section className="section-build">
-                <div className="champion-card" style={{
-                  backgroundImage: `url(${splashUrl(championInfo.key)})`,
-                }}>
-                  <div className="champion-avatar">
-                    <img src={championIconUrl(championInfo.key)} alt={championInfo.name} />
-                  </div>
-                  <div className="champion-info">
-                    <h2 className="champion-name">{championInfo.name}</h2>
-                    {state.assigned_position && (
-                      <span className="position-tag">
-                        <PositionIcon pos={state.assigned_position} size={14} /> {POSITION_LABELS[state.assigned_position] || state.assigned_position.toUpperCase()}
-                      </span>
-                    )}
+              <>
+                <div className="csel-hero">
+                  <div className="csel-hero-bg" style={{ backgroundImage: `url(${splashUrl(championInfo.key)})` }} />
+                  <img className="csel-hero-ava" src={championIconUrl(championInfo.key)} alt={championInfo.name} />
+                  <div className="csel-hero-info">
+                    <h2 className="csel-hero-name">{championInfo.name}</h2>
+                    <div className="csel-hero-meta">
+                      {state.assigned_position && (
+                        <span className="csel-hero-pos">
+                          <PositionIcon pos={state.assigned_position} size={13} /> {POSITION_LABELS[state.assigned_position] || state.assigned_position.toUpperCase()}
+                        </span>
+                      )}
+                      {laneOpponent && !isAram && (
+                        <>
+                          <span className="csel-hero-vs">vs</span>
+                          <ChampionIcon championId={laneOpponent.champion_id} size={18} />
+                          <ChampionNameLabel championId={laneOpponent.champion_id} fallback="" />
+                          {state.counters[laneOpponent.champion_id.toString()] !== undefined && (() => {
+                            const wr = state.counters[laneOpponent.champion_id.toString()];
+                            return (
+                              <Badge tone={wr >= 0.52 ? "positive" : wr <= 0.48 ? "negative" : "neutral"}
+                                title="Your champion's win rate against this pick (OP.GG)">
+                                {(wr * 100).toFixed(1)}%
+                              </Badge>
+                            );
+                          })()}
+                        </>
+                      )}
+                    </div>
                   </div>
                   {hasBuild && !state.auto_apply && (
                     <button onClick={handleApply} className="btn-apply">Apply</button>
@@ -2929,198 +2956,18 @@ function App() {
                 )}
 
                 {hasBuild && (
-                  <div className="build-grid">
-                    <div className="build-row-top">
-                      {state.build!.summoner_spells && (
-                        <div className="build-card">
-                          <div className="card-header">
-                            <h3 className="card-label">Spells</h3>
-                            {state.build_alternatives && state.build_alternatives.summoner_spells.length > 1 && (
-                              <AltTabs
-                                options={state.build_alternatives.summoner_spells}
-                                category="spells"
-                                currentIds={state.build!.summoner_spells!}
-                              />
-                            )}
-                          </div>
-                          <div className="spells-row">
-                            {state.build!.summoner_spells!.map(id => (
-                              <div key={id} className="spell-slot" title={SPELL_NAMES[id]}>
-                                <img src={spellIconUrl(id)} alt={SPELL_NAMES[id]} />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {state.build!.skill_order.length > 0 && (
-                        <SkillPanel
-                          priority={state.build!.skill_order}
-                          levels={state.build!.skill_levels}
-                          championId={state.champion_id}
-                        />
-                      )}
-                    </div>
-
-                    {state.build!.runes && runesLoaded && (
-                      <div className="build-card">
-                        <div className="card-header">
-                          <h3 className="card-label">Runes</h3>
-                          {state.build_alternatives && state.build_alternatives.runes.length > 1 && (
-                            <AltTabs
-                              options={state.build_alternatives.runes}
-                              category="runes"
-                              currentBuild={state.build!.runes!}
-                            />
-                          )}
-                        </div>
-                        <RuneDisplay runes={state.build!.runes!} />
-                      </div>
-                    )}
-
-                    {(state.build!.starter_items.length > 0 || state.build!.core_items.length > 0) && (
-                      <div className="build-card">
-                        <h3 className="card-label">Items</h3>
-                        <div className="items-sections">
-                          {/* Start + Boots side by side */}
-                          <div className="items-top-row">
-                            {(state.build!.starter_items.length > 0 || (state.build_alternatives?.starter_items.length ?? 0) > 0) && (
-                              <div className="items-group items-half">
-                                <span className="items-label">Start</span>
-                                <ItemOptionRows options={state.build_alternatives?.starter_items ?? []} current={state.build!.starter_items} limit={2} />
-                              </div>
-                            )}
-                            {(state.build!.boots.length > 0 || (state.build_alternatives?.boots.length ?? 0) > 0) && (
-                              <div className="items-group items-half">
-                                <span className="items-label">Boots</span>
-                                <ItemOptionRows options={state.build_alternatives?.boots ?? []} current={state.build!.boots} limit={2} />
-                              </div>
-                            )}
-                          </div>
-                          {/* Core builds with alternatives */}
-                          <div className="items-group">
-                            <span className="items-label">Core</span>
-                            <ItemOptionRows
-                              options={state.build_alternatives?.core_items ?? []}
-                              current={state.build!.core_items}
-                              limit={3}
-                              sequence
-                              onSelect={oi => invoke("select_build_option", { category: "items", index: oi })}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {state.matchup && <MatchupBuildCard matchup={state.matchup} />}
-                  </div>
+                  <BuildCard build={state.build!} alternatives={state.build_alternatives} matchup={state.matchup}
+                    championId={state.champion_id} runesLoaded={runesLoaded} />
                 )}
-              </section>
+              </>
             )}
 
-            {/* Prediction & Strategy (not ARAM) */}
-            {state.draft && <DamageCompBar allies={state.draft.allies} enemies={state.draft.enemies} />}
-            {state.draft && state.game_mode !== "aram" && <CompCallouts allies={state.draft.allies} />}
-            {state.draft && state.game_mode !== "aram" && <AllLanesMatchup allies={state.draft.allies} enemies={state.draft.enemies} />}
-            {state.draft && state.game_mode !== "aram" && state.assigned_position && hasChampion && (
-              <TrinketRecommendation myPos={state.assigned_position} enemies={state.draft.enemies} />
+            {/* Lane opponent: phases and the level plan */}
+            {hasChampion && laneOpponent && (
+              <LanePlanCard yourId={state.champion_id!} enemyId={laneOpponent.champion_id}
+                counterWr={state.counters[laneOpponent.champion_id.toString()]}
+                position={state.assigned_position ?? undefined} showPlan={!isAram} />
             )}
-            {state.draft && state.game_mode !== "aram" && state.assigned_position && hasChampion && (
-              <WardPlacement myPos={state.assigned_position} enemies={state.draft.enemies} />
-            )}
-
-            {state.prediction && state.game_mode !== "aram" && (
-              <div className="prediction-card">
-                <div className="prediction-header">
-                  <h3 className="card-label">Game Analysis</h3>
-                  <div className="prediction-wr">
-                    <span className="pred-team pred-ally">{(state.prediction.ally_avg_wr * 100).toFixed(1)}%</span>
-                    <span className="pred-vs">vs</span>
-                    <span className="pred-team pred-enemy">{(state.prediction.enemy_avg_wr * 100).toFixed(1)}%</span>
-                  </div>
-                </div>
-                <div className="prediction-bars">
-                  <div className="pred-bar-row">
-                    <span className="pred-bar-label">Early</span>
-                    <div className="pred-bar">
-                      <div className="pred-bar-ally" style={{ width: `${state.prediction.ally_early_score * 100}%` }} />
-                    </div>
-                    <div className="pred-bar">
-                      <div className="pred-bar-enemy" style={{ width: `${state.prediction.enemy_early_score * 100}%` }} />
-                    </div>
-                  </div>
-                  <div className="pred-bar-row">
-                    <span className="pred-bar-label">Late</span>
-                    <div className="pred-bar">
-                      <div className="pred-bar-ally" style={{ width: `${state.prediction.ally_late_score * 100}%` }} />
-                    </div>
-                    <div className="pred-bar">
-                      <div className="pred-bar-enemy" style={{ width: `${state.prediction.enemy_late_score * 100}%` }} />
-                    </div>
-                  </div>
-                </div>
-                <p className="prediction-tip">{state.prediction.tip}</p>
-              </div>
-            )}
-
-            {/* Adaptive item recommendations */}
-            {state.draft && state.draft.enemies.filter(e => e.champion_id > 0).length >= 2 && (() => {
-              const enemyIds = state.draft.enemies.filter(e => e.champion_id > 0).map(e => e.champion_id);
-              const recs = analyzeEnemyComp(enemyIds, state.build_alternatives?.item_pool);
-              if (recs.length === 0) return null;
-              return (
-                <div className="item-recs-panel">
-                  <h4 className="item-recs-title">Situational items</h4>
-                  {recs.map((r, i) => (
-                    <div key={i} className={`item-rec ${r.priority === "high" ? "item-rec-high" : "item-rec-medium"}`}>
-                      <div className="item-rec-header">
-                        <span className="item-rec-cat">{r.category}</span>
-                        <span className="item-rec-reason">{r.reason}</span>
-                      </div>
-                      <div className="item-rec-items">
-                        {r.items.map((item, j) => (
-                          <ItemIcon key={j} id={item.id} size={24} />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-
-            {/* Matchup analysis by level */}
-            {state.champion_id && state.draft && (() => {
-              const myId = state.champion_id!;
-              const visibleEnemies = state.draft.enemies.filter(e => e.champion_id > 0);
-              if (visibleEnemies.length === 0) return null;
-              const myPos = state.assigned_position;
-              const laneOpponent = pickLaneOpponent(myPos, state.draft.enemies);
-              if (!laneOpponent) return null;
-              const wr = state.counters[laneOpponent.champion_id.toString()];
-              const analysis = analyzeMatchup(myId, laneOpponent.champion_id, wr);
-              return (
-                <>
-                  <div className="matchup-panel">
-                    <div className="matchup-header">
-                      <ChampionIcon championId={myId} size={24} />
-                      <span className="matchup-vs">vs</span>
-                      <ChampionIcon championId={laneOpponent.champion_id} size={24} />
-                      <span className="matchup-summary">{analysis.summary}</span>
-                    </div>
-                    <div className="matchup-phases">
-                      {analysis.phases.map((p, i) => (
-                        <div key={i} className={`matchup-phase matchup-${p.advantage}`}>
-                          <span className="matchup-range">{p.range}</span>
-                          <span className="matchup-tip">{p.tip}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {state.game_mode !== "aram" && (
-                    <LevelPlanTimeline yourId={myId} enemyId={laneOpponent.champion_id} position={myPos ?? undefined} />
-                  )}
-                </>
-              );
-            })()}
           </div>
 
           {/* Right: Enemies */}
@@ -3179,6 +3026,12 @@ function App() {
                   </div>
                 )}
               </div>
+            )}
+            {state.draft && (
+              <ThreatsPanel enemies={state.draft.enemies} pool={state.build_alternatives?.item_pool} />
+            )}
+            {state.draft && !isAram && state.assigned_position && hasChampion && (
+              <VisionPanel myPos={state.assigned_position} enemies={state.draft.enemies} />
             )}
           </div>
           </div> {/* close cs-main */}
@@ -4063,8 +3916,14 @@ function SpikeIcon({ kind }: { kind: "sword" | "ult" | "crown" }) {
   );
 }
 
-function LevelPlanTimeline({ yourId, enemyId, position }: { yourId: number; enemyId: number; position?: string }) {
-  const plan = useMemo(() => buildLevelPlan(yourId, enemyId, position), [yourId, enemyId, position]);
+// The lane card: the phase summary as chips, then all 18 levels as a grid of
+// cells (two rows of nine) so the whole plan reads without scrolling. Hovering
+// a cell shows its coaching tip underneath.
+function LanePlanCard({ yourId, enemyId, counterWr, position, showPlan }: {
+  yourId: number; enemyId: number; counterWr?: number; position?: string; showPlan: boolean;
+}) {
+  const analysis = analyzeMatchup(yourId, enemyId, counterWr);
+  const plan = useMemo(() => showPlan ? buildLevelPlan(yourId, enemyId, position) : [], [yourId, enemyId, position, showPlan]);
   const [hovered, setHovered] = useState<number | null>(null);
 
   // Pre-select "most interesting" level for default view: biggest your-spike or strongest advantage
@@ -4077,80 +3936,60 @@ function LevelPlanTimeline({ yourId, enemyId, position }: { yourId: number; enem
     return sorted[0]?.level ?? 6;
   }, [plan]);
 
-  const focused = plan.find(p => p.level === (hovered ?? defaultLevel)) ?? plan[5];
-  const maxAbs = Math.max(1, ...plan.map(e => Math.abs(e.advantage)));
+  const focusLevel = hovered ?? defaultLevel;
+  const focused = plan.find(p => p.level === focusLevel) ?? plan[5];
+  const tone = (cat: PlanCategory) =>
+    cat === "dominant" || cat === "strong" ? "pos" : cat === "even" ? "" : "neg";
 
   return (
-    <div className="level-plan">
-      <div className="level-plan-header">
-        <span className="level-plan-title">
-          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden><path d="M12 2 L14.5 9 L22 9 L16 13.5 L18.3 21 L12 16.5 L5.7 21 L8 13.5 L2 9 L9.5 9 Z" fill="currentColor"/></svg>
-          Level plan
-        </span>
-        <span className="level-plan-vs">
-          <ChampionIcon championId={yourId} size={18} />
-          <span className="lp-vs-label">vs</span>
-          <ChampionIcon championId={enemyId} size={18} />
-        </span>
+    <section className="csel-card">
+      <div className="csel-lane-head">
+        <h3 className="q-label">{plan.length > 0 ? "Lane plan" : "Matchup"}</h3>
+        <ChampionIcon championId={yourId} size={20} />
+        <span className="csel-vs">vs</span>
+        <ChampionIcon championId={enemyId} size={20} />
+        <span className="csel-lane-sum">{analysis.summary}</span>
       </div>
-      <div className="level-plan-body">
-        <div className="level-plan-timeline">
-          {plan.map((entry, idx) => {
-            const prev = idx > 0 ? plan[idx - 1] : null;
-            const connectorCat = prev ? (entry.category === prev.category ? entry.category : entry.category) : entry.category;
-            const isFocus = (hovered ?? defaultLevel) === entry.level;
-            const advRatio = Math.min(1, Math.abs(entry.advantage) / maxAbs);
-            return (
-              <div
-                key={entry.level}
-                className={`lp-row lp-cat-${entry.category} ${isFocus ? "lp-focus" : ""} ${entry.isSpike ? "lp-spike" : ""} ${entry.isEnemySpike ? "lp-enemy-spike" : ""}`}
-                onMouseEnter={() => setHovered(entry.level)}
-                onMouseLeave={() => setHovered(null)}
-              >
-                {prev && <div className={`lp-connector lp-cat-${connectorCat}`} />}
-                <div className="lp-node-wrap">
-                  <div className={`lp-node ${entry.isSpike || entry.isEnemySpike ? "lp-node-hex" : ""}`}>
-                    <span className="lp-level-num">{entry.level}</span>
-                    {entry.spikeIcon && <span className="lp-node-icon"><SpikeIcon kind={entry.spikeIcon} /></span>}
-                  </div>
-                </div>
-                <span className="lp-action">{entry.action}</span>
-                <div className="lp-adv-track">
-                  <div className="lp-adv-center" />
-                  <div
-                    className="lp-adv-fill"
-                    style={{
-                      width: `${advRatio * 50}%`,
-                      left: entry.advantage >= 0 ? "50%" : `${50 - advRatio * 50}%`,
-                    }}
-                  />
-                </div>
-                <span className="lp-adv-num">
-                  {entry.advantage > 0 ? "+" : ""}
-                  {entry.advantage.toFixed(1)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <div className="level-plan-detail">
-          <div className={`lp-detail-card lp-cat-${focused.category}`}>
-            <div className="lp-detail-head">
-              <span className="lp-detail-level">Level {focused.level}</span>
-              <span className={`lp-detail-adv lp-cat-${focused.category}`}>
-                {focused.advantage > 0 ? "+" : ""}
-                {focused.advantage.toFixed(1)}
-              </span>
-            </div>
-            <div className="lp-detail-action">{focused.action}</div>
-            <p className="lp-detail-text">{focused.detail}</p>
-            {focused.isEnemySpike && !focused.isSpike && (
-              <div className="lp-detail-warn"><WarnIcon size={12} /> Enemy spike window</div>
-            )}
+      <div className="csel-phases">
+        {analysis.phases.map((p, i) => (
+          <span key={i} className={`csel-phase csel-phase-${p.advantage}`}><b>{p.range}</b>{p.tip}</span>
+        ))}
+      </div>
+      {plan.length > 0 && focused && (
+        <>
+          <div className="csel-plan" onMouseLeave={() => setHovered(null)}>
+            {plan.map((e, idx) => {
+              const repeat = idx > 0 && plan[idx - 1].action === e.action;
+              const t = tone(e.category);
+              return (
+                <button key={e.level} type="button"
+                  className={`csel-lv ${repeat ? "csel-lv-rep" : ""} ${e.level === focusLevel ? "csel-lv-focus" : ""}`}
+                  onMouseEnter={() => setHovered(e.level)} onFocus={() => setHovered(e.level)}>
+                  <span className="csel-lv-n">
+                    {e.level}
+                    {e.spikeIcon && <SpikeIcon kind={e.spikeIcon} />}
+                    {!e.spikeIcon && e.isEnemySpike && <span className="csel-lv-enemy" title="Enemy spike"><WarnIcon size={10} /></span>}
+                  </span>
+                  <span className="csel-lv-a">{e.action}</span>
+                  {t && <span className={`csel-lv-adv csel-lv-adv-${t} csel-lv-${e.category}`} />}
+                </button>
+              );
+            })}
           </div>
-        </div>
-      </div>
-    </div>
+          <div className="csel-detail" aria-live="polite">
+            <span className="csel-detail-lv">Level {focused.level}</span>
+            <span className="csel-detail-a">{focused.action}</span>
+            <span className="csel-detail-t">
+              {focused.detail}
+              {focused.isEnemySpike && !focused.isSpike && <span className="csel-detail-warn"> Enemy spike window.</span>}
+            </span>
+            <span className={`csel-detail-s csel-tone-${tone(focused.category) || "even"}`}>
+              {focused.advantage > 0 ? "+" : ""}{focused.advantage.toFixed(1)}
+            </span>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -4276,48 +4115,32 @@ function getWardTips(myPos: string, enemyJunglerId: number | null): WardTip[] {
   return [];
 }
 
-function WardPlacement({ myPos, enemies }: { myPos: string; enemies: DraftPlayer[] }) {
-  const enemyJgl = enemies.find(e => e.champion_id > 0 && (e.position || "").toLowerCase().startsWith("jun"));
-  const tips = getWardTips(myPos, enemyJgl?.champion_id ?? null);
-  if (tips.length === 0) return null;
-  return (
-    <div className="ward-placement">
-      <div className="ward-placement-header">
-        <span className="ward-placement-title">Ward placement</span>
-        {enemyJgl && (
-          <span className="ward-placement-vs">
-            vs {getJunglerStyle(enemyJgl.champion_id)} jungler
-          </span>
-        )}
-      </div>
-      <div className="ward-placement-list">
-        {tips.map((t, i) => (
-          <div key={i} className="ward-tip">
-            <span className="ward-tip-time">{t.time}</span>
-            <span className="ward-tip-spot">{t.spot}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TrinketRecommendation({ myPos, enemies }: { myPos: string; enemies: DraftPlayer[] }) {
+function VisionPanel({ myPos, enemies }: { myPos: string; enemies: DraftPlayer[] }) {
   const visibleEnemies = enemies.filter(e => e.champion_id > 0);
   if (visibleEnemies.length === 0) return null;
+  const enemyJgl = visibleEnemies.find(e => (e.position || "").toLowerCase().startsWith("jun"));
+  const tips = getWardTips(myPos, enemyJgl?.champion_id ?? null);
   const rec = recommendTrinket(myPos, enemies);
   const info = TRINKET_INFO[rec.kind];
   return (
-    <div className={`trinket-rec trinket-${rec.kind}`}>
-      <div className="trinket-rec-icon">
+    <section className="csel-side">
+      <SectionLabel meta={enemyJgl ? `vs ${getJunglerStyle(enemyJgl.champion_id)} jungler` : undefined}>Vision</SectionLabel>
+      <div className="csel-trinket">
         {/* The trinkets' own icons: Stealth Ward, Oracle Lens, Farsight Alteration. */}
-        <ItemIcon id={rec.kind === "yellow" ? 3340 : rec.kind === "sweeping" ? 3364 : 3363} size={32} />
+        <ItemIcon id={rec.kind === "yellow" ? 3340 : rec.kind === "sweeping" ? 3364 : 3363} size={30} />
+        <div>
+          <b>{info.name}</b>
+          <span>{rec.reason}</span>
+        </div>
       </div>
-      <div className="trinket-rec-info">
-        <div className="trinket-rec-name">{info.name}</div>
-        <div className="trinket-rec-reason">{rec.reason}</div>
-      </div>
-    </div>
+      {tips.length > 0 && (
+        <div className="csel-wards">
+          {tips.map((t, i) => (
+            <div key={i} className="csel-ward"><span>{t.time}</span><span>{t.spot}</span></div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -4355,31 +4178,17 @@ function pairLanes(allies: DraftPlayer[], enemies: DraftPlayer[]): LaneMatchup[]
   return pairs;
 }
 
-function AllLanesMatchup({ allies, enemies }: { allies: DraftPlayer[]; enemies: DraftPlayer[] }) {
-  const pairs = pairLanes(allies, enemies);
-  if (pairs.length === 0) return null;
+function LaneVerdict({ pair }: { pair?: LaneMatchup }) {
+  if (!pair) return null;
+  const enemy = championCache?.[pair.enemy.champion_id.toString()]?.name ?? "their laner";
+  const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+  const [symbol, cls, word] = pair.verdict === "favored" ? ["▲", "pos", "favored"]
+    : pair.verdict === "unfavored" ? ["▼", "neg", "unfavored"] : ["=", "", "even"];
   return (
-    <div className="all-lanes">
-      <div className="all-lanes-title">Lane matchups</div>
-      <div className="all-lanes-list">
-        {pairs.map(p => (
-          <div key={p.position} className={`all-lanes-row all-lanes-${p.verdict}`}>
-            <span className="all-lanes-pos">
-              <PositionIcon pos={p.position} size={12} /> {POSITION_LABELS[p.position] || p.position.toUpperCase()}
-            </span>
-            <ChampionIcon championId={p.ally.champion_id} size={24} />
-            <span className="all-lanes-vs">vs</span>
-            <ChampionIcon championId={p.enemy.champion_id} size={24} />
-            <span className={`all-lanes-verdict all-lanes-verdict-${p.verdict}`}>
-              {p.verdict === "favored" ? "FAVORED" : p.verdict === "unfavored" ? "UNFAVORED" : "EVEN"}
-            </span>
-            <span className="all-lanes-delta" title="Early / Late delta">
-              E {p.earlyDelta > 0 ? "+" : ""}{p.earlyDelta} · L {p.lateDelta > 0 ? "+" : ""}{p.lateDelta}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
+    <span className={`csel-verdict ${cls ? `csel-verdict-${cls}` : ""}`}
+      title={`Lane ${word} vs ${enemy} · early ${signed(pair.earlyDelta)}, late ${signed(pair.lateDelta)}`}>
+      {symbol}
+    </span>
   );
 }
 
@@ -4407,58 +4216,79 @@ function analyzeAllyComp(allyIds: number[]): CompCallout[] {
   return callouts.slice(0, 4);
 }
 
-function CompCallouts({ allies }: { allies: DraftPlayer[] }) {
-  const ids = allies.filter(a => a.champion_id > 0).map(a => a.champion_id);
-  const callouts = analyzeAllyComp(ids);
-  if (callouts.length === 0) return null;
+function TeamDamageBar({ ids }: { ids: number[] }) {
+  if (ids.length === 0) return null;
+  const ap = ids.filter(id => CHAMP_DAMAGE_TYPE[id] === "ap").length;
+  const ad = ids.length - ap;
+  const adPct = Math.round((ad / ids.length) * 100);
+  const apPct = 100 - adPct;
+  const heavy = adPct >= 80 ? "Heavy AD" : apPct >= 80 ? "Heavy AP" : "Mixed";
   return (
-    <div className="comp-callouts">
-      <div className="comp-callouts-title">Team composition</div>
-      <div className="comp-callouts-list">
-        {callouts.map((c, i) => (
-          <div key={i} className={`comp-callout comp-callout-${c.tone}`}>
-            <span className="comp-callout-icon">{c.tone === "good" ? <CheckIcon /> : <WarnIcon />}</span>
-            <span className="comp-callout-text">{c.text}</span>
-          </div>
-        ))}
+    <div className="csel-dmg">
+      <div className="csel-dmg-bar">
+        {adPct > 0 && <div className="csel-dmg-ad" style={{ width: `${adPct}%` }}>{adPct >= 25 ? `${adPct}% AD` : ""}</div>}
+        {apPct > 0 && <div className="csel-dmg-ap" style={{ width: `${apPct}%` }}>{apPct >= 25 ? `${apPct}% AP` : ""}</div>}
+      </div>
+      <div className="csel-dmg-note">
+        <span>{ad} physical · {ap} magic</span>
+        <span className={heavy === "Mixed" ? "" : "csel-dmg-heavy"}>{heavy}</span>
       </div>
     </div>
   );
 }
 
-function DamageCompBar({ allies, enemies }: { allies: DraftPlayer[]; enemies: DraftPlayer[] }) {
-  function calc(players: DraftPlayer[]) {
-    const picked = players.filter(p => p.champion_id > 0);
-    if (picked.length === 0) return { ap: 0, ad: 0, total: 0 };
-    const ap = picked.filter(p => CHAMP_DAMAGE_TYPE[p.champion_id] === "ap").length;
-    return { ap, ad: picked.length - ap, total: picked.length };
-  }
-  const ally = calc(allies);
-  const enemy = calc(enemies);
-  if (ally.total === 0 && enemy.total === 0) return null;
-
-  function Bar({ label, data, color }: { label: string; data: { ap: number; ad: number; total: number }; color: string }) {
-    if (data.total === 0) return null;
-    const adPct = Math.round((data.ad / data.total) * 100);
-    const apPct = 100 - adPct;
-    const heavy = adPct >= 80 ? "Heavy AD" : apPct >= 80 ? "Heavy AP" : null;
-    return (
-      <div className="dmg-row">
-        <span className="dmg-label" style={{ color }}>{label}</span>
-        <div className="dmg-bar">
-          <div className="dmg-ad" style={{ width: `${adPct}%` }}>{adPct > 15 ? `${adPct}% AD` : ""}</div>
-          <div className="dmg-ap" style={{ width: `${apPct}%` }}>{apPct > 15 ? `${apPct}% AP` : ""}</div>
-        </div>
-        {heavy && <span className="dmg-warn">{heavy}</span>}
-      </div>
-    );
-  }
-
+function TeamCompPanel({ allies, prediction, showCallouts }: {
+  allies: DraftPlayer[]; prediction: GamePrediction | null; showCallouts: boolean;
+}) {
+  const ids = allies.filter(a => a.champion_id > 0).map(a => a.champion_id);
+  if (ids.length === 0) return null;
+  const callouts = showCallouts ? analyzeAllyComp(ids) : [];
+  const pct = (n: number) => `${Math.round(Math.max(0, Math.min(1, n)) * 100)}%`;
   return (
-    <div className="dmg-comp">
-      <Bar label="Ally" data={ally} color="var(--ally)" />
-      <Bar label="Enemy" data={enemy} color="var(--enemy)" />
-    </div>
+    <section className="csel-side">
+      <SectionLabel>Your comp</SectionLabel>
+      <TeamDamageBar ids={ids} />
+      {callouts.map((c, i) => (
+        <div key={i} className={`csel-callout csel-callout-${c.tone}`}>
+          <span className="csel-callout-icon">{c.tone === "good" ? <CheckIcon size={12} /> : <WarnIcon size={12} />}</span>
+          <span>{c.text}</span>
+        </div>
+      ))}
+      {prediction && (
+        <div className="csel-power" title={`Average win rate: ${(prediction.ally_avg_wr * 100).toFixed(1)}% vs ${(prediction.enemy_avg_wr * 100).toFixed(1)}%`}>
+          <div className="csel-power-grid">
+            <span>Early</span>
+            <div className="csel-power-bar"><i className="csel-power-ally" style={{ width: pct(prediction.ally_early_score) }} /></div>
+            <div className="csel-power-bar"><i className="csel-power-enemy" style={{ width: pct(prediction.enemy_early_score) }} /></div>
+            <span>Late</span>
+            <div className="csel-power-bar"><i className="csel-power-ally" style={{ width: pct(prediction.ally_late_score) }} /></div>
+            <div className="csel-power-bar"><i className="csel-power-enemy" style={{ width: pct(prediction.enemy_late_score) }} /></div>
+          </div>
+          <p className="csel-tip">{prediction.tip}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ThreatsPanel({ enemies, pool }: { enemies: DraftPlayer[]; pool?: PoolItem[] }) {
+  const ids = enemies.filter(e => e.champion_id > 0).map(e => e.champion_id);
+  if (ids.length === 0) return null;
+  const recs = ids.length >= 2 ? analyzeEnemyComp(ids, pool) : [];
+  return (
+    <section className="csel-side">
+      <SectionLabel>Threats</SectionLabel>
+      <TeamDamageBar ids={ids} />
+      {recs.map((r, i) => (
+        <div key={i} className={`csel-threat ${r.priority === "high" ? "csel-threat-high" : ""}`}>
+          <b>{r.category}</b>
+          <span className="csel-threat-why">{r.reason}</span>
+          <div className="csel-item-icons">
+            {r.items.map((item, j) => <ItemIcon key={j} id={item.id} size={24} />)}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -5695,7 +5525,20 @@ function sameIds(a: number[], b: number[]): boolean {
 // OP.GG's top options with the one actually in the build highlighted. When the
 // build holds something that is not among them (a matchup swap), it is shown
 // first, tagged, since the general pick/win rates do not describe it.
-function ItemOptionRows({ options, current, limit, sequence = false, onSelect }: {
+function ItemStat({ option }: { option: ItemOption }) {
+  return (
+    <span className="csel-stat">
+      <span className="csel-pr">{(option.pick_rate * 100).toFixed(0)}%</span>
+      <span className={`csel-wr ${option.win_rate >= 0.52 ? "lg-wr-good" : option.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
+        {(option.win_rate * 100).toFixed(1)}%
+      </span>
+    </span>
+  );
+}
+
+// One item slot of the build: what was applied, then the other options as
+// compact chips. Core chips are buttons that apply that build instead.
+function ItemChoice({ options, current, limit, sequence = false, onSelect }: {
   options: ItemOption[];
   current: number[];
   limit: number;
@@ -5703,38 +5546,39 @@ function ItemOptionRows({ options, current, limit, sequence = false, onSelect }:
   onSelect?: (index: number) => void;
 }) {
   const shown = options.slice(0, limit);
-  const activeIdx = shown.findIndex(o => sameIds(o.ids, current));
-  const icons = (ids: number[]) => (
-    <div className="item-option-icons">
-      {ids.map((id, i) => sequence ? (
-        <span key={`${id}-${i}`} className="item-core-slot">
-          <ItemIcon id={id} size={28} />
-          {i < ids.length - 1 && (
-            <svg className="item-chevron" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
-          )}
-        </span>
-      ) : <ItemIcon key={`${id}-${i}`} id={id} size={28} />)}
+  let activeIdx = shown.findIndex(o => sameIds(o.ids, current));
+  if (current.length === 0 && shown.length > 0) activeIdx = 0;
+  const chosenIds = current.length > 0 ? current : shown[0]?.ids ?? [];
+  if (chosenIds.length === 0) return null;
+  const icons = (ids: number[], size: number, chevrons: boolean) => (
+    <div className="csel-item-icons">
+      {ids.map((id, i) => (
+        <Fragment key={`${id}-${i}`}>
+          <ItemIcon id={id} size={size} />
+          {chevrons && i < ids.length - 1 && <span className="csel-chev">›</span>}
+        </Fragment>
+      ))}
     </div>
   );
   return (
     <>
-      {activeIdx === -1 && current.length > 0 && (
-        <div className="item-option-row item-option-active">
-          {icons(current)}
-          {shown.length > 0 && <span className="item-opt-pr item-opt-matchup">matchup</span>}
+      <div className="csel-pick">
+        {icons(chosenIds, 28, sequence)}
+        {activeIdx >= 0
+          ? <ItemStat option={shown[activeIdx]} />
+          : shown.length > 0 && <span className="csel-matchup-tag" title="Adjusted for your lane opponent">matchup</span>}
+      </div>
+      {shown.length > (activeIdx >= 0 ? 1 : 0) && (
+        <div className="csel-alts">
+          {shown.map((opt, oi) => {
+            if (oi === activeIdx) return null;
+            const body = <>{icons(opt.ids, 20, false)}<ItemStat option={opt} /></>;
+            return onSelect
+              ? <button key={oi} type="button" className="csel-alt csel-alt-btn" onClick={() => onSelect(oi)} title="Apply this build">{body}</button>
+              : <div key={oi} className="csel-alt">{body}</div>;
+          })}
         </div>
       )}
-      {shown.map((opt, oi) => (
-        <div key={oi} className={`item-option-row ${oi === activeIdx ? "item-option-active" : ""}`}
-          onClick={onSelect ? () => onSelect(oi) : undefined}
-          style={onSelect ? { cursor: "pointer" } : undefined}>
-          {icons(opt.ids)}
-          <span className="item-opt-pr">{(opt.pick_rate * 100).toFixed(0)}%</span>
-          <span className={`item-opt-wr ${opt.win_rate >= 0.52 ? "lg-wr-good" : opt.win_rate < 0.48 ? "lg-wr-bad" : ""}`}>
-            {(opt.win_rate * 100).toFixed(1)}%
-          </span>
-        </div>
-      ))}
     </>
   );
 }
@@ -5746,37 +5590,26 @@ const MATCHUP_CATEGORY_LABELS: Record<MatchupChange["category"], string> = {
 // What players build differently against this lane opponent, compared with
 // all games. Swapped rows were changed in the build; the rest are shifts the
 // build already covers, or where nothing fell far enough to make room.
-function MatchupBuildCard({ matchup }: { matchup: MatchupAdjustment }) {
+function MatchupNote({ matchup }: { matchup: MatchupAdjustment }) {
   const opponent = useChampionName(matchup.opponent_id);
   const icon = (c: MatchupChange, id: number, cls = "") => (
     <span className={cls}>{c.category === "keystone" ? <RuneIcon id={id} size={20} /> : <ItemIcon id={id} size={20} />}</span>
   );
   return (
-    <div className="build-card mbuild">
-      <div className="card-header">
-        <h3 className="card-label mbuild-title">
-          vs <ChampionIcon championId={matchup.opponent_id} size={16} /> {opponent?.name ?? ""}
-        </h3>
-        <span className="mbuild-games">{matchup.games.toLocaleString()} games</span>
-      </div>
+    <div className="csel-mnote" title="Share of builds: all games → this matchup">
+      <span className="csel-mnote-head">vs {opponent?.name ?? ""}</span>
+      <span className="csel-mnote-games">{matchup.games.toLocaleString()} games</span>
       {matchup.changes.length === 0 ? (
-        <p className="mbuild-none">Players build the same as in any other matchup.</p>
-      ) : (
-        <>
-          <div className="mbuild-legend">Share of builds: all games &rarr; this matchup</div>
-          {matchup.changes.map((c, i) => (
-            <div key={i} className="mbuild-row">
-              <span className="mbuild-cat">{MATCHUP_CATEGORY_LABELS[c.category]}</span>
-              {c.replaces != null && <>{icon(c, c.replaces, "mbuild-out")}<span className="item-arrow-sm">&rarr;</span></>}
-              {icon(c, c.id)}
-              <span className="mbuild-share">
-                {(c.base_share * 100).toFixed(0)}% &rarr; <strong>{(c.matchup_share * 100).toFixed(0)}%</strong>
-              </span>
-              {c.replaces != null && <span className="mbuild-tag">Swapped</span>}
-            </div>
-          ))}
-        </>
-      )}
+        <span>Players build the same as in any other matchup.</span>
+      ) : matchup.changes.map((c, i) => (
+        <span key={i} className="csel-mnote-change">
+          <span className="csel-mnote-cat">{MATCHUP_CATEGORY_LABELS[c.category]}</span>
+          {c.replaces != null && <>{icon(c, c.replaces, "csel-mnote-out")}<span className="csel-chev">→</span></>}
+          {icon(c, c.id)}
+          <span>{(c.base_share * 100).toFixed(0)}% → <strong>{(c.matchup_share * 100).toFixed(0)}%</strong></span>
+          {c.replaces != null && <span className="csel-mnote-tag">Swapped</span>}
+        </span>
+      ))}
     </div>
   );
 }
@@ -5842,65 +5675,108 @@ function AltTabs({ options, category, currentIds, currentBuild }: {
 // --- Rune Display ---
 
 function RuneDisplay({ runes }: { runes: RuneBuild }) {
-  const primaryStyle = runeStyleCache?.get(runes.primary_style_id);
-  const subStyle = runeStyleCache?.get(runes.sub_style_id);
   const primaryPerks = runes.selected_perk_ids.slice(0, 4);
   const secondaryPerks = runes.selected_perk_ids.slice(4, 6);
   const statShards = runes.selected_perk_ids.slice(6, 9);
 
   return (
-    <div className="runes-layout">
-      <div className="rune-tree">
-        {primaryStyle && (
-          <div className="rune-tree-header">
-            <img src={runeIconUrl(primaryStyle.icon)} alt={primaryStyle.name} className="tree-icon" />
-            <span>{primaryStyle.name}</span>
-          </div>
-        )}
-        <div className="rune-slots">
-          {primaryPerks.map((id, i) => (
-            <div key={id} className={`rune-pip ${i === 0 ? "keystone" : ""}`}>
-              <RuneIcon id={id} size={i === 0 ? 32 : 28} />
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="rune-divider" />
-      <div className="rune-tree">
-        {subStyle && (
-          <div className="rune-tree-header">
-            <img src={runeIconUrl(subStyle.icon)} alt={subStyle.name} className="tree-icon" />
-            <span>{subStyle.name}</span>
-          </div>
-        )}
-        <div className="rune-slots">
-          {secondaryPerks.map(id => (
-            <div key={id} className="rune-pip">
-              <RuneIcon id={id} size={28} />
-            </div>
-          ))}
-        </div>
-      </div>
-      {statShards.length > 0 && (
-        <>
-          <div className="rune-divider" />
-          <div className="rune-tree">
-            <div className="rune-tree-header"><span>Shards</span></div>
-            <div className="rune-slots rune-slots-shards">
-              {statShards.map((id, i) => {
-                const shard = STAT_SHARDS[id];
-                return (
-                  <div key={`${id}-${i}`} className="shard-chip" title={shard?.name || `${id}`}>
-                    {shard && <img src={`${SHARD_ICON_BASE}${shard.icon}`} alt={shard.name} className="shard-icon" />}
-                    <span>{shard?.name || id}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
+    <div className="csel-row csel-runes">
+      {primaryPerks.map((id, i) => (
+        <span key={id} className={i === 0 ? "csel-keystone" : "csel-rune"}>
+          <RuneIcon id={id} size={i === 0 ? 30 : 24} />
+        </span>
+      ))}
+      <span className="csel-vsep" />
+      {secondaryPerks.map(id => (
+        <span key={id} className="csel-rune"><RuneIcon id={id} size={24} /></span>
+      ))}
+      {statShards.length > 0 && <span className="csel-vsep" />}
+      {statShards.map((id, i) => {
+        const shard = STAT_SHARDS[id];
+        return shard
+          ? <img key={`${id}-${i}`} className="csel-shard" src={`${SHARD_ICON_BASE}${shard.icon}`} alt={shard.name} title={shard.name} />
+          : <span key={`${id}-${i}`} className="rune-id">{id}</span>;
+      })}
     </div>
+  );
+}
+
+function BuildCard({ build, alternatives, matchup, championId, runesLoaded }: {
+  build: ChampionBuild;
+  alternatives: BuildAlternatives | null;
+  matchup: MatchupAdjustment | null;
+  championId: number | null;
+  runesLoaded: boolean;
+}) {
+  const hasStart = build.starter_items.length > 0 || (alternatives?.starter_items.length ?? 0) > 0;
+  const hasBoots = build.boots.length > 0 || (alternatives?.boots.length ?? 0) > 0;
+  const hasCore = build.core_items.length > 0 || (alternatives?.core_items.length ?? 0) > 0;
+  return (
+    <section className="csel-card">
+      <h3 className="q-label">Build</h3>
+      <div className="csel-build-top">
+        {build.summoner_spells && (
+          <div className="csel-group">
+            <div className="csel-group-head">
+              <span className="csel-sub">Spells</span>
+              {alternatives && alternatives.summoner_spells.length > 1 && (
+                <AltTabs options={alternatives.summoner_spells} category="spells" currentIds={build.summoner_spells} />
+              )}
+            </div>
+            <div className="csel-row">
+              {build.summoner_spells.map(id => (
+                <img key={id} className="csel-spell" src={spellIconUrl(id)} alt={SPELL_NAMES[id]} title={SPELL_NAMES[id]} />
+              ))}
+            </div>
+          </div>
+        )}
+        {build.skill_order.length > 0 && (
+          <SkillPanel priority={build.skill_order} levels={build.skill_levels} championId={championId} />
+        )}
+        {build.runes && runesLoaded && (
+          <div className="csel-group">
+            <div className="csel-group-head">
+              <span className="csel-sub">Runes</span>
+              {alternatives && alternatives.runes.length > 1 && (
+                <AltTabs options={alternatives.runes} category="runes" currentBuild={build.runes} />
+              )}
+            </div>
+            <RuneDisplay runes={build.runes} />
+          </div>
+        )}
+      </div>
+
+      {(hasStart || hasBoots || hasCore) && (
+        <div className="csel-items">
+          {hasStart && (
+            <div className="csel-group">
+              <span className="csel-sub">Start</span>
+              <ItemChoice options={alternatives?.starter_items ?? []} current={build.starter_items} limit={2} />
+            </div>
+          )}
+          {hasBoots && (
+            <div className="csel-group">
+              <span className="csel-sub">Boots</span>
+              <ItemChoice options={alternatives?.boots ?? []} current={build.boots} limit={2} />
+            </div>
+          )}
+          {hasCore && (
+            <div className="csel-group">
+              <span className="csel-sub">Core</span>
+              <ItemChoice
+                options={alternatives?.core_items ?? []}
+                current={build.core_items}
+                limit={3}
+                sequence
+                onSelect={oi => invoke("select_build_option", { category: "items", index: oi })}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {matchup && <MatchupNote matchup={matchup} />}
+    </section>
   );
 }
 

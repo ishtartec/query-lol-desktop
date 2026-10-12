@@ -1,0 +1,208 @@
+/* Champion select, after the lock-in: the centre holds your champion (build,
+   lane plan), each side column holds analysis of its own team. Everything is
+   `csel-` prefixed; the older `cs-` rules in App.css own the layout and the
+   team rosters. */
+
+/* Header: one line with the lane opponent */
+.csel-hero {
+  position: relative; display: flex; align-items: center; gap: 14px;
+  padding: 8px 14px; flex-shrink: 0; overflow: hidden;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.csel-hero-bg {
+  position: absolute; inset: 0; background-size: cover; background-position: 70% 22%; opacity: .32;
+  -webkit-mask-image: linear-gradient(90deg, transparent 25%, #000 75%);
+  mask-image: linear-gradient(90deg, transparent 25%, #000 75%);
+}
+.csel-hero > *:not(.csel-hero-bg) { position: relative; }
+.csel-hero-ava { width: 44px; height: 44px; border-radius: 11px; border: 2px solid var(--accent-gold); }
+.csel-hero-info { min-width: 0; }
+.csel-hero-name { margin: 0; font-size: 20px; line-height: 1.15; font-weight: 700; }
+.csel-hero-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 3px; font-size: 12.5px; color: var(--text-secondary); }
+.csel-hero-meta img { border-radius: 4px; }
+.csel-hero-meta .draft-champ-name { font-size: 12.5px; font-weight: 500; color: var(--text-primary); }
+.csel-hero-pos { display: inline-flex; align-items: center; gap: 4px; padding-right: 9px; border-right: 1px solid var(--border-strong); }
+.csel-hero-vs, .csel-vs { color: var(--text-muted); font-size: 11px; }
+.csel-hero .applied-badge, .csel-hero .btn-apply { margin-left: auto; }
+
+/* Cards */
+.csel-card {
+  flex-shrink: 0; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 12px 16px;
+}
+.csel-card > .q-label { margin: 0 0 8px; }
+.csel-sub { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.csel-group { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.csel-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.csel-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.csel-chev { color: var(--text-muted); font-size: 12px; }
+
+/* Build: spells and runes on the left, skills on the right */
+.csel-build-top { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 10px 22px; }
+.csel-build-top > .csel-skills { grid-column: 2; grid-row: 1 / span 2; }
+.csel-spell { width: 34px; height: 34px; border-radius: 8px; }
+.csel-keystone { display: inline-flex; padding: 2px; border-radius: 50%; border: 2px solid var(--accent-gold-line); background: var(--surface-sunken); }
+.csel-keystone img, .csel-rune img { border-radius: 50%; }
+.csel-rune { display: inline-flex; border-radius: 50%; background: var(--surface-sunken); }
+.csel-vsep { width: 1px; height: 22px; background: var(--border-strong); margin: 0 2px; }
+.csel-shard { width: 18px; height: 18px; border-radius: 50%; background: var(--surface-3); padding: 2px; }
+
+.csel-prio { display: flex; align-items: center; gap: 5px; }
+.csel-key {
+  width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
+  font-weight: 700; font-size: 12px; color: #0a0e13;
+}
+.csel-levels { display: grid; gap: 2px; }
+.csel-level { position: relative; display: flex; flex-direction: column; align-items: stretch; text-align: center; }
+.csel-level small { font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.csel-level .tt-wrap { display: flex; }
+.csel-key-sm {
+  flex: 1; display: grid; place-items: center; height: 17px; border-radius: 4px;
+  font-size: 9.5px; font-weight: 700; color: #0a0e13;
+}
+
+/* Build: items */
+.csel-items {
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 12px 22px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+.csel-pick { display: flex; align-items: center; gap: 8px; }
+.csel-item-icons { display: flex; align-items: center; gap: 3px; }
+.csel-item-icons img { border-radius: 6px; }
+.csel-stat { font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+.csel-pr { color: var(--text-muted); }
+.csel-wr { font-weight: 600; margin-left: 5px; }
+.csel-matchup-tag { font-size: 11px; font-weight: 600; color: var(--accent-gold-text); background: var(--accent-gold-soft); border-radius: 999px; padding: 1px 8px; }
+.csel-alts { display: flex; gap: 6px; flex-wrap: wrap; }
+.csel-alt {
+  display: flex; align-items: center; gap: 6px; padding: 3px 7px 3px 4px;
+  border: 1px solid var(--border); background: var(--surface-sunken); border-radius: 8px;
+}
+.csel-alt .csel-item-icons img { border-radius: 4px; }
+.csel-alt .csel-stat { font-size: 11px; }
+.csel-alt-btn { font: inherit; color: inherit; cursor: pointer; transition: background .12s ease, border-color .12s ease; }
+.csel-alt-btn:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.csel-alt-btn:focus-visible, .csel-lv:focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 1px; }
+
+/* Build: what changes against the lane opponent */
+.csel-mnote {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 12px;
+  padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-sunken);
+  font-size: 12px; color: var(--text-secondary);
+}
+.csel-mnote-head { color: var(--accent-gold-text); font-weight: 600; }
+.csel-mnote-games { color: var(--text-muted); }
+.csel-mnote-change { display: inline-flex; align-items: center; gap: 5px; }
+.csel-mnote-cat { color: var(--text-muted); }
+.csel-mnote-out { opacity: .45; }
+.csel-mnote-change img { border-radius: 4px; }
+.csel-mnote-tag { font-size: 10.5px; font-weight: 600; color: var(--accent-gold-text); background: var(--accent-gold-soft); border-radius: 999px; padding: 0 7px; }
+
+/* Lane plan */
+.csel-lane-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.csel-lane-head .q-label { margin: 0 4px 0 0; }
+.csel-lane-head img { border-radius: 5px; }
+.csel-lane-sum { margin-left: auto; font-weight: 600; font-size: 12.5px; }
+.csel-phases { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.csel-phase { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; background: var(--surface-3); color: var(--text-secondary); }
+.csel-phase b { font-weight: 600; margin-right: 5px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.csel-phase-you b { color: var(--positive); }
+.csel-phase-enemy b { color: var(--negative); }
+
+.csel-plan { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; }
+.csel-lv {
+  position: relative; display: flex; flex-direction: column; gap: 2px; min-height: 48px; overflow: hidden;
+  padding: 5px 6px 7px; text-align: left; font: inherit; color: inherit; cursor: default;
+  background: var(--surface-sunken); border: 1px solid transparent; border-radius: 8px;
+}
+.csel-lv:hover { background: var(--surface-2); }
+.csel-lv-focus, .csel-lv-focus:hover { border-color: var(--accent-gold-line); background: var(--accent-gold-soft); }
+.csel-lv-n { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.csel-lv-n .lp-spike-icon { color: var(--accent-gold-text); }
+.csel-lv-enemy { display: inline-flex; color: var(--negative); }
+.csel-lv-a { font-size: 11px; line-height: 1.2; }
+.csel-lv-rep .csel-lv-a { color: var(--text-muted); }
+.csel-lv-adv { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; }
+.csel-lv-adv-pos { background: var(--positive); }
+.csel-lv-adv-neg { background: var(--negative); }
+.csel-lv-strong, .csel-lv-careful { opacity: .6; }
+
+.csel-detail {
+  display: flex; align-items: baseline; gap: 12px; margin-top: 8px;
+  padding: 9px 12px; border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.csel-detail-lv { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+.csel-detail-a { font-weight: 600; white-space: nowrap; }
+.csel-detail-t { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-secondary); }
+.csel-detail-warn { color: var(--negative); }
+.csel-detail-s { font-weight: 600; font-variant-numeric: tabular-nums; }
+.csel-tone-pos { color: var(--positive); }
+.csel-tone-neg { color: var(--negative); }
+.csel-tone-even { color: var(--text-muted); }
+
+/* Side columns: analysis of each team, under its roster */
+.csel-side {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 14px; padding: 14px 4px 4px; border-top: 1px solid var(--border);
+}
+.csel-side .q-section-head { margin: 0; }
+
+.csel-verdict {
+  width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center; border-radius: 6px;
+  font-size: 11px; font-weight: 700; background: var(--surface-3); color: var(--text-secondary); cursor: help;
+}
+.csel-verdict-pos { background: var(--positive-soft); color: var(--positive); }
+.csel-verdict-neg { background: var(--negative-soft); color: var(--negative); }
+
+.csel-dmg { display: flex; flex-direction: column; gap: 5px; }
+.csel-dmg-bar { display: flex; height: 18px; border-radius: 5px; overflow: hidden; font-size: 10.5px; font-weight: 700; color: var(--bg-card); }
+.csel-dmg-bar div { display: grid; place-items: center; white-space: nowrap; }
+.csel-dmg-ad { background: var(--dmg-physical); }
+.csel-dmg-ap { background: var(--dmg-magic); }
+.csel-dmg-note { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-muted); }
+.csel-dmg-heavy { color: var(--accent-gold-text); font-weight: 600; }
+
+.csel-callout { display: flex; gap: 8px; font-size: 12px; line-height: 1.4; color: var(--text-secondary); }
+.csel-callout-icon { flex-shrink: 0; display: inline-flex; padding-top: 2px; }
+.csel-callout-good .csel-callout-icon { color: var(--positive); }
+.csel-callout-warn .csel-callout-icon { color: var(--accent-gold-text); }
+
+.csel-power { display: flex; flex-direction: column; gap: 6px; }
+.csel-power-grid { display: grid; grid-template-columns: 34px 1fr 1fr; gap: 6px 3px; align-items: center; font-size: 11px; color: var(--text-muted); }
+.csel-power-bar { position: relative; height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.csel-power-bar i { position: absolute; top: 0; bottom: 0; }
+.csel-power-ally { right: 0; background: var(--ally); }
+.csel-power-enemy { left: 0; background: var(--enemy); }
+.csel-tip { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-secondary); }
+
+.csel-threat { display: flex; flex-direction: column; gap: 4px; padding: 9px 10px; border-radius: var(--radius-sm); background: var(--bg-card); }
+.csel-threat b { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.csel-threat-high b { color: var(--accent-gold-text); }
+.csel-threat-why { font-size: 11.5px; line-height: 1.35; color: var(--text-muted); }
+.csel-threat .csel-item-icons { margin-top: 2px; gap: 4px; }
+.csel-threat .csel-item-icons img { border-radius: 5px; }
+
+.csel-trinket { display: flex; align-items: flex-start; gap: 10px; }
+.csel-trinket img { border-radius: 6px; }
+.csel-trinket b { display: block; font-size: 12.5px; font-weight: 600; }
+.csel-trinket span { display: block; font-size: 11.5px; line-height: 1.4; color: var(--text-muted); }
+.csel-wards { display: flex; flex-direction: column; gap: 4px; }
+.csel-ward { display: grid; grid-template-columns: 38px 1fr; font-size: 12px; line-height: 1.35; color: var(--text-secondary); }
+.csel-ward span:first-child { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* Narrow windows: sized on the centre column, not the window, because the
+   side columns keep their width. */
+.cs-center:has(.csel-hero) { container-type: inline-size; }
+@container (max-width: 640px) {
+  .csel-items { grid-template-columns: auto minmax(0, 1fr); }
+  .csel-items > .csel-group:last-child { grid-column: 1 / -1; }
+}
+@container (max-width: 520px) {
+  .csel-build-top { grid-template-columns: minmax(0, 1fr); }
+  .csel-build-top > .csel-skills { grid-column: auto; grid-row: auto; }
+  .csel-plan { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .csel-detail { flex-wrap: wrap; }
+}
+
+/* The centre column stacks three cards; keep them close so all three fit. */
+.cs-center:has(.csel-hero) { gap: 10px; }
