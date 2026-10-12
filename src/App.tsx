@@ -5304,7 +5304,9 @@ function GoldDiffTimeline({ timeline, deaths, duration, onDeath }: {
 
         {/* Gold diff area */}
         <defs>
-          <linearGradient id="goldGrad" x1="0" x2="0" y1="0" y2="1">
+          {/* Anchored to the axis, not the area's bounding box: with a lead
+              the whole game, the box's bottom is the zero line and got red. */}
+          <linearGradient id="goldGrad" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1={toY(maxAbs)} y2={toY(-maxAbs)}>
             <stop offset="0%" stopColor="var(--accent-blue)" stopOpacity="0.3" />
             <stop offset="50%" stopColor="transparent" stopOpacity="0" />
             <stop offset="100%" stopColor="var(--accent-red)" stopOpacity="0.3" />

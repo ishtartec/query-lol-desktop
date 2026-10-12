@@ -1566,10 +1566,13 @@
 /* Post-game damage profile. Prefixed `dprof-` on purpose: the champ-select
    damage-composition panel already owns .dmg-row / .dmg-bar / .dmg-resist /
    .dmg-legend-item, and reusing those names silently restyled it. */
+/* Two fixed columns, not auto-fit: the full-width note (grid-column 1 / -1)
+   keeps every auto-fit track alive, so the cards filled only two of three. */
 .dprof-row {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px; margin-top: 16px;
 }
+@media (max-width: 720px) { .dprof-row { grid-template-columns: 1fr; } }
 .dprof-card {
   padding: 14px 16px;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
