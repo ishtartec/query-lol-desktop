@@ -1,8 +1,9 @@
-//! Game recording. Spike: captures one window with ScreenCaptureKit and
+//! Game recording. macOS: captures one window with ScreenCaptureKit and
 //! encodes it ourselves through `AVAssetWriter`, which uses the hardware
 //! encoder. `SCRecordingOutput` would write the file for us, but it has no
 //! bitrate setting: 1920px at 60fps measured 24 Mbps in game (~5 GB per
 //! 35-minute game), and dropping to 1280px at 30fps only halved that.
+//! Windows: see recorder_windows.rs.
 //!
 //! H.264 rather than HEVC because WebView2 on Windows only plays HEVC with an
 //! optional extension, and recordings should play on both platforms.
@@ -387,7 +388,11 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+#[path = "recorder_windows.rs"]
+mod imp;
+
+#[cfg(not(any(target_os = "macos", windows)))]
 mod imp {
     use super::{CaptureWindow, RecordingResult};
     use std::path::Path;
@@ -428,7 +433,7 @@ mod imp {
 pub use imp::{has_permission, list_windows, media_duration, request_permission, Recorder};
 
 /// Whether this platform can record. The UI hides the setting elsewhere.
-pub const SUPPORTED: bool = cfg!(target_os = "macos");
+pub const SUPPORTED: bool = cfg!(any(target_os = "macos", windows));
 
 /// What the recording is of, filled in from live and post-game data.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -510,7 +515,14 @@ fn free_bytes(dir: &Path) -> Option<u64> {
     }
     Some(st.f_bavail as u64 * st.f_frsize as u64)
 }
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn free_bytes(dir: &Path) -> Option<u64> {
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let mut free = 0u64;
+    unsafe { GetDiskFreeSpaceExW(&windows::core::HSTRING::from(dir.as_os_str()), Some(&mut free), None, None) }.ok()?;
+    Some(free)
+}
+#[cfg(not(any(unix, windows)))]
 fn free_bytes(_dir: &Path) -> Option<u64> {
     None
 }

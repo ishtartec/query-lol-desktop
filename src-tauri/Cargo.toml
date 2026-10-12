@@ -26,6 +26,33 @@ log = "0.4"
 env_logger = "0.11"
 device_query = "2"
 
+[target.'cfg(windows)'.dependencies]
+# Same major as Tauri's own (webview2-com), so it is compiled once.
+windows = { version = "0.61", features = [
+    "Foundation",
+    "Graphics",
+    "Graphics_Capture",
+    "Graphics_DirectX",
+    "Graphics_DirectX_Direct3D11",
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media_MediaFoundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Performance",
+    "Win32_System_Variant",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_WinRT_Graphics_Capture",
+    "Win32_UI_WindowsAndMessaging",
+] }
+# 0.19 is the last release on windows 0.61; it has process loopback.
+wasapi = "0.19"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = "11"
 avassetwriter = "0.13"
