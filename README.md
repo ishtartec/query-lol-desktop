@@ -10,13 +10,13 @@ Built with **Tauri** (Rust) + **React** (TypeScript). Lightweight (~15MB), no Ov
 
 ## Screenshots
 
-### Champion Select — Builds & Damage Composition
-Auto-applied runes, spells, and item set the moment you pick, with per-team AD/AP damage composition bars and enemy matchup win rates.
+### Champion Select — Everything on One Screen
+Auto-applied runes, spells, skills and items the moment you pick, in one build card with the alternatives as chips. Your team's column shows a lane verdict per ally and your comp's strengths; the enemy's shows their damage split, situational items and ward timings.
 
-![Champion select build view with damage composition](docs/screenshots/champ-select-build.png)
+![Champion select: build card, lane plan, your comp, enemy threats and vision](docs/screenshots/champ-select-build.png)
 
 ### Level-by-Level Plan
-An 18-level timeline vs your lane opponent — per-level advantage from power curves, spike bonuses, and ult-strength, plus situational items and matchup notes.
+The matchup phases over an 18-level grid vs your lane opponent — per-level advantage from power curves, spike bonuses and ult strength, one action per level, and the details on hover.
 
 ![Level-by-level plan timeline](docs/screenshots/level-plan.png)
 
