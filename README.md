@@ -26,11 +26,11 @@ Real-time recommended build, win probability, gold diff, and a full scoreboard w
 ![Live game scoreboard and recommended build](docs/screenshots/live-game.png)
 
 ### Post-Game Analysis
-Full match scoreboard for both teams — damage, KP, CS, vision and gold per player, with the best in each team marked in gold, plus MVP and multikill badges.
+The recording of the game you just played, ready to watch from your best moment, above the full scoreboard for both teams — damage, KP, CS, vision and gold per player, with the best in each team marked in gold, plus MVP and multikill badges.
 
-![Post-game scoreboard for both teams](docs/screenshots/post-game.png)
+![Post-game recording card and scoreboard for both teams](docs/screenshots/post-game.png)
 
-Below it: the gold-advantage curve with the win probability and every kill and death, what your damage ran into (here 87% physical into 103 average armor, half of it absorbed), and a role-adjusted performance breakdown (vs Gold UTILITY) across KDA, CS/min, gold/min, vision/min, damage share and kill participation.
+Below it: the gold-advantage curve with the win probability and every kill and death, what your damage ran into (here 72% physical into 136 average armor, 58% of it absorbed), and a role-adjusted performance breakdown (vs Gold BOTTOM) across KDA, CS/min, gold/min, vision/min, damage share and kill participation.
 
 ![Gold advantage, damage profile and role-adjusted performance](docs/screenshots/post-game-analysis.png)
 
