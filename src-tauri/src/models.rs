@@ -720,6 +720,10 @@ pub struct LiveGamePlayer {
     pub champ_games: i32,
     pub champ_wins: i32,
     pub champ_kda: f64,
+    /// Games actually read from their history. 0 means it could not be
+    /// fetched, so champ_games == 0 says nothing about a first time.
+    #[serde(default)]
+    pub history_games: i32,
     // Premade detection: same non-zero id = inferred party (duo/trio) within the team.
     // None = no premade signal. Assigned per team from shared recent match history.
     #[serde(default)]

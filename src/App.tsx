@@ -212,6 +212,8 @@ interface LiveGamePlayer {
   ranked_win_rate: number;
   streak: number;
   champ_games: number;
+  /** Games read from their history; 0 = unknown (fetch failed). */
+  history_games: number;
   champ_wins: number;
   champ_kda: number;
   premade_group: number | null;
@@ -4462,7 +4464,8 @@ function DamageCompBar({ allies, enemies }: { allies: DraftPlayer[]; enemies: Dr
 function getPlayerLabels(p: LiveGamePlayer): { text: string; cls: string }[] {
   const labels: { text: string; cls: string }[] = [];
   if (p.smurf && p.smurf.games_played >= 10 && p.smurf.unique_champions <= 3) labels.push({ text: "OTP", cls: "label-otp" });
-  if (p.champ_games === 0) labels.push({ text: "1st TIME", cls: "label-autofill" });
+  // Only with a real history to look at: an empty one means it could not be read.
+  if (p.champ_games === 0 && p.history_games >= 5) labels.push({ text: "1st time", cls: "label-autofill" });
   if (p.streak >= 4) labels.push({ text: `${p.streak}W Streak`, cls: "label-winstreak" });
   else if (p.streak <= -4) labels.push({ text: "TILTED", cls: "label-tilted" });
   else if (p.streak <= -3) labels.push({ text: `${Math.abs(p.streak)}L Streak`, cls: "label-lossstreak" });
@@ -4609,11 +4612,11 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
               </span>
               <span className="lg-champ-detail">{p.champ_games}G {p.champ_kda.toFixed(1)} KDA</span>
             </div>
-          ) : (
+          ) : p.history_games >= 5 ? (
             <div className="lg-champ-stats">
               <span className="lg-champ-detail lg-first-time">1st time</span>
             </div>
-          )}
+          ) : null}
           {p.streak !== 0 && (
             <span className={`lg-streak ${p.streak > 0 ? "lg-streak-win" : "lg-streak-loss"}`}>
               {p.streak > 0 ? `${p.streak}W` : `${Math.abs(p.streak)}L`}

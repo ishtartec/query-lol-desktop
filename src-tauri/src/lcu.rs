@@ -992,6 +992,22 @@ fn derive_position_from_history(participant: &serde_json::Value, stats: &serde_j
     normalize_position(raw)
 }
 
+/// Player history for the live-game cards: up to three tries, since a
+/// failed or empty answer is common while ten are requested at load time.
+async fn fetch_history_with_retry(creds: &LcuCredentials, puuid: &str) -> Vec<MatchHistoryEntry> {
+    for (attempt, wait_ms) in [0u64, 700, 1800].into_iter().enumerate() {
+        if wait_ms > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
+        }
+        match get_player_match_history(creds, puuid).await {
+            Ok(m) if !m.is_empty() => return m,
+            Ok(_) => log::debug!("player history empty (attempt {})", attempt + 1),
+            Err(e) => log::debug!("player history failed (attempt {}): {}", attempt + 1, e),
+        }
+    }
+    vec![]
+}
+
 pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Result<Vec<MatchHistoryEntry>, String> {
     let client = lcu_client();
     let url = lcu_url(creds, &format!("/lol-match-history/v1/products/lol/{}/matches", puuid));
@@ -1576,6 +1592,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
                     champ_games: 0,
                     champ_wins: 0,
                     champ_kda: 0.0,
+                    history_games: 0,
                     premade_group: None,
                     live: None,
                 },
@@ -1649,6 +1666,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
         champ_games: i32,
         champ_wins: i32,
         champ_kda: f64,
+        history_games: i32,
         // Recent ranked/normal games keyed as (game_id, team_id) for premade detection.
         // ARAM and other non-team-queue games are excluded (same-side is meaningless there).
         match_keys: Vec<(i64, i64)>,
@@ -1674,9 +1692,12 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
                 String::new()
             };
 
-            // Fetch match history for all players (used for stats + smurf)
+            // Fetch match history for all players (used for stats + smurf).
+            // Ten of these fire at once while the game loads and some came
+            // back failed or empty, which then read as "1st time" on a
+            // 20-game one-trick. Retry, and report how many games we got.
             let matches = if !puuid.is_empty() {
-                get_player_match_history(&creds, &puuid).await.unwrap_or_default()
+                fetch_history_with_retry(&creds, &puuid).await
             } else {
                 vec![]
             };
@@ -1725,7 +1746,8 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
                 .map(|m| (m.game_id, m.team_id))
                 .collect();
 
-            PlayerFetchResult { rank, wins, losses, name, smurf, streak, champ_games, champ_wins, champ_kda, match_keys }
+            let history_games = matches.len() as i32;
+            PlayerFetchResult { rank, wins, losses, name, smurf, streak, champ_games, champ_wins, champ_kda, history_games, match_keys }
         }));
     }
 
@@ -1744,6 +1766,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
             p.champ_games = r.champ_games;
             p.champ_wins = r.champ_wins;
             p.champ_kda = r.champ_kda;
+            p.history_games = r.history_games;
             if !r.name.is_empty() {
                 p.summoner_name = r.name;
             }
