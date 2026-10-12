@@ -763,6 +763,10 @@ pub struct LiveGameData {
     /// wall-clock time, which the recorder needs for its video offset.
     #[serde(skip)]
     pub polled_at: Option<std::time::Instant>,
+    /// Players the game itself reports (`allPlayers`). More than the LCU
+    /// gave us at game start means someone was missing from the roster.
+    #[serde(skip)]
+    pub roster_size: usize,
 }
 
 /// What the recorder is doing, for the UI: recording now, or why the last

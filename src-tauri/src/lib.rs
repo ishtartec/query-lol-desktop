@@ -438,6 +438,9 @@ async fn poll_loop(
     let mut matchup_key: Option<(i64, i64)> = None;
     // Bounded retries for backfilling the post-game gold chart from the LCU.
     let mut timeline_backfill_tries: u32 = 0;
+    // Re-fetches of an incomplete live-game roster, and when the last ran.
+    let mut roster_refetches: u32 = 0;
+    let mut last_roster_refetch: Option<std::time::Instant> = None;
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -840,6 +843,8 @@ async fn poll_loop(
                         live.recommended_alternatives = s.build_alternatives.clone();
                         s.status = ConnectionStatus::InGame;
                         s.live_game = Some(live);
+                        roster_refetches = 0;
+                        last_roster_refetch = Some(std::time::Instant::now());
                         s.champion_id = None;
                         s.build = None;
                         s.build_alternatives = None;
@@ -865,6 +870,36 @@ async fn poll_loop(
                         Err(e) => {
                             log::debug!("Live client poll: {}", e);
                         }
+                    }
+                }
+                // The roster is fetched once, at GameStart, and the LCU
+                // session sometimes lists a team short then (an enemy top
+                // laner went missing for a whole game). Re-fetch while the
+                // game itself reports more players, or one side is short.
+                let short = s.live_game.as_ref().is_some_and(|lg| {
+                    let have = lg.allies.len() + lg.enemies.len();
+                    let roster = lg.live_data.as_ref().map(|d| d.roster_size).unwrap_or(0);
+                    have < roster.max(2 * lg.allies.len().max(lg.enemies.len()))
+                });
+                drop(s);
+                let due = last_roster_refetch.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(15));
+                if short && due && roster_refetches < 8 {
+                    roster_refetches += 1;
+                    last_roster_refetch = Some(std::time::Instant::now());
+                    match lcu::get_live_game(&creds, sid, &my_name).await {
+                        Ok(fresh) => {
+                            let mut s = state.lock().await;
+                            if let Some(ref mut live) = s.live_game {
+                                let (before, after) = (live.allies.len() + live.enemies.len(), fresh.allies.len() + fresh.enemies.len());
+                                log::info!("Live roster re-fetch {}: {} -> {} players", roster_refetches, before, after);
+                                if after > before {
+                                    live.allies = fresh.allies;
+                                    live.enemies = fresh.enemies;
+                                    let _ = app_handle.emit("app-state-changed", s.clone());
+                                }
+                            }
+                        }
+                        Err(e) => log::warn!("Live roster re-fetch failed: {}", e),
                     }
                 }
             }

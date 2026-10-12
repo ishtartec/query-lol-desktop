@@ -1615,6 +1615,8 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
         team_two_raw = parse_players_raw(arr);
     }
 
+    info!("Live game roster from LCU session: teamOne {}, teamTwo {}", team_one_raw.len(), team_two_raw.len());
+
     // Resolve which team the local player is on. Try summoner_id first, then
     // fall back to summoner-name matching (post-Riot-ID clients sometimes omit
     // summoner_id entirely, leaving team detection inverted).
@@ -2107,6 +2109,7 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         snapshots,
         moments,
         polled_at: Some(polled_at),
+        roster_size: players.map(|p| p.len()).unwrap_or(0),
     });
 
     Ok(())
