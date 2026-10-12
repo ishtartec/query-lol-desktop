@@ -48,7 +48,7 @@
     "description": "A free, open-source League of Legends companion app: a coach-style level-by-level game plan for all 172 champions, real-time in-game voice callouts, a live-advisor overlay, smurf and premade detection, post-game analysis, and game recording with a key-moment review timeline.",
     "url": "https://ishtartec.github.io/query-lol-desktop/",
     "downloadUrl": "https://github.com/ishtartec/query-lol-desktop/releases/latest",
-    "softwareVersion": "0.24.0",
+    "softwareVersion": "0.24.1",
     "license": "https://github.com/ishtartec/query-lol-desktop",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "author": { "@type": "Organization", "name": "ishtartec" }
@@ -115,6 +115,7 @@
     <!-- HERO -->
     <section class="hero">
       <div class="hero-copy">
+        <a class="news reveal" href="#recording"><span class="news-tag">New in 0.24</span> <span>Game recording<span class="news-more"> with a key-moment timeline</span></span> <span aria-hidden="true">→</span></a>
         <span class="eyebrow reveal"><span class="dot"></span> Free &amp; open source · Windows &amp; macOS</span>
         <h1 class="reveal d1">The League companion that <span class="grad">plans every level</span> — and tells you out loud.</h1>
         <p class="lede reveal d2">
@@ -135,8 +136,8 @@
       </div>
       <div class="hero-art reveal d2">
         <div class="frame frame-glow">
-          <img src="screenshots/live-game.png" alt="QueryLoL live game overlay with scoreboard, win probability, and recommended build" loading="eager" />
-          <span class="frame-tag"><span class="dot"></span> LIVE</span>
+          <picture><source type="image/webp" srcset="screenshots/recording-player.webp" /><img src="screenshots/recording-player.png" alt="QueryLoL recording review player with kills, deaths and objectives marked over the gold-lead curve" width="2560" height="1560" fetchpriority="high" /></picture>
+          <span class="frame-tag"><span class="dot"></span> REPLAY</span>
         </div>
       </div>
     </section>
@@ -147,22 +148,22 @@
       <h2 class="section-title">More than an op.gg overlay</h2>
       <div class="pillars">
         <article class="pillar">
-          <span class="pillar-ico" aria-hidden="true">⌁</span>
+          <span class="pillar-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h4v-4h4v-4h4V8h4V4"/><path d="M16 4h3v3"/></svg></span>
           <h3>Plans every level</h3>
           <p>A coach-style 18-level route vs your lane opponent, with the right action on each level — for all 172 champions.</p>
         </article>
         <article class="pillar">
-          <span class="pillar-ico" aria-hidden="true">◈</span>
+          <span class="pillar-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></span>
           <h3>Talks to you</h3>
           <p>Hands-free voice callouts: enemy missing, recall ready, objective spawning, jungler unseen — while your eyes stay on the game.</p>
         </article>
         <article class="pillar">
-          <span class="pillar-ico" aria-hidden="true">⬡</span>
+          <span class="pillar-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/></svg></span>
           <h3>Featherweight &amp; private</h3>
           <p>~15MB native Tauri app. No Electron, no account, no telemetry. All requests run locally from your machine.</p>
         </article>
         <article class="pillar">
-          <span class="pillar-ico" aria-hidden="true">⌖</span>
+          <span class="pillar-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
           <h3>Reads the enemy</h3>
           <p>Smurf scoring and premade/duo detection surface who you're really up against — before the game even starts.</p>
         </article>
@@ -172,7 +173,7 @@
     <!-- SPOTLIGHT 01 -->
     <section class="spotlight">
       <div class="spot-media reveal">
-        <div class="frame"><img src="screenshots/level-plan.png" alt="Level-by-level plan timeline with per-level actions and spike nodes" loading="lazy" /></div>
+        <div class="frame"><picture><source type="image/webp" srcset="screenshots/level-plan.webp" /><img src="screenshots/level-plan.png" alt="Level-by-level plan timeline with per-level actions and spike nodes" loading="lazy" /></picture></div>
       </div>
       <div class="spot-copy reveal">
         <span class="num">01</span>
@@ -190,7 +191,7 @@
     <!-- SPOTLIGHT 02 -->
     <section class="spotlight reverse">
       <div class="spot-media reveal">
-        <div class="frame"><img src="screenshots/live-game.png" alt="Live game view with real-time advisors and recommended build" loading="lazy" /></div>
+        <div class="frame"><picture><source type="image/webp" srcset="screenshots/live-game.webp" /><img src="screenshots/live-game.png" alt="Live game view with real-time advisors and recommended build" loading="lazy" /></picture></div>
       </div>
       <div class="spot-copy reveal">
         <span class="num">02</span>
@@ -208,7 +209,7 @@
     <!-- SPOTLIGHT 03 -->
     <section class="spotlight">
       <div class="spot-media reveal">
-        <div class="frame"><img src="screenshots/champ-select-build.png" alt="Champion select with auto-applied build, draft intelligence and damage composition" loading="lazy" /></div>
+        <div class="frame"><picture><source type="image/webp" srcset="screenshots/champ-select-build.webp" /><img src="screenshots/champ-select-build.png" alt="Champion select with auto-applied build, draft intelligence and damage composition" loading="lazy" /></picture></div>
       </div>
       <div class="spot-copy reveal">
         <span class="num">03</span>
@@ -228,8 +229,8 @@
     <section class="spotlight reverse">
       <div class="spot-media reveal">
         <div class="frame stack">
-          <img src="screenshots/post-game.png" alt="Post-game recording card and scoreboard with the best in each team marked in gold" loading="lazy" />
-          <img class="stack-2" src="screenshots/home-dashboard.png" alt="Home dashboard with role-aware improvement panel" loading="lazy" />
+          <picture><source type="image/webp" srcset="screenshots/post-game-analysis.webp" /><img src="screenshots/post-game-analysis.png" alt="Post-game damage dealt and taken profile and gold-advantage timeline" loading="lazy" /></picture>
+          <picture class="stack-2"><source type="image/webp" srcset="screenshots/home-dashboard.webp" /><img src="screenshots/home-dashboard.png" alt="Home dashboard with role-aware improvement panel" loading="lazy" /></picture>
         </div>
       </div>
       <div class="spot-copy reveal">
@@ -246,9 +247,9 @@
     </section>
 
     <!-- SPOTLIGHT 05 -->
-    <section class="spotlight">
+    <section id="recording" class="spotlight">
       <div class="spot-media reveal">
-        <div class="frame"><img src="screenshots/recording-player.png" alt="Recording review player with kills, deaths and objectives marked over the gold-lead curve" loading="lazy" /></div>
+        <div class="frame"><picture><source type="image/webp" srcset="screenshots/post-game.webp" /><img src="screenshots/post-game.png" alt="Post-game screen with the recording ready to watch, keep or delete, above the scoreboard" loading="lazy" /></picture></div>
       </div>
       <div class="spot-copy reveal">
         <span class="num">05</span>
@@ -267,14 +268,6 @@
       <p class="section-eyebrow">Everything in the box</p>
       <h2 class="section-title">Built for every phase of the game</h2>
       <div class="bento">
-        <article class="cell">
-          <h3>Champion Select</h3>
-          <p>Auto-apply runes, spells &amp; item sets · build adjusted to your lane opponent · alternative builds with WR/pick rate · skill order · item &amp; rune tooltips · ARAM bench by win rate.</p>
-        </article>
-        <article class="cell">
-          <h3>Draft Intelligence</h3>
-          <p>Pick &amp; ban scored 0–100 · matchup win rates · comp callouts · all-lanes prediction · trinket &amp; ward-placement tips · game prediction.</p>
-        </article>
         <article class="cell wide">
           <h3>Live Game &amp; Overlay</h3>
           <p>Real-time scoreboard &amp; items · win probability · gold &amp; lane-diff trackers · objective spawn windows · recall optimizer · wave-state advisor · death-timer prediction · MIA / roam tracker · enemy-jungle tracker · vision targets · spell cooldowns · voice cues · hold-TAB overlay with a 5-level plan preview.</p>
@@ -284,10 +277,18 @@
           <p>Smurf detection (0–100) · premade/duo detection · player ranks, OTP / first-time / tilt / streak labels · click any player for their history.</p>
         </article>
         <article class="cell">
+          <h3>Champion Select</h3>
+          <p>Auto-apply runes, spells &amp; item sets · build adjusted to your lane opponent · alternative builds with WR/pick rate · skill order · item &amp; rune tooltips · ARAM bench by win rate.</p>
+        </article>
+        <article class="cell">
+          <h3>Draft Intelligence</h3>
+          <p>Pick &amp; ban scored 0–100 · matchup win rates · comp callouts · all-lanes prediction · trinket &amp; ward-placement tips · game prediction.</p>
+        </article>
+        <article class="cell">
           <h3>Post-Game</h3>
           <p>Full scoreboard with MVP &amp; multikills · gold-advantage timeline · damage dealt &amp; taken profile · elo comparison · early/mid/late phase splits.</p>
         </article>
-        <article class="cell">
+        <article class="cell wide wide-lg">
           <h3>Game Recording</h3>
           <p>Automatic 1080p60 recording · key-moment timeline over the gold curve · jump to any death from the post-game chart · library with keep &amp; delete.</p>
         </article>
