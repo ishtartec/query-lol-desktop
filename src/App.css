@@ -650,7 +650,7 @@
 }
 
 .lobby-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; align-items: start; }
-.lobby-grid > .champ-improvement { margin-bottom: 0; }
+.lobby-grid > .champ-pool { margin-bottom: 0; }
 .lobby-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .lobby-side:empty { display: none; }
 @media (max-width: 1100px) { .lobby-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -1570,23 +1570,27 @@
 .daily-time-danger { color: var(--negative); font-weight: 700; }
 .daily-time-tip { font-weight: 500; }
 
-/* ==== Champion Improvement ==== */
-.champ-improvement { display: flex; flex-direction: column; gap: 10px; }
-.ci-table { display: flex; flex-direction: column; }
-.ci-head, .ci-row { display: grid; grid-template-columns: minmax(150px, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 8px; align-items: center; }
-.ci-head { padding: 0 6px 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
-.ci-row { padding: 8px 6px; border-radius: 10px; transition: background .12s ease; }
-.ci-row:hover { background: var(--surface-2); }
-.ci-champ { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.ci-champ img { border-radius: 9px; }
-.ci-champ-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 14px; font-weight: 600; }
-.ci-games { font-size: 12px; font-weight: 500; color: var(--text-muted); }
-.ci-cell { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
-.ci-value { font-size: 15px; font-weight: 600; color: var(--text-primary); }
-.ci-delta { font-size: 12px; font-weight: 600; }
-.improvement-metric-good .ci-delta { color: var(--positive); }
-.improvement-metric-bad .ci-delta { color: var(--negative); }
-.improvement-metric-neutral .ci-delta { color: var(--text-muted); }
+/* ==== Champion pool ==== */
+.champ-pool { display: flex; flex-direction: column; gap: 10px; }
+.champ-pool > .q-seg { align-self: flex-start; }
+.pool-table { display: flex; flex-direction: column; gap: 6px; }
+.pool-head, .pool-row { display: grid; grid-template-columns: minmax(150px, 1.6fr) repeat(4, minmax(0, 1fr)); gap: 8px; align-items: center; }
+.pool-head { padding: 0 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.pool-group { display: flex; flex-direction: column; }
+.pool-group-head { display: flex; align-items: baseline; gap: 8px; padding: 6px 6px 2px; min-width: 0; }
+.pool-group-title { font-size: 12px; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
+.pool-group-hint { font-size: 12px; color: var(--text-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-row { padding: 6px; border-radius: 10px; transition: background .12s ease; }
+.pool-row:hover { background: var(--surface-2); }
+.pool-champ { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pool-champ img { border-radius: 8px; }
+.pool-champ-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 14px; font-weight: 600; }
+.pool-games { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.pool-cell { font-size: 14px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.pool-score-good { color: var(--positive); }
+.pool-score-bad { color: var(--negative); }
+.pool-score-neutral { color: var(--text-muted); }
+.pool-rule { margin: 0; font-size: 11px; line-height: 1.45; color: var(--text-muted); }
 
 /* ==== Tilt Gate ==== */
 .tilt-gate {

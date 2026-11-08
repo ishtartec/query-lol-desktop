@@ -2835,7 +2835,7 @@ function App() {
               <DailySummary history={playedHistory} lpHistory={state.lp_history} />
               <TiltGate history={playedHistory} />
               <div className="lobby-grid">
-                <ChampionImprovement history={playedHistory} />
+                <ChampionPool history={playedHistory} />
                 <div className="lobby-side">
                   <GoalPanel goal={state.game_goal} outcomes={state.goal_history} history={playedHistory} ranked={state.ranked} />
                   {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
@@ -3303,106 +3303,211 @@ function DailySummary({ history, lpHistory }: { history: MatchHistoryEntry[]; lp
   );
 }
 
-// --- Champion-specific improvement ---
+// --- Champion pool ---
 
-interface ChampStats {
+// Summoner's Rift queues with real lanes, the same set the improvement panel
+// reads: ranked solo/flex, normal draft/blind, quickplay. ARAM and other
+// laneless modes (blank position) and the Practice Tool never enter.
+const POOL_QUEUES = new Set([420, 440, 400, 430, 490]);
+/** Games on one champion and role before Core / Consider dropping. */
+const POOL_MIN_VERDICT = 6;
+/** Games before a champion can show up as Practice. */
+const POOL_MIN_PRACTICE = 3;
+/** Per-metric cap on a single game's deviation, so one 20/0 game (KDA 20)
+ *  cannot carry a champion on its own. */
+const POOL_CAP = 0.5;
+
+type PoolVerdict = "core" | "practice" | "drop" | null;
+type PoolMetric = { label: string; value: (m: MatchHistoryEntry) => number };
+interface PoolChamp {
+  id: number;
+  games: number;
+  wins: number;
+  kda: number;
+  /** Role's headline per-minute stat (CS/min, vision/min for supports). */
+  keyStat: number;
+  /** Mean per-game deviation from your role average, e.g. 0.12 = 12% above. */
+  score: number;
+  /** Same, per metric, for the row tooltip. */
+  deltas: { label: string; delta: number }[];
+  verdict: PoolVerdict;
+}
+interface PoolRole {
+  role: RoleKey;
   games: number;
   winRate: number;
-  kda: number;
-  csPerMin: number;
-  goldPerMin: number;
+  keyLabel: string;
+  champs: PoolChamp[];
 }
 
-function computeChampStats(games: MatchHistoryEntry[]): ChampStats | null {
-  const valid = games.filter(g => g.duration_secs > 60 && g.gold_earned > 0);
-  if (valid.length === 0) return null;
-  let wins = 0, kdaSum = 0, csPerMinSum = 0, goldPerMinSum = 0;
-  for (const g of valid) {
-    if (g.win) wins++;
-    const minutes = g.duration_secs / 60;
-    kdaSum += (g.kills + g.assists) / Math.max(1, g.deaths);
-    csPerMinSum += g.cs / minutes;
-    goldPerMinSum += g.gold_earned / minutes;
+function poolMetrics(role: RoleKey): PoolMetric[] {
+  const perMin = (f: (m: MatchHistoryEntry) => number) => (m: MatchHistoryEntry) => f(m) / (m.duration_secs / 60);
+  const kda: PoolMetric = { label: "KDA", value: m => (m.kills + m.assists) / Math.max(1, m.deaths) };
+  const gold: PoolMetric = { label: "Gold/min", value: perMin(m => m.gold_earned) };
+  // Supports are not judged on farm or damage, only on what the role controls.
+  if (role === "UTILITY") return [kda, { label: "Vision/min", value: perMin(m => m.vision_score) }, gold];
+  return [kda, { label: "CS/min", value: perMin(m => m.cs) }, gold, { label: "Damage/min", value: perMin(m => m.total_damage) }];
+}
+
+/** Position of one game, with the BOTTOM → UTILITY safety net for supports
+ *  mislabelled by an older backend. Null for laneless modes. */
+function gameRole(m: MatchHistoryEntry): RoleKey | null {
+  let pos = (m.position || "").toUpperCase();
+  // Vision/min is the reliable discriminator (support ~2-3, ADC ~0.5-1); CS/min
+  // is only a fallback because long support games creep up to ~4 CS/min.
+  if (pos === "BOTTOM" && m.duration_secs > 0) {
+    const mins = m.duration_secs / 60;
+    if ((m.vision_score > 0 && m.vision_score / mins > 1.5) || m.cs / mins < 2.5) pos = "UTILITY";
   }
-  return {
-    games: valid.length,
-    winRate: wins / valid.length,
-    kda: kdaSum / valid.length,
-    csPerMin: csPerMinSum / valid.length,
-    goldPerMin: goldPerMinSum / valid.length,
-  };
+  return normalizeRoleKey(pos);
 }
 
-function deltaPct(value: number, baseline: number): number {
-  if (baseline === 0) return 0;
-  return ((value - baseline) / baseline) * 100;
-}
-
-function ChampionImprovement({ history }: { history: MatchHistoryEntry[] }) {
-  const byChamp = new Map<number, MatchHistoryEntry[]>();
+function analyzeChampionPool(history: MatchHistoryEntry[]): PoolRole[] {
+  const byRole = new Map<RoleKey, MatchHistoryEntry[]>();
   for (const m of history) {
-    if (m.duration_secs < 60 || m.gold_earned === 0) continue;
-    const arr = byChamp.get(m.champion_id) || [];
-    arr.push(m);
-    byChamp.set(m.champion_id, arr);
+    // > 5 minutes also drops remakes.
+    if (!POOL_QUEUES.has(m.queue_id) || isPractice(m) || m.duration_secs <= 300 || m.gold_earned <= 0) continue;
+    const role = gameRole(m);
+    if (!role) continue;
+    byRole.set(role, [...(byRole.get(role) ?? []), m]);
   }
+  const total = [...byRole.values()].reduce((s, g) => s + g.length, 0);
 
-  const allEntries: { id: number; games: MatchHistoryEntry[]; stats: ChampStats }[] = [];
-  for (const [id, games] of byChamp.entries()) {
-    const stats = computeChampStats(games);
-    if (!stats || stats.games < 3) continue;
-    allEntries.push({ id, games, stats });
+  const roles: PoolRole[] = [];
+  for (const [role, games] of byRole) {
+    // A main role: enough games for a verdict and a real share of your games.
+    if (games.length < POOL_MIN_VERDICT || games.length < total * 0.25) continue;
+    const metrics = poolMetrics(role);
+    const avg = metrics.map(mt => games.reduce((s, g) => s + mt.value(g), 0) / games.length);
+    const dev = (g: MatchHistoryEntry, i: number) =>
+      avg[i] > 0 ? Math.max(-POOL_CAP, Math.min(POOL_CAP, metrics[i].value(g) / avg[i] - 1)) : 0;
+    const roleWr = games.filter(g => g.win).length / games.length;
+
+    const byChamp = new Map<number, MatchHistoryEntry[]>();
+    for (const g of games) byChamp.set(g.champion_id, [...(byChamp.get(g.champion_id) ?? []), g]);
+
+    const champs: PoolChamp[] = [];
+    for (const [id, cg] of byChamp) {
+      const n = cg.length;
+      const wins = cg.filter(g => g.win).length;
+      const perGame = cg.map(g => metrics.reduce((s, _, i) => s + dev(g, i), 0) / metrics.length);
+      const score = perGame.reduce((s, v) => s + v, 0) / n;
+      const sd = n > 1 ? Math.sqrt(perGame.reduce((s, v) => s + (v - score) ** 2, 0) / (n - 1)) : 0;
+      const se = n > 1 ? sd / Math.sqrt(n) : Infinity;
+      const k = cg.reduce((s, g) => s + g.kills, 0);
+      const d = cg.reduce((s, g) => s + g.deaths, 0);
+      const a = cg.reduce((s, g) => s + g.assists, 0);
+      const winRate = wins / n;
+
+      let verdict: PoolVerdict = null;
+      if (n >= POOL_MIN_VERDICT) {
+        if (score >= 0 && winRate >= 0.5) verdict = "core";
+        // "Clearly below": 10%+ under your average, by more than twice the
+        // champion's own game-to-game spread allows, and not winning more
+        // than you usually do on the role.
+        else if (score <= -0.1 && score + 2 * se < 0 && winRate <= roleWr) verdict = "drop";
+      } else if (n >= POOL_MIN_PRACTICE && score >= 0.05 && wins * 2 >= n) {
+        verdict = "practice";
+      }
+      champs.push({
+        id, games: n, wins, verdict, score,
+        kda: d === 0 ? k + a : (k + a) / d,
+        keyStat: cg.reduce((s, g) => s + metrics[1].value(g), 0) / n,
+        deltas: metrics.map((mt, i) => ({ label: mt.label, delta: cg.reduce((s, g) => s + dev(g, i), 0) / n })),
+      });
+    }
+    champs.sort((x, y) => y.games - x.games || y.score - x.score);
+    roles.push({ role, games: games.length, winRate: roleWr, keyLabel: metrics[1].label, champs });
   }
-  if (allEntries.length === 0) return null;
+  return roles.sort((x, y) => y.games - x.games).slice(0, 2);
+}
 
-  // Top 3 by games played
-  const top = allEntries.sort((a, b) => b.stats.games - a.stats.games).slice(0, 3);
+const POOL_GROUPS: { verdict: Exclude<PoolVerdict, null>; title: string; hint: (role: string) => string }[] = [
+  { verdict: "core", title: "Core", hint: role => `At or above your ${role} average with a winning record. Queue these first.` },
+  { verdict: "practice", title: "Practice", hint: () => "Early results above your average. A few more games will confirm it." },
+  { verdict: "drop", title: "Consider dropping", hint: role => `Below your ${role} average so far. Review a replay, or bench it while you climb.` },
+];
 
-  // Baseline: across ALL games (not filtered by champion)
-  const baseline = computeChampStats(history);
-  if (!baseline) return null;
+/** Lobby panel: which of your own champions to play more, keep practising or
+ *  bench, per main role, judged against your own average on that role. */
+function ChampionPool({ history }: { history: MatchHistoryEntry[] }) {
+  const roles = useMemo(() => analyzeChampionPool(history), [history]);
+  const [picked, setPicked] = useState<RoleKey | null>(null);
+  if (roles.length === 0) return null;
+  const pool = roles.find(r => r.role === picked) ?? roles[0];
+  const role = roleName(pool.role);
+
+  const groups = POOL_GROUPS
+    .map(g => ({ ...g, champs: pool.champs.filter(c => c.verdict === g.verdict)
+      .sort((x, y) => g.verdict === "drop" ? x.score - y.score : y.score - x.score).slice(0, 3) }))
+    .filter(g => g.champs.length > 0);
+  const shown = new Set(groups.flatMap(g => g.champs.map(c => c.id)));
+  const unrated = pool.champs.filter(c => !shown.has(c.id));
+  // Nothing qualifies yet: still show what you play, without a label.
+  const fallback = groups.length === 0 ? unrated.slice(0, 3) : [];
+
+  const row = (c: PoolChamp) => {
+    const pct = Math.round(c.score * 100);
+    const tone = pct >= 5 ? "good" : pct <= -5 ? "bad" : "neutral";
+    const breakdown = c.deltas.map(d => `${d.label} ${d.delta >= 0 ? "+" : "−"}${Math.abs(Math.round(d.delta * 100))}%`).join(" · ");
+    return (
+      <div key={c.id} className="pool-row" role="row" title={`vs your ${role} average: ${breakdown}`}>
+        <span className="pool-champ" role="cell">
+          <ChampionIcon championId={c.id} size={32} />
+          <span className="pool-champ-text">
+            <ChampionNameLabel championId={c.id} fallback={`Champ ${c.id}`} />
+            <span className="pool-games">{c.games} games · {c.wins}W {c.games - c.wins}L</span>
+          </span>
+        </span>
+        <span className="pool-cell" role="cell">{Math.round((c.wins / c.games) * 100)}%</span>
+        <span className="pool-cell" role="cell">{c.kda.toFixed(1)}</span>
+        <span className="pool-cell" role="cell">{c.keyStat.toFixed(pool.role === "UTILITY" ? 2 : 1)}</span>
+        <span className={`pool-cell pool-score pool-score-${tone}`} role="cell">{pct > 0 ? "+" : pct < 0 ? "−" : "±"}{Math.abs(pct)}%</span>
+      </div>
+    );
+  };
 
   return (
-    <section className="champ-improvement q-card" aria-label="Top champions vs your baseline">
-      <SectionLabel meta={`KDA ${baseline.kda.toFixed(1)} · CS/min ${baseline.csPerMin.toFixed(1)} · Gold/min ${baseline.goldPerMin.toFixed(0)}`}>
-        Top champions vs your baseline
-      </SectionLabel>
-      <div className="ci-table" role="table">
-        <div className="ci-head" role="row">
+    <section className="champ-pool q-card" aria-label="Champion pool">
+      <SectionLabel meta={`${role} · ${pool.games} games · ${Math.round(pool.winRate * 100)}% win rate`}>Champion pool</SectionLabel>
+      {roles.length > 1 && (
+        <Segmented size="sm" label="Role" value={pool.role} onChange={setPicked}
+          options={roles.map(r => ({ value: r.role, label: `${titleCase(roleName(r.role))} · ${r.games}` }))} />
+      )}
+      <div className="pool-table" role="table">
+        <div className="pool-head" role="row">
           <span role="columnheader" />
-          <span role="columnheader">KDA</span>
-          <span role="columnheader">CS / min</span>
-          <span role="columnheader">Gold / min</span>
           <span role="columnheader">Win rate</span>
+          <span role="columnheader">KDA</span>
+          <span role="columnheader">{pool.keyLabel}</span>
+          <span role="columnheader" title={`${poolMetrics(pool.role).map(m => m.label).join(", ")} per game against your ${role} average`}>vs average</span>
         </div>
-        {top.map(c => (
-          <div key={c.id} className="ci-row" role="row">
-            <span className="ci-champ" role="cell">
-              <ChampionIcon championId={c.id} size={36} />
-              <span className="ci-champ-text">
-                <ChampionNameLabel championId={c.id} fallback={`Champ ${c.id}`} />
-                <span className="ci-games">{c.stats.games} games</span>
-              </span>
-            </span>
-            <ImprovementMetric value={c.stats.kda.toFixed(1)} delta={deltaPct(c.stats.kda, baseline.kda)} />
-            <ImprovementMetric value={c.stats.csPerMin.toFixed(1)} delta={deltaPct(c.stats.csPerMin, baseline.csPerMin)} />
-            <ImprovementMetric value={c.stats.goldPerMin.toFixed(0)} delta={deltaPct(c.stats.goldPerMin, baseline.goldPerMin)} />
-            <ImprovementMetric value={`${(c.stats.winRate * 100).toFixed(0)}%`} delta={deltaPct(c.stats.winRate, baseline.winRate)} />
+        {groups.map(g => (
+          <div key={g.verdict} className="pool-group" role="rowgroup">
+            <div className="pool-group-head">
+              <span className="pool-group-title">{g.title}</span>
+              <span className="pool-group-hint">{g.hint(role)}</span>
+            </div>
+            {g.champs.map(row)}
           </div>
         ))}
+        {fallback.length > 0 && (
+          <div className="pool-group" role="rowgroup">
+            <div className="pool-group-head">
+              <span className="pool-group-title">No verdict yet</span>
+              <span className="pool-group-hint">Not enough games on one champion to tell form from luck.</span>
+            </div>
+            {fallback.map(row)}
+          </div>
+        )}
       </div>
+      <p className="pool-rule">
+        {groups.length > 0 && unrated.length > 0 && <>{unrated.length} more {unrated.length === 1 ? "champion" : "champions"} without a verdict. </>}
+        Compared with your own {role} average ({poolMetrics(pool.role).map(m => m.label).join(", ")}; each capped at ±50% per game).
+        Core and Consider dropping need {POOL_MIN_VERDICT}+ games on the champion, Practice {POOL_MIN_PRACTICE}–{POOL_MIN_VERDICT - 1};
+        dropping also needs the gap to exceed normal game-to-game variation.
+      </p>
     </section>
-  );
-}
-
-function ImprovementMetric({ value, delta }: { value: string; delta: number }) {
-  const tone = delta >= 5 ? "good" : delta <= -5 ? "bad" : "neutral";
-  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "±";
-  return (
-    <span className={`ci-cell improvement-metric-${tone}`} role="cell">
-      <span className="ci-value">{value}</span>
-      <span className="ci-delta">{sign}{Math.abs(delta).toFixed(0)}%</span>
-    </span>
   );
 }
 
@@ -3510,16 +3615,8 @@ function inferMainRole(games: MatchHistoryEntry[]): { role: string | null; confi
   const counts: Record<string, number> = { TOP: 0, JUNGLE: 0, MIDDLE: 0, BOTTOM: 0, UTILITY: 0 };
   let resolved = 0;
   for (const m of games) {
-    let pos = (m.position || "").toUpperCase();
-    // Safety net for a stale/older backend that still mislabels supports as BOTTOM.
-    // Vision/min is the reliable discriminator (support ~2-3, ADC ~0.5-1); CS/min
-    // is only a fallback because long support games creep up to ~4 CS/min.
-    if (pos === "BOTTOM" && m.duration_secs > 0) {
-      const mins = m.duration_secs / 60;
-      const visPerMin = m.vision_score / mins;
-      const csPerMin = m.cs / mins;
-      if ((m.vision_score > 0 && visPerMin > 1.5) || csPerMin < 2.5) pos = "UTILITY";
-    }
+    // Includes the safety net for an older backend that labelled supports BOTTOM.
+    const pos = gameRole(m) ?? "";
     if (pos in counts) {
       counts[pos]++;
       resolved++;

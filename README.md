@@ -40,7 +40,7 @@ Every game recorded in the background. The review player puts your kills, deaths
 ![Recording review player with key moments over the gold-lead curve](docs/screenshots/recording-player.png)
 
 ### Home Dashboard
-Today's recap, your top champions vs your own baseline, LP progress, role-aware areas to improve (benchmarked against your rank and detected position), your recordings library and recent match history.
+Today's recap, your champion pool per role (core, practice, consider dropping), LP progress, role-aware areas to improve (benchmarked against your rank and detected position), your recordings library and recent match history.
 
 ![Home dashboard with role-aware improvement panel and LP progress](docs/screenshots/home-dashboard.png)
 
@@ -89,7 +89,7 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 ### Lobby
 - **Daily summary** — games played today, W/L, winrate, current streak, LP net, best KDA of the day, and total time played. Time turns yellow >3h and red >5h with a "consider a break" hint
 - **Tilt gate** — after 3+ ranked losses in under 2 hours, a soft banner shows your personal historic winrate after a 3-loss streak (e.g. "drops from 48% to 31%") to encourage a break
-- **Champion-specific improvement** — for your top 3 most-played champions, compares KDA / CS-min / Gold-min / Winrate against your overall baseline with color-coded deltas (≥+5% green, ≤-5% red)
+- **Champion pool** — for your main role(s) on Summoner's Rift, sorts your own champions into *Core* (at or above your average on that role with a winning record), *Practice* (promising, few games) and *Consider dropping* (clearly below your own average). Each champion is scored against your average on the role — KDA, CS, gold and damage per minute (vision instead of CS and damage for supports) — with honest sample sizes: 6+ games for Core or Consider dropping, 3–5 for Practice, and dropping only when the gap is larger than normal game-to-game variation. ARAM, other laneless modes and the Practice Tool stay out
 - **Improvement priorities** — top 3 areas to improve based on your ranked history vs elo benchmarks, with visual bars and actionable advice
 - **Goal per game** — pick one goal (deaths ≤ N, CS/min, vision score/min, kill participation or damage share ≥ N) with a target suggested from your own recent average for your main role. Every ranked or normal game is checked against it after the game ("Goal ≤ 5 deaths · 3 ✓"), and the lobby shows the last 7 days: games, how many met, and the metric's trend against the target
 - **Match history** — recent games with champion icon, result, KDA, duration, and relative timestamps
