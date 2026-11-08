@@ -1987,7 +1987,9 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
                     .filter_map(|item| item.get("price").and_then(|v| v.as_f64()))
                     .sum())
                 .unwrap_or(0.0);
-            let total_gold = current_gold + items_gold;
+            // Item value only: gold in hand is known for the local player alone,
+            // so adding it would inflate every gold comparison in our favour.
+            let total_gold = items_gold;
 
             let spell1 = p.get("summonerSpells")
                 .and_then(|s| s.get("summonerSpellOne"))
@@ -2053,11 +2055,11 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
     // Calculate gold totals from matched players (allies/enemies already known)
     let ally_gold: f64 = live_state.allies.iter()
         .filter_map(|p| p.live.as_ref())
-        .map(|l| l.current_gold)
+        .map(|l| l.total_gold)
         .sum();
     let enemy_gold: f64 = live_state.enemies.iter()
         .filter_map(|p| p.live.as_ref())
-        .map(|l| l.current_gold)
+        .map(|l| l.total_gold)
         .sum();
 
     // Figure out which team is "my team" for event labeling
