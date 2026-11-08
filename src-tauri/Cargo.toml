@@ -52,6 +52,7 @@ windows = { version = "0.61", features = [
 ] }
 # 0.19 is the last release on windows 0.61; it has process loopback.
 wasapi = "0.19"
+tauri-plugin-notification = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = "11"

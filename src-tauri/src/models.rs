@@ -98,6 +98,9 @@ pub struct AppState {
     /// Record games to disk (macOS only; off until the user opts in, since
     /// it triggers the Screen Recording permission prompt).
     pub record_games: bool,
+    /// Native notification when the ready check pops, shown only while the
+    /// QueryLoL window is not focused. Never accepts on the player's behalf.
+    pub match_found_notify: bool,
     pub recording_supported: bool,
     /// Screen Recording permission granted (macOS). Rechecked while the
     /// setting is on, since the user grants it in System Settings.
@@ -237,6 +240,7 @@ impl Default for AppState {
             auto_apply: true,
             tts_enabled: false,
             record_games: false,
+            match_found_notify: true,
             recording_supported: crate::recorder::SUPPORTED,
             recording_permission: false,
             recording: RecordingStatus::default(),

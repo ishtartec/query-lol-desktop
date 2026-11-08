@@ -357,6 +357,7 @@ interface AppState {
   auto_apply: boolean;
   tts_enabled: boolean;
   record_games: boolean;
+  match_found_notify: boolean;
   recording_supported: boolean;
   recording_permission: boolean;
   recording: RecordingStatus;
@@ -2564,6 +2565,8 @@ function SettingsMenu({ state, overlayPos, onOverlayPos }: {
         <div className="settings-panel" role="dialog" aria-label="Settings">
           <div className="settings-group">
             <h4 className="q-label">Champion select</h4>
+            <Toggle label="Match found notification" hint="While QueryLoL is in the background"
+              checked={state.match_found_notify} onChange={() => set("set_match_found_notify", { enabled: !state.match_found_notify })} />
             <Toggle label="Auto-apply build" hint="Runes, spells and items when you lock in"
               checked={state.auto_apply} onChange={() => set("set_auto_apply", { enabled: !state.auto_apply })} />
           </div>
@@ -2615,7 +2618,7 @@ function App() {
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
-    auto_apply: true, tts_enabled: false, record_games: false, recording_supported: false, recording_permission: false, recording: { active: false, error: null }, region: "euw", flash_key: "auto", flash_key_detected: null,
+    auto_apply: true, tts_enabled: false, record_games: false, match_found_notify: true, recording_supported: false, recording_permission: false, recording: { active: false, error: null }, region: "euw", flash_key: "auto", flash_key_detected: null,
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);

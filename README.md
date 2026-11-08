@@ -162,6 +162,7 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 ### Settings (gear menu in the header)
 - Region selector
 - Auto-apply toggle
+- Match found notification toggle (native notification when the ready check pops while QueryLoL is in the background; you still accept in the client)
 - Voice cues toggle (TTS audio alerts during the game)
 - Record games toggle (macOS and Windows)
 - Flash key (auto-detected from your recent games, or forced to D / F)

@@ -21,6 +21,7 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
     cfg.auto_apply = s.auto_apply;
     cfg.tts_enabled = s.tts_enabled;
     cfg.record_games = s.record_games;
+    cfg.match_found_notify = s.match_found_notify;
     cfg.flash_key = s.flash_key.clone();
     if let Some(puuid) = s.summoner_puuid.as_deref() {
         cfg.set_lp_history(puuid, s.lp_history.clone());
@@ -77,9 +78,10 @@ fn orient_build_spells(s: &mut AppState) {
     }
 }
 
-fn notify(title: &str, body: &str) {
+fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
     #[cfg(target_os = "macos")]
     {
+        let _ = app;
         let _ = std::process::Command::new("osascript")
             .arg("-e")
             .arg(format!(
@@ -91,8 +93,23 @@ fn notify(title: &str, body: &str) {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = (title, body); // suppress unused warnings; Windows notifications can be added later
+        use tauri_plugin_notification::NotificationExt;
+        if let Err(e) = app.notification().builder().title(title).body(body).show() {
+            log::warn!("Notification failed: {}", e);
+        }
     }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = (app, title, body);
+    }
+}
+
+/// Whether the QueryLoL main window has keyboard focus. A notification is
+/// pointless when the user is already looking at the app.
+fn main_window_focused(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window("main")
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false)
 }
 
 fn map_position(pos: &str) -> &'static str {
@@ -440,6 +457,9 @@ async fn poll_loop(
     // Re-fetches of an incomplete live-game roster, and when the last ran.
     let mut roster_refetches: u32 = 0;
     let mut last_roster_refetch: Option<std::time::Instant> = None;
+    // One notification per ready check; reset once the phase moves on, so a
+    // declined check followed by a new one notifies again.
+    let mut ready_check_notified = false;
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -480,8 +500,18 @@ async fn poll_loop(
         sync_recording_status(&state, &rec, &app_handle).await;
 
         if phase == "ReadyCheck" {
+            // Only tells the player; accepting stays in the client (Riot's
+            // policy forbids acting for the player).
+            if !ready_check_notified {
+                ready_check_notified = true;
+                let enabled = state.lock().await.match_found_notify;
+                if enabled && !main_window_focused(&app_handle) {
+                    notify(&app_handle, "QueryLoL", "Match found — accept in the client");
+                }
+            }
             continue;
         }
+        ready_check_notified = false;
 
         if phase == "ChampSelect" {
             // Detect game mode + fetch ban suggestions + comfort picks on first tick
@@ -596,7 +626,7 @@ async fn poll_loop(
                     s.status = ConnectionStatus::ChampSelect;
                     s.viewing_past_match = false;
                     s.post_game = None;
-                    notify("QueryLoL", "Champion Select has started!");
+                    notify(&app_handle, "QueryLoL", "Champion Select has started!");
                 }
                 s.draft = Some(draft.clone());
                 s.ban_phase_active = ban_active;
@@ -1143,6 +1173,19 @@ async fn set_tts_enabled(
 }
 
 #[tauri::command]
+async fn set_match_found_notify(
+    enabled: bool,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut s = state.lock().await;
+    s.match_found_notify = enabled;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    save_config(&app_handle, &s);
+    Ok(())
+}
+
+#[tauri::command]
 async fn set_flash_key(
     key: String,
     state: tauri::State<'_, SharedState>,
@@ -1428,11 +1471,15 @@ pub fn run() {
 
     let state: SharedState = Arc::new(Mutex::new(AppState::default()));
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .manage(recorder::SharedRecorder::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+    // macOS notifies through osascript (see `notify`); Windows uses the plugin.
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+    builder
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             get_state,
@@ -1448,6 +1495,7 @@ pub fn run() {
             swap_aram_bench,
             set_overlay_position,
             set_tts_enabled,
+            set_match_found_notify,
             set_flash_key,
             speak,
             list_capture_windows,
@@ -1474,6 +1522,7 @@ pub fn run() {
                 s.auto_apply = cfg.auto_apply;
                 s.tts_enabled = cfg.tts_enabled;
                 s.record_games = cfg.record_games;
+                s.match_found_notify = cfg.match_found_notify;
                 s.recording_permission = recorder::has_permission();
                 s.flash_key = cfg.flash_key;
                 // lp_history stays empty until the watcher learns the active

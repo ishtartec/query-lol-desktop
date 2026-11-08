@@ -20,6 +20,8 @@ pub struct UserConfig {
     pub tts_enabled: bool,
     #[serde(default)]
     pub record_games: bool,
+    #[serde(default = "default_true")]
+    pub match_found_notify: bool,
     #[serde(default = "default_flash_key")]
     pub flash_key: String,
 
@@ -94,7 +96,10 @@ pub fn load(app_handle: &tauri::AppHandle) -> UserConfig {
         .ok()
         .and_then(|path| std::fs::read_to_string(&path).ok())
         .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_default()
+        // Not `unwrap_or_default()`: the derived Default ignores the serde
+        // defaults, so a fresh install got region "" and every default-on
+        // toggle off. An empty object applies them.
+        .unwrap_or_else(|| serde_json::from_str("{}").expect("all config fields have serde defaults"))
 }
 
 pub fn save(app_handle: &tauri::AppHandle, config: &UserConfig) {
