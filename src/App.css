@@ -650,7 +650,7 @@
 }
 
 .lobby-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; align-items: start; }
-.lobby-grid > .champ-pool { margin-bottom: 0; }
+.lobby-side > .champ-pool { margin-bottom: 0; }
 .lobby-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .lobby-side:empty { display: none; }
 @media (max-width: 1100px) { .lobby-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -1177,6 +1177,9 @@
 .goal-stat-value { font-size: 20px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .goal-stat-of { font-size: 13px; font-weight: 600; color: var(--text-muted); }
 .goal-spark { display: block; width: 100%; height: auto; }
+.goal-spark-fig { margin: 0; }
+.goal-spark-legend { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.goal-spark-key { display: inline-block; width: 14px; margin-right: 6px; vertical-align: middle; border-top: 1px dashed var(--text-muted); }
 .goal-spark-target { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 4; }
 .goal-spark-line { fill: none; stroke: var(--border-strong); stroke-width: 1.5; stroke-linejoin: round; }
 .goal-spark circle.is-met { fill: var(--positive); }
@@ -1402,7 +1405,8 @@
 .pg-outcome.win { color: var(--positive); }
 .pg-outcome.loss { color: var(--negative); }
 .pg-outcome-meta { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.pg-outcome-badge { margin-left: auto; }
+/* Goal result and MVP badge sit together at the right end of the outcome row. */
+.pg-outcome-side { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .pg-outcome-badge .q-badge { height: 26px; padding: 0 10px; font-size: 12px; }
 .pg-note { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 16px; margin-bottom: 12px; }
 .pg-note .q-label { display: block; margin-bottom: 4px; }
@@ -1463,7 +1467,7 @@
   margin-top: 16px; padding: 16px 18px; background: var(--bg-card);
   border: 1px solid var(--border); border-radius: var(--radius-lg);
 }
-/* Mistakes to review (MistakesPanel). Amber triangles match the review
+/* Mistakes to review (MistakesPanel). Red triangles match the review
    player's mistake markers (--rec-mistake in recordings.css). */
 .mst-panel {
   margin-top: 16px; padding: 16px 18px; background: var(--bg-card);
@@ -1480,7 +1484,7 @@
 .mst-row.is-link:hover { background: var(--surface-3); border-color: var(--border-strong); }
 .mst-row.is-link:focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 2px; }
 .mst-time { flex: none; width: 44px; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.mst-mark { flex: none; width: 11px; height: 10px; background: var(--rec-mistake, #f2a541); clip-path: polygon(50% 4%, 100% 96%, 0 96%); }
+.mst-mark { flex: none; width: 11px; height: 10px; background: var(--negative); clip-path: polygon(50% 4%, 100% 96%, 0 96%); }
 .mst-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .mst-title { font-size: 13px; font-weight: 600; }
 .mst-detail { font-size: 12px; color: var(--text-secondary); }

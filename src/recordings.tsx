@@ -141,7 +141,7 @@ const resultLabel = (r: Recording) =>
   r.win === true ? "Victory" : r.win === false ? "Defeat" : r.interrupted ? "Interrupted" : "Practice";
 const resultClass = (r: Recording) => r.win === true ? "rec-win" : r.win === false ? "rec-loss" : "rec-neutral";
 
-function Icon({ name, size = 16 }: { name: "play" | "pause" | "keep" | "kept" | "trash" | "prev" | "next" | "folder" | "close" | "clip"; size?: number }) {
+function Icon({ name, size = 16 }: { name: "play" | "pause" | "keep" | "kept" | "trash" | "prev" | "next" | "folder" | "close" | "clip" | "warn"; size?: number }) {
   const p = { width: size, height: size, viewBox: "0 0 24 24", "aria-hidden": true } as const;
   switch (name) {
     case "play": return <svg {...p}><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg>;
@@ -153,6 +153,7 @@ function Icon({ name, size = 16 }: { name: "play" | "pause" | "keep" | "kept" | 
     case "next": return <svg {...p}><path d="M18 5v14M5 5l9 7-9 7z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>;
     case "folder": return <svg {...p}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>;
     case "clip": return <svg {...p}><path d="M6 4v16M18 4v16M6 8h12M6 16h12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
+    case "warn": return <svg {...p}><path d="M12 4l9 16H3z M12 10v4 M12 17v.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
     case "close": return <svg {...p}><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
   }
 }
@@ -347,6 +348,7 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [confirmDel, setConfirmDel] = useState(false);
   const [mediaLen, setMediaLen] = useState(0);
+  const [videoFailed, setVideoFailed] = useState(false);
   const [clip, setClip] = useState<ClipRange | null>(null);
   // Interrupted recordings may not know their length until the video loads.
   const len = rec.duration_secs || mediaLen || 1;
@@ -372,8 +374,8 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
     if (video.current) video.current.currentTime = v;
     setNow(v);
   };
-  const jump = (m: KeyMoment) => { setSelected(m); seek(toVideo(rec, m.time - LEAD)); video.current?.play(); };
-  const toggle = () => { const v = video.current; if (!v) return; if (v.paused) v.play(); else v.pause(); };
+  const jump = (m: KeyMoment) => { setSelected(m); seek(toVideo(rec, m.time - LEAD)); video.current?.play().catch(() => {}); };
+  const toggle = () => { const v = video.current; if (!v) return; if (v.paused) v.play().catch(() => {}); else v.pause(); };
   const nextM = moments.find(m => toVideo(rec, m.time - LEAD) > now + 0.5);
   const prevM = [...moments].reverse().find(m => toVideo(rec, m.time - LEAD) < now - 1.5);
 
@@ -461,6 +463,7 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
           <div className="rec-stage">
             <video ref={video} className="rec-video" src={videoUrl(rec)} preload="auto" playsInline
               onLoadedMetadata={(e) => { setMediaLen(e.currentTarget.duration || 0); e.currentTarget.currentTime = startAt ?? 0; e.currentTarget.playbackRate = rate; e.currentTarget.play().catch(() => {}); }}
+              onError={() => setVideoFailed(true)}
               onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
               onTimeUpdate={(e) => { if (!playing) setNow(e.currentTarget.currentTime); }}
               onClick={toggle} />
@@ -473,7 +476,12 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
                 <span className="rec-toast-time">{fmtClock(active.time)}</span>
               </div>
             )}
-            {!playing && (
+            {videoFailed ? (
+              <div className="rec-stage-error" role="status">
+                <Icon name="warn" size={20} />
+                <span>This video can't be played. The file may have been moved or deleted.</span>
+              </div>
+            ) : !playing && (
               <button className="rec-stage-play" onClick={toggle} aria-label="Play"><Icon name="play" size={26} /></button>
             )}
             <span className="rec-badge rec-stage-rate">{rate}×</span>
@@ -640,15 +648,15 @@ function ClipBar({ rec, now, len, moment, champ, range, setRange }: {
         <>
           <span className="rec-clip-range">
             {fmtClock(range.a - offsetOf(rec))} – {fmtClock(range.b - offsetOf(rec))}
-            <span> · {fmtClock(dur)}{estimate ? ` · ~${fmtSize(estimate)}` : ""}</span>
+            <span> · {fmtClock(dur)}{estimate && !done ? ` · ~${fmtSize(estimate)}` : ""}</span>
           </span>
           <button className="rec-btn rec-icon rec-clip-clear" aria-label="Clear clip" onClick={() => setRange(null)}><Icon name="close" size={13} /></button>
           <span className="rec-clip-spacer" />
           {error && <span className="rec-clip-error" title={error}>{error}</span>}
           {done ? (
-            <span className="rec-clip-done">
-              Saved to Downloads · {fmtClock(done.duration_secs)} · {fmtSize(done.bytes)}
-              {early > 0.05 && <span> · starts {early.toFixed(1)} s early, on a keyframe</span>}
+            <span className="rec-clip-done"
+              title={`Saved to Downloads · ${fmtClock(done.duration_secs)}${early > 0.05 ? ` · starts ${early.toFixed(1)} s early, on a keyframe` : ""}`}>
+              Saved · {fmtSize(done.bytes)}
               <button className="rec-btn rec-btn-quiet rec-btn-sm" onClick={() => { invoke("reveal_clip", { path: done.path }).catch(e => setError(String(e))); }}>
                 <Icon name="folder" size={14} />{revealLabel}
               </button>

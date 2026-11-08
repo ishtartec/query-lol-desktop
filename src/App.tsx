@@ -2569,7 +2569,7 @@ const PHASE_LABEL: Record<AppState["status"], string> = {
 };
 
 function titleCase(s: string): string {
-  return s.charAt(0) + s.slice(1).toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
 const OVERLAY_POSITIONS = [
@@ -2594,7 +2594,7 @@ function SettingsMenu({ state, overlayPos, onOverlayPos }: {
       {open && (
         <div className="settings-panel" role="dialog" aria-label="Settings">
           <div className="settings-group">
-            <h4 className="q-label">Champion select</h4>
+            <h4 className="q-label">Queue and champion select</h4>
             <Toggle label="Match found notification" hint="While QueryLoL is in the background"
               checked={state.match_found_notify} onChange={() => set("set_match_found_notify", { enabled: !state.match_found_notify })} />
             <Toggle label="Auto-apply build" hint="Runes, spells and items when you lock in"
@@ -2834,11 +2834,15 @@ function App() {
               <DailySummary history={playedHistory} lpHistory={state.lp_history} />
               <TiltGate history={playedHistory} />
               <div className="lobby-grid">
-                <ChampionPool history={playedHistory} />
+                {/* Your champions and what to improve on the left; this week's goal
+                    and LP on the right, so the two columns end close together. */}
+                <div className="lobby-side">
+                  <ChampionPool history={playedHistory} />
+                  {state.ranked && <ImprovementPanel history={playedHistory} ranked={state.ranked} />}
+                </div>
                 <div className="lobby-side">
                   <GoalPanel goal={state.game_goal} outcomes={state.goal_history} history={playedHistory} ranked={state.ranked} />
                   {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
-                  {state.ranked && <ImprovementPanel history={playedHistory} ranked={state.ranked} />}
                 </div>
               </div>
               {state.recording_supported && (recordings.length > 0 || state.record_games) && (
@@ -2968,6 +2972,7 @@ function App() {
                               </Badge>
                             );
                           })()}
+                          <MatchupRecordLabel yourId={state.champion_id!} enemyId={laneOpponent.champion_id} />
                         </>
                       )}
                     </div>
@@ -3468,7 +3473,7 @@ function ChampionPool({ history }: { history: MatchHistoryEntry[] }) {
 
   return (
     <section className="champ-pool q-card" aria-label="Champion pool">
-      <SectionLabel meta={`${role} · ${pool.games} games · ${Math.round(pool.winRate * 100)}% win rate`}>Champion pool</SectionLabel>
+      <SectionLabel meta={`${titleCase(role)} · ${pool.games} games · ${Math.round(pool.winRate * 100)}% win rate`}>Champion pool</SectionLabel>
       {roles.length > 1 && (
         <Segmented size="sm" label="Role" value={pool.role} onChange={setPicked}
           options={roles.map(r => ({ value: r.role, label: `${titleCase(roleName(r.role))} · ${r.games}` }))} />
@@ -3905,7 +3910,9 @@ function GoalSparkline({ outcomes, goal }: { outcomes: GoalOutcome[]; goal: Game
   const x = (i: number) => outcomes.length === 1 ? w / 2 : padX + (i / (outcomes.length - 1)) * (w - padX * 2);
   const y = (v: number) => padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
   const path = outcomes.map((o, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(o.value).toFixed(1)}`).join(" ");
+  const day = (t: number) => new Date(t).toLocaleDateString(undefined, { weekday: "short", day: "numeric" });
   return (
+    <figure className="goal-spark-fig">
     <svg className="goal-spark" viewBox={`0 0 ${w} ${h}`} role="img"
       aria-label={`${GOAL_METRICS[goal.metric].label} in the last ${outcomes.length} games: ${values.map(v => formatGoalValue(goal.metric, v)).join(", ")}`}>
       <line className="goal-spark-target" x1={0} x2={w} y1={y(goal.target)} y2={y(goal.target)} />
@@ -3916,6 +3923,11 @@ function GoalSparkline({ outcomes, goal }: { outcomes: GoalOutcome[]; goal: Game
         </circle>
       ))}
     </svg>
+      <figcaption className="goal-spark-legend">
+        <span><i className="goal-spark-key" aria-hidden="true" />Target {formatGoalValue(goal.metric, goal.target)}</span>
+        {outcomes.length > 1 && <span>{day(outcomes[0].timestamp)} – {day(outcomes[outcomes.length - 1].timestamp)}</span>}
+      </figcaption>
+    </figure>
   );
 }
 
@@ -4281,6 +4293,10 @@ function LanePlanCard({ yourId, enemyId, counterWr, position, showPlan }: {
   const analysis = analyzeMatchup(yourId, enemyId, counterWr);
   const plan = useMemo(() => showPlan ? buildLevelPlan(yourId, enemyId, position) : [], [yourId, enemyId, position, showPlan]);
   const [hovered, setHovered] = useState<number | null>(null);
+  const { notes, save } = useMatchupNotes();
+  const note = notes[matchupNoteKey(yourId, enemyId)] ?? "";
+  const [noteEditing, setNoteEditing] = useState(false);
+  useEffect(() => setNoteEditing(false), [yourId, enemyId]);
 
   // Pre-select "most interesting" level for default view: biggest your-spike or strongest advantage
   const defaultLevel = useMemo(() => {
@@ -4305,6 +4321,10 @@ function LanePlanCard({ yourId, enemyId, counterWr, position, showPlan }: {
         <span className="csel-vs">vs</span>
         <ChampionIcon championId={enemyId} size={20} />
         <span className="csel-lane-sum">{analysis.summary}</span>
+        {showPlan && !note && !noteEditing && (
+          <button type="button" className="csel-note-add" onClick={() => setNoteEditing(true)}
+            title="Write a note for this matchup; it shows here next time">+ Note</button>
+        )}
       </div>
       <div className="csel-phases">
         {analysis.phases.map((p, i) => (
@@ -4345,7 +4365,10 @@ function LanePlanCard({ yourId, enemyId, counterWr, position, showPlan }: {
           </div>
         </>
       )}
-      {showPlan && <MatchupNotebook yourId={yourId} enemyId={enemyId} />}
+      {showPlan && (note || noteEditing) && (
+        <MatchupNotebook enemyId={enemyId} note={note} editing={noteEditing} setEditing={setNoteEditing}
+          save={text => save(yourId, enemyId, text)} />
+      )}
     </section>
   );
 }
@@ -4373,43 +4396,23 @@ function formatRecord(r: RecordStats): string {
   return `${r.wins}W ${r.games - r.wins}L · ${kda.toFixed(1)} KDA`;
 }
 
-// The player's own note for this matchup plus their record in it, as one
-// compact row under the lane plan. Editing happens inline.
-function MatchupNotebook({ yourId, enemyId }: { yourId: number; enemyId: number }) {
-  const { notes, save } = useMatchupNotes();
-  const note = notes[matchupNoteKey(yourId, enemyId)] ?? "";
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [record, setRecord] = useState<MatchupRecord | null>(null);
+// The player's own note for this matchup, one line under the lane plan
+// (full text on hover); editing happens inline. Rendered only when a note
+// exists or is being written, so an empty matchup costs no height.
+function MatchupNotebook({ enemyId, note, editing, setEditing, save }: {
+  enemyId: number; note: string; editing: boolean;
+  setEditing: (v: boolean) => void; save: (text: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(note);
   const enemyName = useChampionName(enemyId)?.name ?? "this champion";
-
-  useEffect(() => {
-    setEditing(false);
-    setRecord(null);
-    let cancelled = false;
-    invoke<MatchupRecord>("get_matchup_record", { championId: yourId, enemyChampionId: enemyId })
-      .then(r => { if (!cancelled) setRecord(r); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [yourId, enemyId]);
-
-  const startEdit = () => { setDraft(note); setEditing(true); };
+  useEffect(() => { if (editing) setDraft(note); }, [editing, note]);
   const commit = async () => {
-    try { await save(yourId, enemyId, draft); setEditing(false); } catch { /* keep the draft open */ }
+    try { await save(draft); setEditing(false); } catch { /* keep the draft open */ }
   };
-
-  // Lane games are exact; otherwise fall back to "they were on the enemy
-  // team", labelled as such since they may have played another role.
-  const rec = record && (record.lane.games > 0
-    ? { label: "You in lane", stats: record.lane,
-        title: `Your games against ${enemyName} in the same role, from your last ${record.scanned} on this champion` }
-    : record.enemy_team.games > 0
-      ? { label: "You vs their team", stats: record.enemy_team,
-          title: `Games where ${enemyName} was on the enemy team, in any role, from your last ${record.scanned} on this champion` }
-      : null);
 
   return (
     <div className="csel-note">
+      <span className="q-label csel-note-tag">Note</span>
       {editing ? (
         <div className="csel-note-edit">
           <textarea className="csel-note-input" value={draft} autoFocus rows={2} maxLength={1000}
@@ -4426,19 +4429,40 @@ function MatchupNotebook({ yourId, enemyId }: { yourId: number; enemyId: number 
           </div>
         </div>
       ) : (
-        <button type="button" className={`csel-note-text ${note ? "" : "csel-note-empty"}`} onClick={startEdit}
-          title={note ? "Edit your note for this matchup" : undefined}>
-          <span className="csel-note-tag">Note</span>
-          <span className="csel-note-body">{note || "Add a note for this matchup"}</span>
+        <button type="button" className="csel-note-text" onClick={() => setEditing(true)}
+          title={`${note}\n\nClick to edit`}>
+          <span className="csel-note-body">{note}</span>
         </button>
       )}
-      {rec && !editing && (
-        <span className="csel-note-rec" title={rec.title}>
-          <span className="csel-note-tag">{rec.label}</span>
-          {rec.stats.games} {rec.stats.games === 1 ? "game" : "games"} · {formatRecord(rec.stats)}
-        </span>
-      )}
     </div>
+  );
+}
+
+// The player's own record against the lane opponent, for the hero line.
+// Lane games are exact; otherwise fall back to "they were on the enemy
+// team", labelled as such since they may have played another role.
+function MatchupRecordLabel({ yourId, enemyId }: { yourId: number; enemyId: number }) {
+  const [record, setRecord] = useState<MatchupRecord | null>(null);
+  const enemyName = useChampionName(enemyId)?.name ?? "this champion";
+  useEffect(() => {
+    setRecord(null);
+    let cancelled = false;
+    invoke<MatchupRecord>("get_matchup_record", { championId: yourId, enemyChampionId: enemyId })
+      .then(r => { if (!cancelled) setRecord(r); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [yourId, enemyId]);
+  if (!record) return null;
+  const lane = record.lane.games > 0;
+  const stats = lane ? record.lane : record.enemy_team;
+  if (stats.games === 0) return null;
+  const title = lane
+    ? `Your games against ${enemyName} in the same role, from your last ${record.scanned} on this champion`
+    : `Games where ${enemyName} was on the enemy team, in any role, from your last ${record.scanned} on this champion`;
+  return (
+    <span className="csel-hero-rec" title={title}>
+      {lane ? "You" : "You vs their team"} {formatRecord(stats)}
+    </span>
   );
 }
 
@@ -5832,8 +5856,12 @@ function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recor
           {[`${mins}:${secs}`, localChamp?.name, local?.position ? POSITION_LABELS[local.position.toLowerCase()] || local.position : null,
             local ? `${local.kills} / ${local.deaths} / ${local.assists}` : null].filter(Boolean).join(" · ")}
         </span>
-        {goalOutcome && <GoalResult outcome={goalOutcome} />}
-        {local?.is_mvp && <span className="pg-outcome-badge"><Badge tone="gold">MVP of your team</Badge></span>}
+        {(goalOutcome || local?.is_mvp) && (
+          <span className="pg-outcome-side">
+            {goalOutcome && <GoalResult outcome={goalOutcome} />}
+            {local?.is_mvp && <span className="pg-outcome-badge"><Badge tone="gold">MVP of your team</Badge></span>}
+          </span>
+        )}
       </div>
       {recording && onWatch && <RecordingCard rec={recording} onWatch={onWatch} compact />}
       {!recording && recordingError && <RecordingNotice error={recordingError} />}
