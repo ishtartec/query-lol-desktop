@@ -18,8 +18,6 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
     let mut cfg = config::load(app);
     cfg.region = s.region.clone();
     cfg.auto_apply = s.auto_apply;
-    cfg.auto_lock = s.auto_lock;
-    cfg.auto_accept = s.auto_accept;
     cfg.tts_enabled = s.tts_enabled;
     cfg.record_games = s.record_games;
     cfg.flash_key = s.flash_key.clone();
@@ -481,17 +479,6 @@ async fn poll_loop(
         sync_recording_status(&state, &rec, &app_handle).await;
 
         if phase == "ReadyCheck" {
-            let auto_accept = state.lock().await.auto_accept;
-            if auto_accept {
-                // Accept once, then wait for phase to change
-                match lcu::accept_ready_check(&creds).await {
-                    Ok(()) => {
-                        // Wait for phase to transition, don't retry
-                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                    }
-                    Err(_) => {} // Already accepted or expired, ignore
-                }
-            }
             continue;
         }
 
@@ -1142,32 +1129,6 @@ async fn select_build_option(
 }
 
 #[tauri::command]
-async fn set_auto_lock(
-    enabled: bool,
-    state: tauri::State<'_, SharedState>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let mut s = state.lock().await;
-    s.auto_lock = enabled;
-    let _ = app_handle.emit("app-state-changed", s.clone());
-    save_config(&app_handle, &s);
-    Ok(())
-}
-
-#[tauri::command]
-async fn set_auto_accept(
-    enabled: bool,
-    state: tauri::State<'_, SharedState>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let mut s = state.lock().await;
-    s.auto_accept = enabled;
-    let _ = app_handle.emit("app-state-changed", s.clone());
-    save_config(&app_handle, &s);
-    Ok(())
-}
-
-#[tauri::command]
 async fn set_tts_enabled(
     enabled: bool,
     state: tauri::State<'_, SharedState>,
@@ -1210,13 +1171,9 @@ async fn speak(
 }
 
 #[tauri::command]
-async fn pick_champion(
-    champion_id: i64,
-    state: tauri::State<'_, SharedState>,
-) -> Result<(), String> {
+async fn pick_champion(champion_id: i64) -> Result<(), String> {
     let creds = lcu::read_lockfile().ok_or("League client not found")?;
     let session = lcu::get_champ_select_session(&creds).await?;
-    let auto_lock = state.lock().await.auto_lock;
 
     // Log all actions for debugging
     for (gi, group) in session.actions.iter().enumerate() {
@@ -1233,17 +1190,13 @@ async fn pick_champion(
     let action_id = lcu::find_my_action(&session, "pick")
         .ok_or("No active pick action — it's not your turn to pick")?;
 
-    lcu::select_champion(&creds, action_id, champion_id, auto_lock).await
+    lcu::select_champion(&creds, action_id, champion_id).await
 }
 
 #[tauri::command]
-async fn ban_champion(
-    champion_id: i64,
-    state: tauri::State<'_, SharedState>,
-) -> Result<(), String> {
+async fn ban_champion(champion_id: i64) -> Result<(), String> {
     let creds = lcu::read_lockfile().ok_or("League client not found")?;
     let session = lcu::get_champ_select_session(&creds).await?;
-    let auto_lock = state.lock().await.auto_lock;
 
     for (gi, group) in session.actions.iter().enumerate() {
         for action in group {
@@ -1259,7 +1212,7 @@ async fn ban_champion(
     let action_id = lcu::find_my_action(&session, "ban")
         .ok_or("No active ban action — it's not your turn to ban")?;
 
-    lcu::select_champion(&creds, action_id, champion_id, auto_lock).await
+    lcu::select_champion(&creds, action_id, champion_id).await
 }
 
 #[derive(serde::Serialize)]
@@ -1443,8 +1396,6 @@ pub fn run() {
             set_region,
             apply_build_now,
             select_build_option,
-            set_auto_lock,
-            set_auto_accept,
             pick_champion,
             ban_champion,
             view_player_profile,
@@ -1474,8 +1425,6 @@ pub fn run() {
                 let mut s = tauri::async_runtime::block_on(state.lock());
                 s.region = cfg.region;
                 s.auto_apply = cfg.auto_apply;
-                s.auto_lock = cfg.auto_lock;
-                s.auto_accept = cfg.auto_accept;
                 s.tts_enabled = cfg.tts_enabled;
                 s.record_games = cfg.record_games;
                 s.recording_permission = recorder::has_permission();

@@ -94,8 +94,6 @@ pub struct AppState {
     pub game_mode: String,
     pub aram_bench: Vec<AramBenchChampion>,
     pub auto_apply: bool,
-    pub auto_lock: bool,
-    pub auto_accept: bool,
     pub tts_enabled: bool,
     /// Record games to disk (macOS only; off until the user opts in, since
     /// it triggers the Screen Recording permission prompt).
@@ -237,8 +235,6 @@ impl Default for AppState {
             game_mode: "classic".to_string(),
             aram_bench: vec![],
             auto_apply: true,
-            auto_lock: false,
-            auto_accept: false,
             tts_enabled: false,
             record_games: false,
             recording_supported: crate::recorder::SUPPORTED,

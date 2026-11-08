@@ -17,10 +17,6 @@ pub struct UserConfig {
     #[serde(default = "default_true")]
     pub auto_apply: bool,
     #[serde(default)]
-    pub auto_lock: bool,
-    #[serde(default)]
-    pub auto_accept: bool,
-    #[serde(default)]
     pub tts_enabled: bool,
     #[serde(default)]
     pub record_games: bool,

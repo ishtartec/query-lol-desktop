@@ -495,16 +495,15 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
     Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline: vec![], death_events: vec![] })
 }
 
-/// Select a champion in champ select (hover). Optionally lock it in.
+/// Hover a champion for the current pick or ban. Never locks it in: Riot's
+/// policy rules out taking actions on the player's behalf, so the player
+/// confirms in the client.
 pub async fn select_champion(
     creds: &LcuCredentials,
     action_id: i64,
     champion_id: i64,
-    lock: bool,
 ) -> Result<(), String> {
     let client = lcu_client();
-
-    // Select (hover) the champion
     let url = lcu_url(creds, &format!("/lol-champ-select/v1/session/actions/{}", action_id));
     let resp = client
         .patch(&url)
@@ -519,24 +518,6 @@ pub async fn select_champion(
     }
 
     info!("Champion {} selected on action {}", champion_id, action_id);
-
-    // Lock in if requested
-    if lock {
-        let lock_url = lcu_url(creds, &format!("/lol-champ-select/v1/session/actions/{}/complete", action_id));
-        let resp = client
-            .post(&lock_url)
-            .header("Authorization", auth_header(&creds.password))
-            .send()
-            .await
-            .map_err(|e| format!("Failed to lock champion: {}", e))?;
-
-        if resp.status().is_success() {
-            info!("Champion {} locked in", champion_id);
-        } else {
-            return Err(format!("Lock champion failed: {}", resp.status()));
-        }
-    }
-
     Ok(())
 }
 
@@ -657,24 +638,6 @@ pub fn extract_champion_from_session(session: &ChampSelectSession) -> (i64, Stri
     }
 
     (0, position, false)
-}
-
-/// Accept the ready check (queue pop).
-pub async fn accept_ready_check(creds: &LcuCredentials) -> Result<(), String> {
-    let client = lcu_client();
-    let resp = client
-        .post(lcu_url(creds, "/lol-matchmaking/v1/ready-check/accept"))
-        .header("Authorization", auth_header(&creds.password))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to accept ready check: {}", e))?;
-
-    if resp.status().is_success() {
-        info!("Ready check accepted");
-        Ok(())
-    } else {
-        Err(format!("Accept ready check failed: {}", resp.status()))
-    }
 }
 
 /// Fetch ranked stats for current summoner.

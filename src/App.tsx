@@ -337,8 +337,6 @@ interface AppState {
   recommendations: PickRecommendation[];
   ban_phase_active: boolean;
   auto_apply: boolean;
-  auto_lock: boolean;
-  auto_accept: boolean;
   tts_enabled: boolean;
   record_games: boolean;
   recording_supported: boolean;
@@ -2550,10 +2548,6 @@ function SettingsMenu({ state, overlayPos, onOverlayPos }: {
             <h4 className="q-label">Champion select</h4>
             <Toggle label="Auto-apply build" hint="Runes, spells and items when you lock in"
               checked={state.auto_apply} onChange={() => set("set_auto_apply", { enabled: !state.auto_apply })} />
-            <Toggle label="Auto-lock" hint="Locks your pick when the timer ends"
-              checked={state.auto_lock} onChange={() => set("set_auto_lock", { enabled: !state.auto_lock })} />
-            <Toggle label="Auto-accept" hint="Accepts the ready check for you"
-              checked={state.auto_accept} onChange={() => set("set_auto_accept", { enabled: !state.auto_accept })} />
           </div>
           <div className="settings-group">
             <h4 className="q-label">In game</h4>
@@ -2603,7 +2597,7 @@ function App() {
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
-    auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, record_games: false, recording_supported: false, recording_permission: false, recording: { active: false, error: null }, region: "euw", flash_key: "auto", flash_key_detected: null,
+    auto_apply: true, tts_enabled: false, record_games: false, recording_supported: false, recording_permission: false, recording: { active: false, error: null }, region: "euw", flash_key: "auto", flash_key_detected: null,
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -4277,15 +4271,13 @@ function ThreatsPanel({ enemies, pool }: { enemies: DraftPlayer[]; pool?: PoolIt
   );
 }
 
+// Riot's policy allows honouring players but not "assumptions that could lead
+// to negative preconceptions", so only positive labels are drawn: no loss
+// streaks, "tilted", first-time or smurf flags on other players.
 function getPlayerLabels(p: LiveGamePlayer): { text: string; cls: string }[] {
   const labels: { text: string; cls: string }[] = [];
   if (p.smurf && p.smurf.games_played >= 10 && p.smurf.unique_champions <= 3) labels.push({ text: "OTP", cls: "label-otp" });
-  // Only with a real history to look at: an empty one means it could not be read.
-  if (p.champ_games === 0 && p.history_games >= 5) labels.push({ text: "1st time", cls: "label-autofill" });
-  if (p.streak >= 4) labels.push({ text: `${p.streak}W Streak`, cls: "label-winstreak" });
-  else if (p.streak <= -4) labels.push({ text: "TILTED", cls: "label-tilted" });
-  else if (p.streak <= -3) labels.push({ text: `${Math.abs(p.streak)}L Streak`, cls: "label-lossstreak" });
-  else if (p.streak >= 3) labels.push({ text: `${p.streak}W Streak`, cls: "label-winstreak" });
+  if (p.streak >= 3) labels.push({ text: `${p.streak}W Streak`, cls: "label-winstreak" });
   if (p.ranked_losses > 0 && p.ranked_win_rate >= 0.58 && (p.ranked_wins + p.ranked_losses) >= 20) labels.push({ text: "HIGH WR", cls: "label-highwr" });
   return labels;
 }
@@ -4367,14 +4359,6 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
             </span>
           )}
           {p.summoner_name}
-          {p.smurf && p.smurf.score >= 50 && (
-            <span
-              className={`smurf-badge ${p.smurf.score >= 75 ? "smurf-high" : "smurf-medium"}`}
-              title={`Smurf Score: ${p.smurf.score}/100\nLevel: ${p.smurf.account_level}\nWin Rate: ${(p.smurf.win_rate * 100).toFixed(0)}%\nGames: ${p.smurf.games_played}\nKDA: ${p.smurf.avg_kda.toFixed(1)}\nChampions: ${p.smurf.unique_champions}`}
-            >
-              SMURF
-            </span>
-          )}
         </span>
         <span className="lg-player-sub">
           {p.rank && <>
@@ -4428,15 +4412,9 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
               </span>
               <span className="lg-champ-detail">{p.champ_games}G {p.champ_kda.toFixed(1)} KDA</span>
             </div>
-          ) : p.history_games >= 5 ? (
-            <div className="lg-champ-stats">
-              <span className="lg-champ-detail lg-first-time">1st time</span>
-            </div>
           ) : null}
-          {p.streak !== 0 && (
-            <span className={`lg-streak ${p.streak > 0 ? "lg-streak-win" : "lg-streak-loss"}`}>
-              {p.streak > 0 ? `${p.streak}W` : `${Math.abs(p.streak)}L`}
-            </span>
+          {p.streak > 0 && (
+            <span className="lg-streak lg-streak-win">{p.streak}W</span>
           )}
         </div>
       )}

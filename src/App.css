@@ -782,9 +782,7 @@
   font-size: 10px; font-weight: 700; white-space: nowrap;
 }
 .label-otp { background: rgba(200,155,60,.15); color: var(--accent-gold-text); }
-.label-autofill { background: var(--surface-3); color: #b8c0cc; }
 .label-winstreak { background: var(--positive-soft); color: var(--positive); }
-.label-lossstreak, .label-tilted { background: var(--negative-soft); color: var(--negative); }
 .label-highwr { background: var(--surface-3); color: #b8c0cc; }
 .lg-ranked-wl { color: var(--text-muted); }
 .lg-wr { font-weight: 600; }
@@ -795,10 +793,8 @@
 .lg-champ-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .lg-champ-wr { font-size: 13px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .lg-champ-detail { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.lg-first-time { color: #b8c0cc; font-weight: 600; }
 .lg-streak { font-size: 10px; font-weight: 700; padding: 0 6px; height: 18px; display: inline-flex; align-items: center; border-radius: 999px; }
 .lg-streak-win { color: var(--positive); background: var(--positive-soft); }
-.lg-streak-loss { color: var(--negative); background: var(--negative-soft); }
 
 .lg-champ-col { position: relative; flex-shrink: 0; }
 .lg-level {
@@ -1134,13 +1130,6 @@
 .obj-timer-enemy { background: rgba(255,138,152,.14); color: var(--enemy); }
 .obj-timer-urgent { animation: timerPulse 1s infinite; }
 @keyframes timerPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
-.smurf-badge {
-  display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 999px;
-  font-size: 10px; font-weight: 700; flex-shrink: 0;
-}
-.smurf-medium { background: rgba(200,155,60,.15); color: var(--accent-gold-text); }
-.smurf-high { background: var(--negative-soft); color: var(--negative); }
 
 /* Premade group indicator (party detection) */
 .premade-badge {

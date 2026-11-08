@@ -21,7 +21,7 @@ The matchup phases over an 18-level grid vs your lane opponent — per-level adv
 ![Level-by-level plan timeline](docs/screenshots/level-plan.png)
 
 ### Live Game
-Real-time recommended build, gold diff, and a full scoreboard with player ranks, OTP / first-time / smurf labels.
+Real-time recommended build, gold diff, and a full scoreboard with player ranks, OTP and win-streak labels.
 
 ![Live game scoreboard and recommended build](docs/screenshots/live-game.png)
 
@@ -77,12 +77,11 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 - **Build style labels** — runes/spells/items alternative tabs labeled `Popular` (highest pick rate) or `Best WR` (highest win rate) so you can pick by style
 - **Ward placement tips** — timeline of suggested ward spots (0:30, 3:00, 5:30…) for your role, adjusted by the enemy jungler's archetype (ganker / farmer / invader)
 - **Matchup analysis by level** — phase-by-phase power comparison (early/mid/late) with actionable tips like "avoid trades level 1-3" or "power spike at level 6"
-- **Level-by-level plan** — 18-level timeline vs your lane opponent with a contextual action per level (e.g. "Lvl 3 trade", "All-in con R", "Farm lado opuesto", "R2 + obj"). Calculates per-level advantage from power curves + spike bonuses + ult-strength comparison, with hexagonal nodes pulsing on spike levels and color-coded categories (dominant / strong / even / careful / weak). Full coverage for all 172 champions. Hover any level to see a coach-style tip in the detail card
+- **Level-by-level plan** — 18-level timeline vs your lane opponent with a contextual action per level (e.g. "Lvl 3 trade", "All-in con R", "Farm lado opuesto", "R2 + obj"). Calculates per-level advantage from power curves + spike bonuses + ult-strength comparison, laid out as a 9×2 grid under the matchup phases, with spike levels marked and each level edged green where you are ahead and red where you should play safe. Full coverage for all 172 champions. Hover any level to see a coach-style tip in the detail card
 - **Damage composition** — AD/AP split bar for both teams, with warnings for heavy one-type compositions
 - **Adaptive item recommendations** — situational items based on enemy comp (antiheal, MR stacking, armor, anti-shield), drawn from the items your champion actually builds according to OP.GG. Jinx gets Mortal Reminder and Mercurial Scimitar, never Spirit Visage
 - **Game prediction** — team-vs-team analysis with early/late game phase scores and a strategy tip
-- **One-click pick/ban** — click any recommendation or ban suggestion to lock it in
-- **Auto-lock** — optionally auto-lock your champion selection
+- **One-click pick/ban** — click any recommendation or ban suggestion to hover it in the client; you lock it in yourself
 - **Full draft visualization** — ally/enemy picks, bans, and positions with role icons displayed in a 3-column layout
 - **ARAM bench** — shows available bench champions sorted by ARAM win rate, click to swap
 
@@ -104,10 +103,9 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 ### Live Game
 - **Team compositions** — blue vs red side with champion icons and summoner names, sorted by lane (top → jungle → mid → bot → support)
 - **Player ranks** — rank emblems and tier text for every player in the match
-- **Player labels** — automatic badges: OTP, Autofill/1st Time, Win Streak, Loss Streak, Tilted, High WR. "1st Time" needs at least 5 readable recent games, so a match history that failed to load never reads as a first-timer
-- **Ranked stats** — W/L record, win rate, and current win/loss streak
+- **Player labels** — positive badges only: OTP, Win Streak, High WR. Riot's policy rules out labels that cast a player in a negative light, so there are no loss-streak, tilted, first-time or smurf flags
+- **Ranked stats** — W/L record, win rate, and current win streak
 - **Champion proficiency** — games played, win rate, and KDA on the picked champion
-- **Smurf detection** — automatic analysis of enemy accounts using account level, win rate, games played, KDA, and champion diversity to flag likely smurfs with a 0-100 confidence score
 - **Real-time scoreboard** — live KDA, CS, level, and current items for all players (via Live Client Data API)
 - **Gold tracker** — team gold bar with total gold comparison (unspent + item value)
 - **Lane matchup gold diff** — per-position gold comparison between matched lane opponents
@@ -160,14 +158,9 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 - **macOS** — needs macOS 13 or later and the Screen Recording permission (asked when you turn it on)
 - **Windows (beta)** — Windows Graphics Capture + Media Foundation. Records the game window with only the game's own audio, so voice chat and music stay out (Windows 10 2004 or later; older versions record all system audio). Use **Borderless** or **Windowed** display mode: exclusive Fullscreen may produce no video
 
-### Ready Check
-- **Auto-accept** — automatically accepts the ready check when a match is found
-
 ### Settings (gear menu in the header)
 - Region selector
 - Auto-apply toggle
-- Auto-lock toggle
-- Auto-accept toggle
 - Voice cues toggle (TTS audio alerts during the game)
 - Record games toggle (macOS and Windows)
 - Flash key (auto-detected from your recent games, or forced to D / F)
