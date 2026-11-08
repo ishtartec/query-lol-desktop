@@ -1179,16 +1179,22 @@ function estimateWinRate(myId: number, enemyId: number): number {
 
 // --- Level-by-level plan ---
 
-// Smooth curve interpolation using 3 anchor points: lv2=early, lv8=mid, lv15=late
+// Phase plateaus with short blends: early 1-4, mid 6-11, late 14-18 (the
+// same ranges `analyzeMatchup` labels). The curves are integers and most lane
+// pairs differ by exactly one tier in a phase, which is what the "strong" /
+// "careful" bar (|advantage| >= 1) is meant to show. The old version blended
+// linearly from level 2 to 8 and 8 to 15, so a one-tier gap only reached 1.0
+// on the anchor level itself: levels 4-7, 9-10 and 12-14 were grey in 69-87% of
+// plans, even when the phase chips above said one side was ahead.
 function interpolateCurve(curve: PowerCurve, level: number): number {
-  if (level <= 2) return curve.early;
-  if (level >= 15) return curve.late;
-  if (level <= 8) {
-    const t = (level - 2) / 6;
-    return curve.early + (curve.mid - curve.early) * t;
+  if (level <= 4) return curve.early;
+  if (level === 5) return (curve.early + curve.mid) / 2;
+  if (level <= 11) return curve.mid;
+  if (level <= 13) {
+    const t = (level - 11) / 3;
+    return curve.mid + (curve.late - curve.mid) * t;
   }
-  const t = (level - 8) / 7;
-  return curve.mid + (curve.late - curve.mid) * t;
+  return curve.late;
 }
 
 type PlanCategory = "dominant" | "strong" | "even" | "careful" | "weak" | "hard-weak";
@@ -1204,11 +1210,15 @@ interface LevelPlanEntry {
   spikeIcon?: "sword" | "ult" | "crown";
 }
 
+// Bands sit on whole power tiers, as in `analyzeMatchup`: one tier is a
+// slight edge, two tiers dominate. The old 2.2 cut-off left a plain two-tier
+// gap (14-19% of lane pairs early or late) at "strong" unless a spike landed
+// on the same level.
 function classifyAdvantage(adv: number): PlanCategory {
-  if (adv >= 2.2) return "dominant";
+  if (adv >= 2.0) return "dominant";
   if (adv >= 1.0) return "strong";
   if (adv > -1.0) return "even";
-  if (adv > -2.2) return "careful";
+  if (adv > -2.0) return "careful";
   if (adv > -3.5) return "weak";
   return "hard-weak";
 }
