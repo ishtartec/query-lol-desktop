@@ -492,8 +492,7 @@ const TRAIT_HEALERS = new Set([
   117, // Lulu (W heal)
   267, // Nami
   37,  // Sona
-  350, // Bel'Veth
-  145, // Rek'Sai (not really, remove)
+  350, // Yuumi (E heal)
   887, // Gwen
   86,  // Garen (passive)
   122, // Darius (Q heal)

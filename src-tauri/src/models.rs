@@ -740,6 +740,10 @@ pub struct AramBenchChampion {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveGameState {
+    /// Kept so post-game code still knows the queue if the gameflow
+    /// session has already dropped it at EndOfGame.
+    #[serde(default)]
+    pub queue_id: i64,
     pub queue_name: String,
     pub allies: Vec<LiveGamePlayer>,
     pub enemies: Vec<LiveGamePlayer>,

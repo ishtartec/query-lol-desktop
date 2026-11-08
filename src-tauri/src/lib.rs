@@ -1085,10 +1085,14 @@ async fn poll_loop(
                         }
                         stats.mistakes = detect_mistakes(&s);
                         timeline_backfill_tries = 0;
-                        // Check the game against the active goal. The gameflow
-                        // session still carries the queue during EndOfGame.
+                        // Check the game against the active goal. The queue comes
+                        // from the gameflow session, falling back to the one seen
+                        // when the game started in case it is gone by EndOfGame.
                         if let Some(goal) = s.game_goal.clone() {
-                            let queue_id = lcu::get_current_queue(&creds).await.map(|(id, _)| id).unwrap_or(0);
+                            let queue_id = match lcu::get_current_queue(&creds).await.map(|(id, _)| id) {
+                                Ok(id) if id > 0 => id,
+                                _ => s.live_game.as_ref().map(|g| g.queue_id).unwrap_or(0),
+                            };
                             let seen = s.goal_history.iter().any(|o| o.game_id == stats.game_id);
                             if GOAL_QUEUES.contains(&queue_id) && !seen {
                                 if let Some(outcome) = evaluate_goal(&goal, &stats, queue_id) {

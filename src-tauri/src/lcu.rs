@@ -1544,6 +1544,12 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
     let raw: serde_json::Value = resp.json().await
         .map_err(|e| format!("Failed to parse live game: {}", e))?;
 
+    let queue_id = raw.get("gameData")
+        .and_then(|g| g.get("queue"))
+        .and_then(|q| q.get("id"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
     let queue_name = raw.get("gameData")
         .and_then(|g| g.get("queue"))
         .and_then(|q| q.get("description"))
@@ -1876,7 +1882,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
     }
 
     info!("Live game: {} allies, {} enemies with ranks", allies.len(), enemies.len());
-    Ok(LiveGameState { queue_name, allies, enemies, live_data: None, recommended_build: None, recommended_alternatives: None })
+    Ok(LiveGameState { queue_id, queue_name, allies, enemies, live_data: None, recommended_build: None, recommended_alternatives: None })
 }
 
 // ============================================================
@@ -1959,7 +1965,15 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
             let ward_score = scores.get("wardScore").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
             let level = p.get("level").and_then(|v| v.as_i64()).unwrap_or(1);
-            let current_gold = p.get("currentGold").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            // Gold in hand is reported only for the local player, under
+            // `activePlayer`; `allPlayers` entries never carry it, so reading
+            // it there left everyone at 0 (recall-ready never fired and the
+            // build's "gold to next item" showed full prices).
+            let current_gold = if is_me {
+                active.get("currentGold").and_then(|v| v.as_f64()).unwrap_or(0.0)
+            } else {
+                p.get("currentGold").and_then(|v| v.as_f64()).unwrap_or(0.0)
+            };
 
             let items_arr = p.get("items").and_then(|i| i.as_array());
             let items: Vec<i64> = items_arr
