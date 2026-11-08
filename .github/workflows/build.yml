@@ -40,6 +40,45 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      # The bundler downloads WiX and NSIS from GitHub release assets with a
+      # single 2-minute attempt, and those downloads 504 often enough to fail
+      # a release. Keep them cached and prefetch them with retries; the paths,
+      # URLs and hashes mirror tauri-bundler 2.11 (msi/mod.rs, nsis/mod.rs).
+      - name: Cache Tauri bundler tools
+        if: matrix.platform == 'windows-latest'
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: tauri-tools-wix314-nsis311-utils053
+
+      - name: Prefetch WiX and NSIS
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $tools = Join-Path $env:LOCALAPPDATA 'tauri'
+          New-Item -ItemType Directory -Force $tools | Out-Null
+          function Fetch($url, $out, $algo, $hash) {
+            curl.exe -fL --retry 8 --retry-all-errors --retry-delay 15 --max-time 300 -o $out $url
+            if ($LASTEXITCODE -ne 0) { throw "download failed: $url" }
+            if ((Get-FileHash $out -Algorithm $algo).Hash -ne $hash) { throw "hash mismatch: $url" }
+          }
+          $wix = Join-Path $tools 'WixTools314'
+          if (-not (Test-Path (Join-Path $wix 'light.exe'))) {
+            Fetch 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' "$tools\wix.zip" SHA256 '6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31'
+            Expand-Archive "$tools\wix.zip" -DestinationPath $wix -Force
+          }
+          $nsis = Join-Path $tools 'NSIS'
+          if (-not (Test-Path (Join-Path $nsis 'makensis.exe'))) {
+            Fetch 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip' "$tools\nsis.zip" SHA1 'EF7FF767E5CBD9EDD22ADD3A32C9B8F4500BB10D'
+            Expand-Archive "$tools\nsis.zip" -DestinationPath $tools -Force
+            Move-Item (Join-Path $tools 'nsis-3.11') $nsis
+          }
+          $plugin = Join-Path $nsis 'Plugins\x86-unicode\additional'
+          if (-not (Test-Path "$plugin\nsis_tauri_utils.dll")) {
+            New-Item -ItemType Directory -Force $plugin | Out-Null
+            Fetch 'https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll' "$plugin\nsis_tauri_utils.dll" SHA1 '75197FEE3C6A814FE035788D1C34EAD39349B860'
+          }
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
