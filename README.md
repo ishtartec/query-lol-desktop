@@ -21,7 +21,7 @@ The matchup phases over an 18-level grid vs your lane opponent — per-level adv
 ![Level-by-level plan timeline](docs/screenshots/level-plan.png)
 
 ### Live Game
-Real-time recommended build, win probability, gold diff, and a full scoreboard with player ranks, OTP / first-time / smurf labels.
+Real-time recommended build, gold diff, and a full scoreboard with player ranks, OTP / first-time / smurf labels.
 
 ![Live game scoreboard and recommended build](docs/screenshots/live-game.png)
 
@@ -122,22 +122,16 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 - **Objective timers** — Baron buff (3:00), Elder Dragon buff (2:30), and Dragon Soul tracking with countdown and team indicator
 - **Objective spawn windows** — Drake / Voidgrubs / Herald / Baron next-spawn chips when ≤90s, urgent pulse at ≤30s, dashed border indicating the team that took the last instance. Season 2026 timings (Drake 5:00, Voidgrubs 8:00 single, Herald 15:00 single, Baron 20:00 with 6:00 respawn)
 - **Objective feed** — dragons, baron, herald, turrets, inhibitors, and multikills with timestamps
-- **Win probability** — real-time win % estimate based on gold diff, game time, dragons, and baron (displayed in gold bar and overlay)
-- **Roam / missing tracker** — detects when an enemy laner has stopped farming (CS hasn't progressed in ~25s and they're not dead). Shows `⚠ TOP MIA 0:32` badge in the overlay with a live countdown
 - **Death timer prediction** — when an enemy dies, computes expected respawn from the official BRW table per level + post-15min time factor. Shows `💀 MID 28s` countdown until they're back
 - **Recall optimizer** — checks your current gold against the next reachable item from your build. Shows `1300g Lost Chapter` or pulses gold with `B Lost Chapter` when you can afford it
 - **Wave state advisor** — during lane phase, recommends an action based on your CS diff vs lane opponent: *Push prio · roam* / *Push wave* / *Hold wave* / *Last-hit safe* / *Freeze cerca torre*
-- **Enemy jungle tracker** — infers jungler activity from kill/assist/death events. Shows `JGL: farmeando` / `JGL: posible gank o obj` / `JGL: obj/invadiendo` based on time since last seen + game minute heuristics
 - **Vision target advisor** — compares your ward score against the Gold-elo benchmark for your role (SUP 1.5/min, JNG 0.9/min, others 0.6/min). Soft red warning when you're <70% of target
 - **Voice cues (TTS)** — optional audio alerts for time-critical events that you can't see in the visual overlay during play. Uses macOS `say` (Samantha voice) or Windows SAPI (en-US). Toggle from the settings menu. Currently speaks:
-  - *"Caitlyn missing"* when an enemy laner has been MIA ≥8s (45s cooldown per enemy)
   - *"Caitlyn completed Wit's End"* when an enemy buys a ≥2500g item (60s cooldown per item)
   - *"Recall ready, Lost Chapter"* when you can afford a key item (90s cooldown)
-  - *"Watch for ganks, jungla rotando"* on jungle activity transitions
-  - *"Enemy jungla unknown, place wards"* when the jungler hasn't been seen for ≥60s (90s cooldown)
   - *"Place wards"* every 3 minutes if your vision score is <50% of target
-  - *"Drake spawning in 30 seconds, enemy jungler unseen 50 seconds"* — once per spawn instance for Drake / Voidgrubs / Herald / Baron, with jungler-context injection
-- **In-game overlay** — hold TAB to show a compact overlay with all the above plus win probability, lane gold diffs, objective timers, and a **5-level plan preview** (current level + next 4 with actions, advantage, and spike warnings). Borderless windowed mode, configurable position
+  - *"Drake spawning in 30 seconds"* — once per spawn instance for Drake / Voidgrubs / Herald / Baron
+- **In-game overlay** — hold TAB to show a compact overlay with all the above plus lane gold diffs, objective timers, and a **5-level plan preview** (current level + next 4 with actions, advantage, and spike warnings). Borderless windowed mode, configurable position
 - **Player profiles** — click any player to view their match history in an overlay
 
 ### Post-Game Analysis
@@ -284,12 +278,10 @@ pnpm tauri build
 5. **Draft analysis** — as enemies are revealed, it calculates matchup win rates, power curves, damage composition, generates pick/ban recommendations, adaptive item suggestions, a game prediction, and an 18-level action plan against your lane opponent (combining interpolated power curves, per-champion spike levels, and ult-strength comparison).
 6. **Live game data** — during a match, polls the Live Client Data API (port 2999) every second for real-time KDA, CS, gold, items, ward score, and game events. Records snapshots every 30s for post-game phase analysis.
 7. **Live coaching engine** — heuristics derived from the polled data:
-   - **MIA detection**: a laner whose CS hasn't increased in 25s and who isn't recently dead is flagged as missing.
    - **Death timer**: official BRW (base respawn wait) table by level × post-15min time factor for accurate countdowns.
    - **Recall optimizer**: compares current gold against the next unowned item from your fetched OP.GG build.
-   - **Jungle inference**: tracks kill/assist/death events involving the enemy jungler and combines with game-time heuristics (first clear, scuttle, drake/herald windows) to label their likely activity.
    - **Vision benchmarks**: ward-score comparisons against role-specific Gold-elo averages.
-8. **Voice cues** — `say` on macOS or Windows SAPI for time-critical audio alerts (missing enemies, enemy item completions, recall ready, jungle rotations, vision reminders). Throttled with per-event cooldowns.
+8. **Voice cues** — `say` on macOS or Windows SAPI for time-critical audio alerts (enemy item completions, recall ready, objective spawns, vision reminders). Throttled with per-event cooldowns.
 9. **Overlay** — a second transparent window (hold TAB) shows compact live game info on top of the game (Windows borderless windowed).
 10. **Post-game analysis** — computes gold timeline, death impacts, per-phase stats, and elo comparison from collected snapshots.
 11. **Game recording** — when the game window appears, it is captured and hardware-encoded to MP4 next to a JSON file with the key moments, gold timeline and the offset between video time and game time, so every marker lands on the right frame.

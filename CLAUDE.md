@@ -86,7 +86,7 @@ All HTTP requests happen in Rust only. Frontend communicates with backend via `i
 - **Draft change detection** — hashing of draft state to avoid redundant API calls
 - **Two windows** — main app + overlay (transparent, always-on-top, click-through)
 - **Snapshot collection** — during live game, player stats recorded every 30s for post-game phase analysis
-- **Win probability** — logistic model based on gold diff, game time, dragons, baron
+- **Win probability** — logistic model based on gold diff and game time, drawn only after the game (the gold timeline)
 - **Platform-conditional code** — `#[cfg(target_os)]` for macOS/Windows lockfile paths, process detection, notifications
 - **TypeScript strict mode** enabled (`noUnusedLocals`, `noUnusedParameters`)
 
@@ -104,6 +104,7 @@ All HTTP requests happen in Rust only. Frontend communicates with backend via `i
 
 ## Known Issues
 
+- **Riot developer policy**: every player-facing product must be registered and audited on the Riot Developer Portal, LCU users included (endpoints used must be declared), and any new feature must be audited there too (developer.riotgames.com/policies/general, /docs/lol). Riot rules out "drawing conclusions for you during gameplay" and game-session information "previously unknown to the player"; tracking enemy ultimate cooldowns is banned even when manual. For that reason the enemy MIA/roam tracker (with its "X missing" voice cue), the enemy jungle tracker ("jungler unseen" cues) and the in-game win probability were removed; the win model still draws the post-game gold timeline, which Riot's "play first, analyze later" stance allows. awesome-league closed our listing PR over the roam tracker and the missing registration. Check new in-game features against these rules before building them.
 - **No per-item damage attribution exists**: not in the LCU, and not in Riot's public API either. Match-V5's `victimDamageDealt` names only champions and abilities (`ahriq`, `kaisapassive`, `kaisabasicattack2`); the string `Item` appears zero times in an 815KB timeline. Any "damage by item" feature would be unverifiable by construction, which is why there isn't one.
 - **`championStats` reports live effective values**: armor, magic resist and health are polluted by shred, buffs and shields, so they cannot be used to measure item values (measured Trinity Force at -20 armor). Attack damage and ability power are almost never shredded and resolve exactly.
 

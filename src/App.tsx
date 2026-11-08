@@ -1500,6 +1500,8 @@ function analyzeMatchup(myId: number, enemyId: number, counterWr?: number): { ph
 // Logistic curve calibrated from League analytics:
 // gold_diff is the dominant predictor (~80% of signal)
 // Adjusted by game time (early gold matters more) and objectives
+// Drawn only after the game (gold timeline); Riot's policy rules out
+// drawing conclusions like this for the player while the game is running.
 function estimateWinProbability(
   goldDiff: number,
   gameTimeSecs: number,
@@ -1604,23 +1606,6 @@ function computeObjectiveSpawns(events: GameEvent[], gameTime: number): Objectiv
   return out
     .filter(o => o.eta > -15 && o.eta < 600)
     .sort((a, b) => a.eta - b.eta);
-}
-
-function getObjectiveState(events: GameEvent[], gameTime: number) {
-  let allyDragons = 0, enemyDragons = 0;
-  let allyBaronActive = false, enemyBaronActive = false;
-  for (const ev of events) {
-    if (ev.event_type === "DragonKill") {
-      if (ev.label.startsWith("Ally")) allyDragons++; else enemyDragons++;
-    }
-    if (ev.event_type === "BaronKill") {
-      const remaining = 180 - (gameTime - ev.time);
-      if (remaining > 0) {
-        if (ev.label.startsWith("Ally")) allyBaronActive = true; else enemyBaronActive = true;
-      }
-    }
-  }
-  return { allyDragons, enemyDragons, allyBaronActive, enemyBaronActive };
 }
 
 function positionIconUrl(pos: string): string {
@@ -2572,7 +2557,7 @@ function SettingsMenu({ state, overlayPos, onOverlayPos }: {
           </div>
           <div className="settings-group">
             <h4 className="q-label">In game</h4>
-            <Toggle label="Voice cues" hint="Flash up, recall ready, enemy missing"
+            <Toggle label="Voice cues" hint="Recall ready, objective spawns, wards"
               checked={state.tts_enabled} onChange={() => set("set_tts_enabled", { enabled: !state.tts_enabled })} />
             <div className="settings-row">
               <span className="settings-row-label">Flash key</span>
@@ -4554,8 +4539,6 @@ function LiveGameView({ game, onViewPlayer, recording }: { game: LiveGameState; 
   const enemyGold = game.enemies.reduce((s, p) => s + playerTotalGold(p), 0);
   const goldDiff = allyGold - enemyGold;
   const recentEvents = ld?.events.slice(-5).reverse() ?? [];
-  const objState = ld ? getObjectiveState(ld.events, ld.game_time) : null;
-  const winProb = ld && objState ? estimateWinProbability(goldDiff, ld.game_time, objState.allyDragons, objState.enemyDragons, objState.allyBaronActive, objState.enemyBaronActive) : 0.5;
 
   // Spell cooldown tracking (persists across re-renders)
   const spellTimers = useRef<Map<string, number>>(new Map()).current;
@@ -4642,11 +4625,6 @@ function LiveGameView({ game, onViewPlayer, recording }: { game: LiveGameState; 
         <div className="q-card lg-state-gold">
           <div className="q-section-head">
             <h3 className="q-label">Team gold</h3>
-            {ld && (
-              <span className="lg-win-chance">Win chance
-                <span className={`lg-win-prob ${winProb > 0.55 ? "lg-wr-good" : winProb < 0.45 ? "lg-wr-bad" : ""}`}>{(winProb * 100).toFixed(0)}%</span>
-              </span>
-            )}
           </div>
           {ld ? (
             <>
@@ -5800,76 +5778,6 @@ function OverlayApp() {
   // --- All hooks below this line MUST be called unconditionally on every render.
   //     Effects guard internally on missing state instead of using an early return. ---
 
-  // Roam / missing tracker
-  const enemyTrack = useRef<Map<string, {
-    csHistory: { t: number; cs: number }[];
-    lastDeath: number;
-    prevDeaths: number;
-    missingSince: number | null;
-  }>>(new Map());
-  const missingTtsCd = useRef<Map<string, number>>(new Map());
-  const [missing, setMissing] = useState<Array<{ key: string; pos: string; champId: number; durationSec: number }>>([]);
-
-  useEffect(() => {
-    const game = state?.live_game;
-    const ld = game?.live_data;
-    if (!game || !ld || isAramQueue(game.queue_name)) {
-      setMissing([]);
-      return;
-    }
-    const gameTime = ld.game_time;
-    if (gameTime < 90) return;
-    const updates: Array<{ key: string; pos: string; champId: number; durationSec: number }> = [];
-
-    for (const enemy of game.enemies) {
-      if (!enemy.live || !enemy.position) continue;
-      const posLower = enemy.position.toLowerCase();
-      const trackable = posLower.startsWith("top") || posLower.startsWith("mid")
-        || posLower.startsWith("bot") || posLower === "adc" || posLower === "middle";
-      if (!trackable) continue;
-
-      const key = enemy.summoner_name || `${posLower}_${enemy.champion_id}`;
-      let track = enemyTrack.current.get(key);
-      if (!track) {
-        track = { csHistory: [], lastDeath: -100, prevDeaths: enemy.live.deaths, missingSince: null };
-        enemyTrack.current.set(key, track);
-      }
-      if (enemy.live.deaths > track.prevDeaths) track.lastDeath = gameTime;
-      track.prevDeaths = enemy.live.deaths;
-
-      track.csHistory.push({ t: gameTime, cs: enemy.live.cs });
-      track.csHistory = track.csHistory.filter(s => s.t > gameTime - 60);
-
-      const past = track.csHistory.find(s => s.t <= gameTime - 25);
-      if (!past) continue;
-
-      const csDelta = enemy.live.cs - past.cs;
-      const recentlyDead = gameTime - track.lastDeath < 25;
-      const isMissing = csDelta < 1 && !recentlyDead;
-      const posLabel = posLower.startsWith("top") ? "TOP"
-        : (posLower.startsWith("mid") || posLower === "middle") ? "MID"
-        : "BOT";
-
-      if (isMissing) {
-        if (track.missingSince === null) track.missingSince = gameTime - 25;
-        const duration = Math.round(gameTime - track.missingSince);
-        if (duration >= 8) {
-          updates.push({ key, pos: posLabel, champId: enemy.champion_id, durationSec: duration });
-          const lastTts = missingTtsCd.current.get(key) ?? -100;
-          if (gameTime - lastTts > 45) {
-            missingTtsCd.current.set(key, gameTime);
-            const champName = championCache?.[enemy.champion_id.toString()]?.name;
-            const text = champName ? `${champName} missing` : `${posLabel} missing`;
-            invoke("speak", { text }).catch(() => {});
-          }
-        }
-      } else {
-        track.missingSince = null;
-      }
-    }
-    setMissing(updates);
-  }, [state]);
-
   // Death timer prediction
   const deathTrack = useRef<Map<string, { prevDeaths: number; deathTime: number; level: number; deathLevel: number }>>(new Map());
   const [deadEnemies, setDeadEnemies] = useState<Array<{ key: string; pos: string; champId: number; remaining: number }>>([]);
@@ -5914,27 +5822,7 @@ function OverlayApp() {
     setDeadEnemies(dead);
   }, [state]);
 
-  // Recall TTS & jungler tracking refs
   const recallTtsCd = useRef<number>(-100);
-  const jglLastSeenRef = useRef<{ time: number; reason: string; kdaSum: number }>({ time: 0, reason: "spawn", kdaSum: 0 });
-
-  useEffect(() => {
-    const game = state?.live_game;
-    const ld = game?.live_data;
-    if (!game || !ld) return;
-    const enemyJgl = game.enemies.find(e => (e.position || "").toLowerCase().startsWith("jun"));
-    if (!enemyJgl?.live) return;
-    const k = enemyJgl.live.kills + enemyJgl.live.assists + enemyJgl.live.deaths;
-    if (k > jglLastSeenRef.current.kdaSum) {
-      jglLastSeenRef.current = {
-        time: ld.game_time,
-        reason: enemyJgl.live.deaths > 0 ? "dead" : "kill/assist",
-        kdaSum: k,
-      };
-    } else {
-      jglLastSeenRef.current.kdaSum = k;
-    }
-  }, [state]);
 
   // Recall TTS — fire once per session when an item becomes affordable.
   useEffect(() => {
@@ -5964,37 +5852,6 @@ function OverlayApp() {
         break;
       }
     }
-  }, [state]);
-
-  // Jungle TTS — speak on guess transitions and after long absence
-  const jglPrevGuess = useRef<string>("");
-  const jglUnknownTtsCd = useRef<number>(-100);
-  useEffect(() => {
-    const game = state?.live_game;
-    const ld = game?.live_data;
-    if (!game || !ld || isAramQueue(game.queue_name)) return;
-    const enemyJgl = game.enemies.find(e => (e.position || "").toLowerCase().startsWith("jun"));
-    if (!enemyJgl) return;
-    const gameTime = ld.game_time;
-    const lastSeen = jglLastSeenRef.current.time || 0;
-    const elapsed = Math.max(0, gameTime - lastSeen);
-
-    let guess = "farm";
-    if (gameTime < 3 * 60) guess = "first-clear";
-    else if (elapsed >= 60) guess = "unknown-long";
-    else if (elapsed >= 30) guess = "moving";
-    else guess = "farm";
-
-    // Transition: farm/first-clear → moving (likely setup gank or obj)
-    if (jglPrevGuess.current === "farm" && guess === "moving") {
-      invoke("speak", { text: "Watch for ganks, jungler rotating" }).catch(() => {});
-    }
-    // Long absence — say once per 90s
-    if (guess === "unknown-long" && gameTime - jglUnknownTtsCd.current > 90) {
-      jglUnknownTtsCd.current = gameTime;
-      invoke("speak", { text: "Enemy jungler unknown, place wards" }).catch(() => {});
-    }
-    jglPrevGuess.current = guess;
   }, [state]);
 
   // Vision target TTS — periodic reminder when far below benchmark
@@ -6037,10 +5894,7 @@ function OverlayApp() {
     for (const s of spawns) {
       if (s.eta > 0 && s.eta <= 30 && !objSpoken.has(s.spawnTime)) {
         objSpoken.add(s.spawnTime);
-        // Inject jungler context
-        const jglElapsed = Math.max(0, ld.game_time - (jglLastSeenRef.current.time || 0));
-        const ctx = jglElapsed >= 45 ? `, enemy jungler unseen ${Math.round(jglElapsed)} seconds` : "";
-        invoke("speak", { text: `${s.label} spawning in 30 seconds${ctx}` }).catch(() => {});
+        invoke("speak", { text: `${s.label} spawning in 30 seconds` }).catch(() => {});
       }
     }
   }, [state]);
@@ -6083,8 +5937,6 @@ function OverlayApp() {
   const totalAllyGold = matchups.reduce((s, m) => s + m.allyGold, 0);
   const totalEnemyGold = matchups.reduce((s, m) => s + m.enemyGold, 0);
   const totalDiff = totalAllyGold - totalEnemyGold;
-  const ovObjState = ld ? getObjectiveState(ld.events, ld.game_time) : null;
-  const ovWinProb = ld && ovObjState ? estimateWinProbability(totalDiff, ld.game_time, ovObjState.allyDragons, ovObjState.enemyDragons, ovObjState.allyBaronActive, ovObjState.enemyBaronActive) : 0.5;
 
   // Compact level plan (local player vs lane opponent)
   let me: LiveGamePlayer | null = null;
@@ -6189,33 +6041,13 @@ function OverlayApp() {
     return { current, target, lagging: current < target * 0.7 && target >= 5 };
   })();
 
-  // --- Jungle tracker (computed only — ref + tracking effect live above the early return) ---
-  const enemyJungler = game.enemies.find(e => (e.position || "").toLowerCase().startsWith("jun"));
-  const jglInfo: { lastSeenSec: number; guess: string } | null = (() => {
-    if (!enemyJungler || !ld || isAramQueue(game.queue_name)) return null;
-    const gameTime = ld.game_time;
-    const lastSeen = jglLastSeenRef.current.time || 0;
-    const elapsed = Math.max(0, Math.round(gameTime - lastSeen));
-    let guess = "farming";
-    // Heuristics by minute: dragon/herald spawn at 5:00, scuttle 3:30
-    if (gameTime < 3 * 60) guess = "first clear";
-    else if (gameTime < 4 * 60) guess = "scuttle";
-    else if (gameTime > 5 * 60 && gameTime < 18 * 60 && elapsed < 30) guess = "farming";
-    else if (elapsed >= 30 && elapsed < 60) guess = "possible gank/obj";
-    else if (elapsed >= 60) guess = "obj/invading";
-    return { lastSeenSec: elapsed, guess };
-  })();
-
   return (
     <div className="overlay">
-      {/* Header: ally kills + win prob + gold diff + enemy kills */}
+      {/* Header: ally kills + game time + gold diff + enemy kills */}
       <div className="ov-card ov-header">
         <span className="ov-score ov-score-ally">{allyKills}<span className="ov-score-label">kills</span></span>
         <div className="ov-center">
           <span className="ov-center-top">
-            <span className={`ov-win-prob ${ovWinProb > 0.55 ? "lg-wr-good" : ovWinProb < 0.45 ? "lg-wr-bad" : ""}`}>
-              {(ovWinProb * 100).toFixed(0)}%
-            </span>
             {ld && <span className="ov-timer">{formatGameTime(ld.game_time)}</span>}
           </span>
           <span className={`ov-total-diff ${totalDiff > 200 ? "is-up" : totalDiff < -200 ? "is-down" : ""}`}>
@@ -6252,23 +6084,15 @@ function OverlayApp() {
         ))}
       </div>
 
-      {/* Missing enemy laners + dead enemies */}
-      {(missing.length > 0 || deadEnemies.length > 0) && (
-        <div className="ov-missing">
-          {missing.map(m => (
-            <span key={`mia_${m.key}`} className="ov-missing-tag">
-              <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round" /><path d="M12 10v4M12 17.5v.5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
-              <span className="ov-missing-pos">{m.pos}</span>
-              <span className="ov-missing-label">missing</span>
-              <span className="ov-missing-dur">{Math.floor(m.durationSec / 60)}:{(m.durationSec % 60).toString().padStart(2, "0")}</span>
-            </span>
-          ))}
+      {/* Dead enemies with respawn countdown */}
+      {deadEnemies.length > 0 && (
+        <div className="ov-dead">
           {deadEnemies.map(d => (
             <span key={`dead_${d.key}`} className="ov-dead-tag">
               <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M9 21h6M10 11h.01M14 11h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>
-              <span className="ov-missing-pos">{d.pos}</span>
-              <span className="ov-missing-label">dead</span>
-              <span className="ov-missing-dur">{d.remaining}s</span>
+              <span className="ov-dead-pos">{d.pos}</span>
+              <span className="ov-dead-label">dead</span>
+              <span className="ov-dead-dur">{d.remaining}s</span>
             </span>
           ))}
         </div>
@@ -6276,9 +6100,9 @@ function OverlayApp() {
 
       {/* Tactical line + objectives. The overlay is click-through, so
           everything has to read without hovering: no titles. */}
-      {(recall || waveAdvice || jglInfo || (visionAdvice && visionAdvice.lagging) || ovSpawnsVisible.length > 0) && (
+      {(recall || waveAdvice || (visionAdvice && visionAdvice.lagging) || ovSpawnsVisible.length > 0) && (
       <div className="ov-card ov-tac-card">
-      {(recall || waveAdvice || jglInfo || (visionAdvice && visionAdvice.lagging)) && (
+      {(recall || waveAdvice || (visionAdvice && visionAdvice.lagging)) && (
         <div className="ov-tactical">
           {recall && (
             <span className={`ov-tac-chip ov-tac-recall ${recall.affordable ? "ov-tac-ready" : ""}`}>
@@ -6287,9 +6111,6 @@ function OverlayApp() {
           )}
           {waveAdvice && (
             <span className={`ov-tac-chip ov-tac-${waveAdvice.tone}`}>{waveAdvice.text}</span>
-          )}
-          {jglInfo && enemyJungler && (
-            <span className="ov-tac-chip ov-tac-jgl">Jungler: {jglInfo.guess} · {jglInfo.lastSeenSec}s</span>
           )}
           {visionAdvice && visionAdvice.lagging && (
             <span className="ov-tac-chip ov-tac-vision">Ward · {visionAdvice.current}/{visionAdvice.target}</span>
