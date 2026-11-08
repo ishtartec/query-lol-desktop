@@ -128,6 +128,25 @@ pub struct PostGameStats {
     pub game_id: i64,
     pub gold_timeline: Vec<GoldDiffPoint>,
     pub death_events: Vec<DeathImpact>,
+    /// Detected from the live trace when the game ends (see mistakes.rs).
+    /// Empty for past matches opened from history: the LCU keeps no trace.
+    #[serde(default)]
+    pub mistakes: Vec<Mistake>,
+}
+
+/// A verifiable inefficiency in the local player's own game.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Mistake {
+    /// Game time in seconds: the death, or where the stretch began.
+    pub time: f64,
+    /// unspent_gold | early_death | quick_death | cs_gap | no_vision
+    pub kind: String,
+    pub title: String,
+    pub detail: String,
+    /// One actionable sentence; the top item's is shown as the takeaway.
+    pub takeaway: String,
+    /// Sort key, most important first.
+    pub severity: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -789,6 +808,12 @@ pub struct LiveGameData {
     /// gave us at game start means someone was missing from the roster.
     #[serde(skip)]
     pub roster_size: usize,
+    /// The local player, once per poll, for post-game mistake detection.
+    #[serde(skip)]
+    pub trace: Vec<crate::mistakes::TraceSample>,
+    /// `gameData.gameMode`: CLASSIC, ARAM, PRACTICETOOL, CHERRY...
+    #[serde(skip)]
+    pub game_mode: String,
 }
 
 /// What the recorder is doing, for the UI: recording now, or why the last

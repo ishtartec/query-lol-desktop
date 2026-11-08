@@ -6,6 +6,7 @@
   --rec-death: #e84057;
   --rec-obj: #c89b3c;
   --rec-obj-enemy: #9d7bd8;
+  --rec-mistake: #f2a541;
   --rec-line: #16202b;
   --rec-line-strong: #2a3a4d;
   --rec-text-2: #b8c0cc;
@@ -56,6 +57,9 @@
 .rec-mk-death { background: transparent; border: 2px solid var(--rec-death); }
 .rec-mk-obj, .rec-mk-obj-enemy { border-radius: 2px; transform: rotate(45deg) scale(.86); background: var(--rec-obj); }
 .rec-mk-obj-enemy { background: var(--rec-obj-enemy); }
+/* Mistakes (mistakes.rs): an amber triangle, a shape no other marker uses. */
+.rec-mk-mistake { border-radius: 0; background: var(--rec-mistake); clip-path: polygon(50% 4%, 100% 96%, 0 96%); }
+.rec-track-mk.rec-mk-mistake, .rec-strip-mk.rec-mk-mistake { width: 13px; height: 12px; }
 
 .rec-thumb-media { width: 100%; height: 100%; object-fit: cover; display: block; background: #05080b; pointer-events: none; }
 .rec-thumb-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,8,11,0) 45%, rgba(5,8,11,.85) 100%); pointer-events: none; }

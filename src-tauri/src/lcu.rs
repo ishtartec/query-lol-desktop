@@ -492,7 +492,7 @@ pub async fn get_end_of_game_stats(creds: &LcuCredentials) -> Result<PostGameSta
     }
 
     info!("Post-game stats parsed: {} teams, duration: {}s, gameId: {}", teams.len(), game_duration_secs, game_id);
-    Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline: vec![], death_events: vec![] })
+    Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline: vec![], death_events: vec![], mistakes: vec![] })
 }
 
 /// Hover a champion for the current pick or ban. Never locks it in: Riot's
@@ -1318,7 +1318,7 @@ pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<P
             }
         };
 
-    Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline, death_events })
+    Ok(PostGameStats { teams, game_duration_secs, game_id, gold_timeline, death_events, mistakes: vec![] })
 }
 
 /// participantId -> team / identity / champion for one match, plus which side
@@ -1919,6 +1919,16 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
     // players inconsistently: game name alone or the full Riot ID).
     let mut player_champs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
+    // The local player for the mistake trace. `activePlayer` is the only
+    // place gold in hand is reported; `allPlayers` has death state and scores.
+    let active = raw.get("activePlayer").unwrap_or(&serde_json::Value::Null);
+    let active_name = active.get("riotIdGameName")
+        .or_else(|| active.get("summonerName"))
+        .and_then(|v| v.as_str())
+        .map(name_key)
+        .unwrap_or_default();
+    let mut my_trace: Option<crate::mistakes::TraceSample> = None;
+
     if let Some(players) = players {
         for p in players {
             let name = p.get("riotIdGameName")
@@ -1926,6 +1936,18 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let is_me = !name.is_empty()
+                && (name_key(&name) == name_key(my_name) || name_key(&name) == active_name);
+            if is_me {
+                let scores = p.get("scores").unwrap_or(&serde_json::Value::Null);
+                my_trace = Some(crate::mistakes::TraceSample {
+                    t: game_time,
+                    gold: active.get("currentGold").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    dead: p.get("isDead").and_then(|v| v.as_bool()).unwrap_or(false),
+                    ward_score: scores.get("wardScore").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    cs: scores.get("creepScore").and_then(|v| v.as_i64()).unwrap_or(0),
+                });
+            }
             let team = p.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let position = p.get("position").and_then(|v| v.as_str()).unwrap_or("").to_uppercase();
 
@@ -2110,6 +2132,22 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         }
     }
 
+    // One sample per poll (~1 s) while the game clock runs; a paused or
+    // loading game repeats its time and adds nothing.
+    let mut trace = live_state.live_data.as_mut()
+        .map(|d| std::mem::take(&mut d.trace))
+        .unwrap_or_default();
+    if let Some(sample) = my_trace {
+        if trace.last().is_none_or(|s| sample.t - s.t >= 0.5) {
+            trace.push(sample);
+        }
+    }
+    let game_mode = raw.get("gameData")
+        .and_then(|g| g.get("gameMode"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
     live_state.live_data = Some(LiveGameData {
         game_time,
         ally_gold,
@@ -2119,6 +2157,8 @@ pub async fn poll_live_game_data(live_state: &mut LiveGameState, my_name: &str) 
         moments,
         polled_at: Some(polled_at),
         roster_size: players.map(|p| p.len()).unwrap_or(0),
+        trace,
+        game_mode,
     });
 
     Ok(())

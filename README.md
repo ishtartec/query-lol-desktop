@@ -148,11 +148,12 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 - **Elo comparison** — your CS/min, vision/min, KDA, damage share, KP, and gold/min compared against your rank's average with percentage deltas
 - **Performance by phase** — CS/min, gold/min, and KDA broken down by early (0-14m), mid (14-25m), and late (25m+) game phases
 - **Damage profile** — two cards: what you dealt (physical / magic / true split, the enemy team's real resistances, and how much of your damage they absorbed after your own penetration) and what you took (the incoming split, your finished armor and MR, total mitigated). Flags a genuine mismatch, e.g. 92% magic damage into a team averaging 190 MR with no penetration bought — and stays quiet when you are not the damage source
+- **Mistakes to review** — up to five verifiable slips from your own game, most costly first, under one takeaway sentence: dying with 1,300+ gold unspent, a first death before 3:00, dying again within a minute of respawning, two minutes or more without a last hit in lane, eight minutes or more without vision after 20:00. When the game was recorded, each one opens the video just before it happened (Summoner's Rift games the app watched live)
 - **Player profiles** — click any player name to view their ranked info and match history
 
 ### Game Recording (macOS, Windows beta)
 - **Automatic** — with *Record games* on (off by default), every game is recorded from the loading screen to the end, Practice Tool included; a REC badge shows in the live game view
-- **Review player** — the timeline sits over the gold-lead curve, with markers for your kills, deaths, assists, multikills and objectives. Click a marker, a key moment in the side list, or a death on the post-game gold chart to jump 8 seconds before it. Speeds 0.5×–2×, keys ← → (moments), J / L (±5 s), Space
+- **Review player** — the timeline sits over the gold-lead curve, with markers for your kills, deaths, assists, multikills, objectives and detected mistakes. Click a marker, a key moment in the side list, or a death on the post-game gold chart to jump 8 seconds before it. Speeds 0.5×–2×, keys ← → (moments), J / L (±5 s), Space
 - **Post-game card** — Watch, Keep or Delete right after the game; it opens at your best moment
 - **Library** — in the lobby, with disk usage, a Kept tab, delete with undo, and a Watch button on match history rows that were recorded
 - **Storage** — 1080p60 H.264 at 6 Mbps with AAC audio, about 1.6 GB per 35-minute game, encoded on the GPU. The last 10 games are kept automatically; kept recordings are never deleted. Recording is skipped when less than 4 GB of disk is free. On macOS, if the app quits mid-game the video is still playable up to the last 10 seconds

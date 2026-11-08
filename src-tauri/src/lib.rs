@@ -1,6 +1,7 @@
 mod config;
 mod lcu;
 mod matchups;
+mod mistakes;
 mod models;
 mod opgg;
 mod recorder;
@@ -144,10 +145,12 @@ fn recording_info(s: &AppState, post: Option<&models::PostGameStats>) -> recorde
             info.moments = ld.moments.clone();
             info.win = ld.moments.iter().find(|m| m.kind == "end").map(|m| m.ally);
         }
+        info.mistakes = detect_mistakes(s);
     }
     if let Some(stats) = post {
         info.game_id = stats.game_id;
         info.gold_timeline = stats.gold_timeline.clone();
+        info.mistakes = stats.mistakes.clone();
         for team in &stats.teams {
             if let Some(p) = team.players.iter().find(|p| p.is_local) {
                 info.win = Some(team.is_winner);
@@ -157,6 +160,23 @@ fn recording_info(s: &AppState, post: Option<&models::PostGameStats>) -> recorde
         }
     }
     info
+}
+
+/// The local player's mistakes from the live game's trace and its death
+/// events. Computed here, in Rust, when the game ends: the trace never leaves
+/// the backend, and the result is stored in both `PostGameStats` and the
+/// recording's metadata, so the library can show it long after the game.
+fn detect_mistakes(s: &AppState) -> Vec<models::Mistake> {
+    let Some(lg) = &s.live_game else { return vec![] };
+    let Some(ld) = &lg.live_data else { return vec![] };
+    let key = |x: &str| x.split('#').next().unwrap_or(x).trim().to_lowercase();
+    let me = key(s.summoner_name.as_deref().unwrap_or(""));
+    let position = lg.allies.iter()
+        .find(|p| key(&p.summoner_name) == me)
+        .map(|p| p.position.as_str())
+        .unwrap_or("");
+    let deaths: Vec<f64> = ld.moments.iter().filter(|m| m.kind == "death").map(|m| m.time).collect();
+    mistakes::detect(&ld.trace, &deaths, position, &ld.game_mode)
 }
 
 /// Mirrors the recorder's status and the permission into AppState, emitting
@@ -969,6 +989,7 @@ async fn poll_loop(
                                 Err(e) => log::info!("Gold timeline not ready yet: {}", e),
                             }
                         }
+                        stats.mistakes = detect_mistakes(&s);
                         timeline_backfill_tries = 0;
                         if recorder::is_recording(&rec) {
                             let info = recording_info(&s, Some(&stats));

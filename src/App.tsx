@@ -2,7 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useState, useRef, useMemo } from 
 import { invoke } from "@tauri-apps/api/core";
 import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
 import { Toggle, Segmented, Select, GearIcon, useDismiss, SectionLabel, Badge, CheckIcon, WarnIcon } from "./ui";
-import { useRecordings, RecordingCard, RecordingPlayer, RecordingsLibrary, RecordingNotice, RecIndicator, WatchPill, type Recording, type ChampionMap, type RecordingStatus } from "./recordings";
+import { useRecordings, RecordingCard, RecordingPlayer, RecordingsLibrary, RecordingNotice, RecIndicator, WatchPill, fmtClock as fmtGameClock, type Recording, type ChampionMap, type RecordingStatus, type Mistake } from "./recordings";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
 import { check } from "@tauri-apps/plugin-updater";
@@ -137,6 +137,8 @@ interface PostGameStats {
   game_id: number;
   gold_timeline: GoldDiffPoint[];
   death_events: DeathImpact[];
+  /** From the live trace when the game ends; empty for past matches. */
+  mistakes: Mistake[];
 }
 
 interface MatchHistoryEntry {
@@ -5532,6 +5534,9 @@ function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recor
         })}
       </div>
 
+      <MistakesPanel mistakes={stats.mistakes?.length ? stats.mistakes : recording?.mistakes ?? []}
+        onOpen={recording && onWatch ? (t) => onWatch(recording, Math.max(0, t - 8 + (recording.offset_secs ?? 0))) : undefined} />
+
       {stats.gold_timeline.length > 0 && (
         <GoldDiffTimeline timeline={stats.gold_timeline} deaths={stats.death_events} duration={stats.game_duration_secs}
           onDeath={recording && onWatch ? (t) => onWatch(recording, Math.max(0, t - 8 + (recording.offset_secs ?? 0))) : undefined} />
@@ -5548,6 +5553,47 @@ function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recor
         return <PerformancePanel player={local} duration={stats.game_duration_secs} tier={tier} phases={local.phase_stats} />;
       })()}
     </div>
+  );
+}
+
+/** Mistakes detected in your own game (mistakes.rs), most important first,
+ *  under one takeaway sentence. With a recording, each opens the player a
+ *  few seconds before it happened. Past matches without a recording have no
+ *  trace to detect from, so the panel stays hidden there. */
+function MistakesPanel({ mistakes, onOpen }: { mistakes: Mistake[]; onOpen?: (gameTime: number) => void }) {
+  if (mistakes.length === 0) return null;
+  const sorted = [...mistakes].sort((a, b) => b.severity - a.severity).slice(0, 5);
+  return (
+    <section className="mst-panel" aria-label="Mistakes to review">
+      <SectionLabel meta={onOpen ? "Select one to watch it" : undefined}>Mistakes to review</SectionLabel>
+      <p className="mst-takeaway">{sorted[0].takeaway}</p>
+      <ol className="mst-list">
+        {sorted.map((m, i) => {
+          const body = (
+            <>
+              <span className="mst-time">{fmtGameClock(m.time)}</span>
+              <span className="mst-mark" aria-hidden="true" />
+              <span className="mst-text">
+                <span className="mst-title">{m.title}</span>
+                {m.detail && <span className="mst-detail">{m.detail}</span>}
+              </span>
+            </>
+          );
+          return (
+            <li key={i}>
+              {onOpen ? (
+                <button className="mst-row is-link" onClick={() => onOpen(m.time)} aria-label={`${m.title} at ${fmtGameClock(m.time)}: watch`}>
+                  {body}
+                  <span className="mst-watch">Watch</span>
+                </button>
+              ) : (
+                <div className="mst-row">{body}</div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 

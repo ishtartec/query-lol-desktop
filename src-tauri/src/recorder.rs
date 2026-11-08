@@ -8,7 +8,7 @@
 //! H.264 rather than HEVC because WebView2 on Windows only plays HEVC with an
 //! optional extension, and recordings should play on both platforms.
 
-use crate::models::{GoldDiffPoint, KeyMoment, RecordingStatus};
+use crate::models::{GoldDiffPoint, KeyMoment, Mistake, RecordingStatus};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -448,6 +448,9 @@ pub struct GameInfo {
     pub assists: i64,
     pub moments: Vec<KeyMoment>,
     pub gold_timeline: Vec<GoldDiffPoint>,
+    /// The local player's mistakes (mistakes.rs), shown as markers in the
+    /// review player and as the list in the post-game view.
+    pub mistakes: Vec<Mistake>,
 }
 
 /// The `{id}.json` written next to each `{id}.mp4`.

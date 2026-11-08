@@ -15,6 +15,16 @@ export interface KeyMoment {
   ally: boolean;
 }
 
+/** A mistake detected in your own game (mistakes.rs). */
+export interface Mistake {
+  time: number;
+  kind: string; // unspent_gold | early_death | quick_death | cs_gap | no_vision
+  title: string;
+  detail: string;
+  takeaway: string;
+  severity: number;
+}
+
 export interface Recording {
   id: string;
   path: string;
@@ -33,6 +43,8 @@ export interface Recording {
   assists: number;
   moments: KeyMoment[];
   gold_timeline: { game_time: number; gold_diff: number }[];
+  /** Empty in recordings made before mistake detection existed. */
+  mistakes?: Mistake[];
 }
 
 export type ChampionMap = Record<string, { key: string; name: string }>;
@@ -105,15 +117,22 @@ export function bestMoment(r: Recording): KeyMoment | null {
     ?? null;
 }
 
-type Bucket = "kill" | "death" | "obj";
+type Bucket = "kill" | "death" | "obj" | "mistake";
 const bucketOf = (m: KeyMoment): Bucket | null =>
   m.kind === "kill" || m.kind === "multikill" || m.kind === "assist" ? "kill"
     : m.kind === "death" ? "death"
-    : m.kind === "objective" ? "obj" : null;
+    : m.kind === "objective" ? "obj"
+    : m.kind === "mistake" ? "mistake" : null;
+
+/** Key moments plus detected mistakes, in game order, for the player. */
+const withMistakes = (r: Recording): KeyMoment[] =>
+  [...r.moments, ...(r.mistakes ?? []).map(m => ({ time: m.time, kind: "mistake", title: m.title, detail: m.detail, ally: false }))]
+    .sort((a, b) => a.time - b.time);
 
 /** CSS class giving a moment its marker shape and colour. */
 const markClass = (m: KeyMoment) =>
   m.kind === "death" ? "rec-mk-death"
+    : m.kind === "mistake" ? "rec-mk-mistake"
     : m.kind === "assist" ? "rec-mk-assist"
     : m.kind === "objective" ? (m.ally ? "rec-mk-obj" : "rec-mk-obj-enemy")
     : "rec-mk-kill";
@@ -322,7 +341,7 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
   const [now, setNow] = useState(startAt ?? 0);
   const [playing, setPlaying] = useState(false);
   const [rate, setRate] = useState(1);
-  const [show, setShow] = useState<Record<Bucket, boolean>>({ kill: true, death: true, obj: true });
+  const [show, setShow] = useState<Record<Bucket, boolean>>({ kill: true, death: true, obj: true, mistake: true });
   const [selected, setSelected] = useState<KeyMoment | null>(null);
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -331,7 +350,8 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
   const len = rec.duration_secs || mediaLen || 1;
   const listRef = useRef<HTMLDivElement>(null);
 
-  const moments = rec.moments.filter(m => { const b = bucketOf(m); return b && show[b]; });
+  const allMoments = useMemo(() => withMistakes(rec), [rec]);
+  const moments = allMoments.filter(m => { const b = bucketOf(m); return b && show[b]; });
   const gameNow = Math.max(0, now - offsetOf(rec));
 
   // Smooth playhead: timeupdate fires only ~4 times a second.
@@ -500,7 +520,8 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
               <span className="rec-clock">{fmtClock(gameNow)} <span>/ {fmtClock(gameLength(rec))}</span></span>
             </div>
             <div className="rec-controls-group">
-              {([["kill", "Kills", "rec-mk-kill"], ["death", "Deaths", "rec-mk-death"], ["obj", "Objectives", "rec-mk-obj"]] as const).map(([b, label, cls]) => (
+              {([["kill", "Kills", "rec-mk-kill"], ["death", "Deaths", "rec-mk-death"], ["obj", "Objectives", "rec-mk-obj"],
+                ...(rec.mistakes?.length ? [["mistake", "Mistakes", "rec-mk-mistake"] as const] : [])] as const).map(([b, label, cls]) => (
                 <button key={b} className={`rec-btn rec-filter ${show[b] ? "is-on" : ""}`} aria-pressed={show[b]}
                   onClick={() => setShow({ ...show, [b]: !show[b] })}>
                   <span className={`rec-mk rec-mk-sm ${cls}`} />{label}
@@ -518,12 +539,12 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
         <aside className="rec-side">
           <div className="rec-side-head">
             <h3>Key moments</h3>
-            <span>{moments.length} of {rec.moments.filter(m => bucketOf(m)).length}</span>
+            <span>{moments.length} of {allMoments.filter(m => bucketOf(m)).length}</span>
           </div>
           <div className="rec-side-list" ref={listRef}>
             {moments.length === 0 && (
               <div className="rec-empty">
-                {rec.moments.length === 0
+                {allMoments.length === 0
                   ? "No key moments were captured for this game. The timeline still works for scrubbing."
                   : "Every kind of moment is filtered out."}
               </div>
