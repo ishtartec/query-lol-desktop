@@ -157,6 +157,24 @@ interface MatchHistoryEntry {
   position?: string;
 }
 
+interface RecordStats {
+  games: number;
+  wins: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+}
+
+// The player's own games with a champion against one enemy champion
+// (get_matchup_record). `lane` is the subset where the enemy shared the role.
+interface MatchupRecord {
+  champion_id: number;
+  enemy_champion_id: number;
+  lane: RecordStats;
+  enemy_team: RecordStats;
+  scanned: number;
+}
+
 interface LivePlayerStats {
   kills: number;
   deaths: number;
@@ -3968,7 +3986,114 @@ function LanePlanCard({ yourId, enemyId, counterWr, position, showPlan }: {
           </div>
         </>
       )}
+      {showPlan && <MatchupNotebook yourId={yourId} enemyId={enemyId} />}
     </section>
+  );
+}
+
+// Matchup notes live in the Rust config, keyed "{yourId}:{enemyId}". Each
+// consumer loads the map once on mount; saving returns the updated map.
+function useMatchupNotes() {
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    invoke<Record<string, string>>("get_matchup_notes").then(setNotes).catch(() => {});
+  }, []);
+  const save = async (yourId: number, enemyId: number, text: string) => {
+    const next = await invoke<Record<string, string>>("set_matchup_note", {
+      championId: yourId, enemyChampionId: enemyId, text,
+    });
+    setNotes(next);
+  };
+  return { notes, save };
+}
+
+const matchupNoteKey = (yourId: number, enemyId: number) => `${yourId}:${enemyId}`;
+
+function formatRecord(r: RecordStats): string {
+  const kda = (r.kills + r.assists) / Math.max(1, r.deaths);
+  return `${r.wins}W ${r.games - r.wins}L · ${kda.toFixed(1)} KDA`;
+}
+
+// The player's own note for this matchup plus their record in it, as one
+// compact row under the lane plan. Editing happens inline.
+function MatchupNotebook({ yourId, enemyId }: { yourId: number; enemyId: number }) {
+  const { notes, save } = useMatchupNotes();
+  const note = notes[matchupNoteKey(yourId, enemyId)] ?? "";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [record, setRecord] = useState<MatchupRecord | null>(null);
+  const enemyName = useChampionName(enemyId)?.name ?? "this champion";
+
+  useEffect(() => {
+    setEditing(false);
+    setRecord(null);
+    let cancelled = false;
+    invoke<MatchupRecord>("get_matchup_record", { championId: yourId, enemyChampionId: enemyId })
+      .then(r => { if (!cancelled) setRecord(r); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [yourId, enemyId]);
+
+  const startEdit = () => { setDraft(note); setEditing(true); };
+  const commit = async () => {
+    try { await save(yourId, enemyId, draft); setEditing(false); } catch { /* keep the draft open */ }
+  };
+
+  // Lane games are exact; otherwise fall back to "they were on the enemy
+  // team", labelled as such since they may have played another role.
+  const rec = record && (record.lane.games > 0
+    ? { label: "You in lane", stats: record.lane,
+        title: `Your games against ${enemyName} in the same role, from your last ${record.scanned} on this champion` }
+    : record.enemy_team.games > 0
+      ? { label: "You vs their team", stats: record.enemy_team,
+          title: `Games where ${enemyName} was on the enemy team, in any role, from your last ${record.scanned} on this champion` }
+      : null);
+
+  return (
+    <div className="csel-note">
+      {editing ? (
+        <div className="csel-note-edit">
+          <textarea className="csel-note-input" value={draft} autoFocus rows={2} maxLength={1000}
+            placeholder={`e.g. vs ${enemyName}: what to respect, when to trade`}
+            aria-label={`Note for the matchup against ${enemyName}`}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Escape") setEditing(false);
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commit(); }
+            }} />
+          <div className="csel-note-actions">
+            <button type="button" className="csel-note-btn csel-note-save" onClick={commit}>Save</button>
+            <button type="button" className="csel-note-btn" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className={`csel-note-text ${note ? "" : "csel-note-empty"}`} onClick={startEdit}
+          title={note ? "Edit your note for this matchup" : undefined}>
+          <span className="csel-note-tag">Note</span>
+          <span className="csel-note-body">{note || "Add a note for this matchup"}</span>
+        </button>
+      )}
+      {rec && !editing && (
+        <span className="csel-note-rec" title={rec.title}>
+          <span className="csel-note-tag">{rec.label}</span>
+          {rec.stats.games} {rec.stats.games === 1 ? "game" : "games"} · {formatRecord(rec.stats)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Post-game: the note for the lane just played, read-only, when one exists.
+function PostGameMatchupNote({ yourId, enemyId }: { yourId: number; enemyId: number }) {
+  const { notes } = useMatchupNotes();
+  const note = notes[matchupNoteKey(yourId, enemyId)];
+  const enemyName = useChampionName(enemyId)?.name ?? "your lane opponent";
+  if (!note) return null;
+  return (
+    <div className="pg-note">
+      <span className="q-label">Your note vs {enemyName}</span>
+      <p className="pg-note-body">{note}</p>
+    </div>
   );
 }
 
@@ -5352,6 +5477,12 @@ function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recor
       </div>
       {recording && onWatch && <RecordingCard rec={recording} onWatch={onWatch} compact />}
       {!recording && recordingError && <RecordingNotice error={recordingError} />}
+      {local && local.position && (() => {
+        const opp = stats.teams.find(t => t !== localTeam)?.players.find(p => p.position === local.position);
+        return opp && opp.champion_id > 0
+          ? <PostGameMatchupNote yourId={local.champion_id} enemyId={opp.champion_id} />
+          : null;
+      })()}
 
       <div className="pg-board-head">
         <span className="q-label">Scoreboard <span className="pg-board-hint">· gold marks the best in each team</span></span>

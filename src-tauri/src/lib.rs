@@ -1,5 +1,6 @@
 mod config;
 mod lcu;
+mod matchups;
 mod models;
 mod opgg;
 mod recorder;
@@ -1260,6 +1261,49 @@ async fn view_match_details(
     Ok(())
 }
 
+/// All matchup notes, keyed "{myChampionId}:{enemyChampionId}".
+#[tauri::command]
+async fn get_matchup_notes(app_handle: tauri::AppHandle) -> Result<std::collections::HashMap<String, String>, String> {
+    Ok(config::load(&app_handle).matchup_notes)
+}
+
+/// Saves (or, when blank, deletes) the note for one matchup. Returns the
+/// updated map so the frontend never has to merge it itself.
+#[tauri::command]
+async fn set_matchup_note(
+    champion_id: i64,
+    enemy_champion_id: i64,
+    text: String,
+    app_handle: tauri::AppHandle,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    if champion_id <= 0 || enemy_champion_id <= 0 {
+        return Err("Invalid champion".to_string());
+    }
+    let text: String = text.trim().chars().take(1000).collect();
+    let key = matchups::note_key(champion_id, enemy_champion_id);
+    let mut cfg = config::load(&app_handle);
+    if text.is_empty() {
+        cfg.matchup_notes.remove(&key);
+    } else {
+        cfg.matchup_notes.insert(key, text);
+    }
+    config::save(&app_handle, &cfg);
+    Ok(cfg.matchup_notes)
+}
+
+/// The player's own record with a champion against an enemy champion, from
+/// the match history already loaded into state.
+#[tauri::command]
+async fn get_matchup_record(
+    champion_id: i64,
+    enemy_champion_id: i64,
+    state: tauri::State<'_, SharedState>,
+) -> Result<models::MatchupRecord, String> {
+    let creds = lcu::read_lockfile().ok_or("League client not found")?;
+    let history = state.lock().await.match_history.clone();
+    Ok(matchups::record(&creds, &history, champion_id, enemy_champion_id).await)
+}
+
 #[tauri::command]
 async fn swap_aram_bench(champion_id: i64) -> Result<(), String> {
     let creds = lcu::read_lockfile().ok_or("League client not found")?;
@@ -1413,6 +1457,9 @@ pub fn run() {
             delete_recording,
             open_recordings_folder,
             open_screen_recording_settings,
+            get_matchup_notes,
+            set_matchup_note,
+            get_matchup_record,
         ])
         .setup(|app| {
             // A crash or forced quit mid-game leaves a video with no metadata.

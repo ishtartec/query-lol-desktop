@@ -26,6 +26,11 @@ pub struct UserConfig {
     #[serde(default)]
     pub accounts: HashMap<String, AccountState>,
 
+    /// Player-written matchup notes keyed "{myChampionId}:{enemyChampionId}".
+    /// Shared across accounts: they describe a matchup, not an account.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub matchup_notes: HashMap<String, String>,
+
     /// Migration-only: present on configs written by versions ≤ 0.14.x.
     /// Read on load, then folded into `accounts[active_puuid]` on first save
     /// and dropped from disk going forward.

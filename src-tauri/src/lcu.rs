@@ -1098,6 +1098,52 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
     Ok(entries)
 }
 
+/// One participant of a past game, as far as the matchup record needs it.
+#[derive(Debug, Clone)]
+pub struct LineupPlayer {
+    pub champion_id: i64,
+    pub team_id: i64,
+    pub position: String,
+}
+
+/// Champions, sides and positions of all ten players in a past game.
+///
+/// The match-list endpoint (`/products/lol/{puuid}/matches`) carries only the
+/// queried player in `participants`, so the opponents need the per-game
+/// endpoint. Positions use the same heuristic as the history list.
+pub async fn get_game_lineup(creds: &LcuCredentials, game_id: i64) -> Result<Vec<LineupPlayer>, String> {
+    let client = lcu_client();
+    let resp = client
+        .get(lcu_url(creds, &format!("/lol-match-history/v1/games/{}", game_id)))
+        .header("Authorization", auth_header(&creds.password))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get game lineup: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Game lineup returned: {}", resp.status()));
+    }
+
+    let raw: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Failed to parse game lineup: {}", e))?;
+    let duration = raw.get("gameDuration").and_then(|v| v.as_i64()).unwrap_or(0);
+
+    let players = raw.get("participants").and_then(|p| p.as_array())
+        .map(|ps| ps.iter().map(|p| {
+            let stats = p.get("stats").unwrap_or(&serde_json::Value::Null);
+            LineupPlayer {
+                champion_id: p.get("championId").and_then(|v| v.as_i64()).unwrap_or(0),
+                team_id: p.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0),
+                position: derive_position_from_history(p, stats, duration),
+            }
+        }).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if players.is_empty() {
+        return Err("Game lineup has no participants".to_string());
+    }
+    Ok(players)
+}
+
 /// Fetch details for a past match by game ID.
 pub async fn get_match_details(creds: &LcuCredentials, game_id: i64) -> Result<PostGameStats, String> {
     let client = lcu_client();

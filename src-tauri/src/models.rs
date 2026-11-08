@@ -677,6 +677,28 @@ pub struct MatchHistoryEntry {
     pub spell_ids: [i64; 2], // [D, F] as the player had them bound
 }
 
+/// The local player's own results with one champion against one enemy
+/// champion, from the recent match history. `lane` is a subset of
+/// `enemy_team`: games where the enemy also played the player's position.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MatchupRecord {
+    pub champion_id: i64,
+    pub enemy_champion_id: i64,
+    pub lane: RecordStats,
+    pub enemy_team: RecordStats,
+    /// Games with this champion that were checked (bounded, newest first).
+    pub scanned: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RecordStats {
+    pub games: u32,
+    pub wins: u32,
+    pub kills: i64,
+    pub deaths: i64,
+    pub assists: i64,
+}
+
 // --- ARAM bench ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1359,6 +1359,9 @@
 .pg-outcome-meta { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .pg-outcome-badge { margin-left: auto; }
 .pg-outcome-badge .q-badge { height: 26px; padding: 0 10px; font-size: 12px; }
+.pg-note { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 16px; margin-bottom: 12px; }
+.pg-note .q-label { display: block; margin-bottom: 4px; }
+.pg-note-body { margin: 0; font-size: 13px; color: var(--text-primary); white-space: pre-line; }
 
 .pg-board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 10px; }
 .pg-board-hint { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-muted); }
