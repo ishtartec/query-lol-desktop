@@ -1,3 +1,4 @@
+mod clip;
 mod config;
 mod lcu;
 mod matchups;
@@ -302,6 +303,59 @@ async fn open_recordings_folder(app_handle: tauri::AppHandle) -> Result<(), Stri
     let dir = recorder::recordings_dir(&app_handle);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     app_handle.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Where exported clips go: Downloads, because that is where the share
+/// sheets of Discord and browsers open first. Not the recordings folder:
+/// everything there is listed as a recording and pruned after ten games.
+fn clips_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path().download_dir().map_err(|_| "Couldn't find your Downloads folder".to_string())
+}
+
+/// Copies [start, end) of a recording (video seconds) into a new MP4 in
+/// Downloads, without re-encoding. `title` names the file ("Ahri 12m05s").
+#[tauri::command]
+async fn export_clip(
+    id: String,
+    start: f64,
+    end: f64,
+    title: Option<String>,
+    app_handle: tauri::AppHandle,
+) -> Result<clip::ClipResult, String> {
+    let src = recorder::video_for(&recorder::recordings_dir(&app_handle), &id)?;
+    let dir = clips_dir(&app_handle)?;
+    let name: String = title
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '\'' | '.'))
+        .take(60)
+        .collect();
+    let name = name.trim().trim_start_matches('.');
+    let stem = if name.is_empty() { "QueryLoL clip".to_string() } else { format!("QueryLoL {name}") };
+    tokio::task::spawn_blocking(move || {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let started = std::time::Instant::now();
+        let r = clip::export(&src, &clip::unique_path(&dir, &stem), start, end);
+        match &r {
+            Ok(c) => log::info!("clip exported in {:.2}s: {c:?}", started.elapsed().as_secs_f64()),
+            Err(e) => log::warn!("clip export failed: {e}"),
+        }
+        r.map_err(|e| format!("Couldn't export the clip: {e}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Shows an exported clip selected in Finder / Explorer.
+#[tauri::command]
+async fn reveal_clip(path: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = std::path::PathBuf::from(path);
+    let inside = path.parent().is_some_and(|p| clips_dir(&app_handle).is_ok_and(|d| d == p));
+    if !inside || path.extension().is_none_or(|x| x != "mp4") {
+        return Err("Not an exported clip".into());
+    }
+    app_handle.opener().reveal_item_in_dir(&path).map_err(|e| e.to_string())
 }
 
 /// Spike helper: lists capturable windows, to confirm the game window's name.
@@ -1607,6 +1661,8 @@ pub fn run() {
             set_recording_kept,
             delete_recording,
             open_recordings_folder,
+            export_clip,
+            reveal_clip,
             open_screen_recording_settings,
             get_matchup_notes,
             set_matchup_note,

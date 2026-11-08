@@ -232,6 +232,28 @@
 .rec-seg .rec-btn { height: 28px; min-width: 42px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: #9aa4b2; }
 .rec-seg .rec-btn.is-on { background: var(--accent-gold); color: #0a0e13; }
 
+/* Clip export: a band on the track plus one row under the controls. */
+.rec-clip-band {
+  position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none;
+  background: rgba(200,155,60,.12); box-shadow: inset 2px 0 0 var(--accent-gold), inset -2px 0 0 var(--accent-gold);
+}
+.rec-clip {
+  flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 40px;
+  padding: 6px 8px 6px 12px; border-radius: 10px; background: #0d141c; border: 1px solid var(--rec-line);
+  font-size: 12px; color: var(--text-secondary);
+}
+.rec-clip-label { display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--text-primary); }
+.rec-clip-hint { color: var(--rec-text-3); }
+.rec-clip-range { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.rec-clip-range span { color: var(--text-muted); font-weight: 500; }
+.rec-clip-clear { width: 26px; height: 26px; border-radius: 6px; }
+.rec-clip-spacer { flex: 1; }
+.rec-clip-export { background: var(--accent-gold); color: #0a0e13; }
+.rec-clip-export:hover:not(:disabled) { background: #dcae4e; }
+.rec-clip-done { display: inline-flex; align-items: center; gap: 8px; color: var(--text-primary); }
+.rec-clip-done > span { color: var(--text-muted); }
+.rec-clip-error { color: var(--negative); max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 .rec-side {
   width: 316px; flex: none; display: flex; flex-direction: column; overflow: hidden;
   background: #0f161e; border: 1px solid var(--rec-line); border-radius: 12px;

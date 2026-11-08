@@ -155,6 +155,7 @@ Today's recap, your champion pool per role (core, practice, consider dropping), 
 ### Game Recording (macOS, Windows beta)
 - **Automatic** — with *Record games* on (off by default), every game is recorded from the loading screen to the end, Practice Tool included; a REC badge shows in the live game view
 - **Review player** — the timeline sits over the gold-lead curve, with markers for your kills, deaths, assists, multikills, objectives and detected mistakes. Click a marker, a key moment in the side list, or a death on the post-game gold chart to jump 8 seconds before it. Speeds 0.5×–2×, keys ← → (moments), J / L (±5 s), Space
+- **Clip export** — mark a start and an end (Set start / Set end, I / O, or ±10 s around the selected moment) and export it as an MP4 to your Downloads folder, ready to drop into Discord. The clip is copied without re-encoding, so it is instant and full quality; it starts on the keyframe up to 2 s before your mark
 - **Post-game card** — Watch, Keep or Delete right after the game; it opens at your best moment
 - **Library** — in the lobby, with disk usage, a Kept tab, delete with undo, and a Watch button on match history rows that were recorded
 - **Storage** — 1080p60 H.264 at 6 Mbps with AAC audio, about 1.6 GB per 35-minute game, encoded on the GPU. The last 10 games are kept automatically; kept recordings are never deleted. Recording is skipped when less than 4 GB of disk is free. On macOS, if the app quits mid-game the video is still playable up to the last 10 seconds

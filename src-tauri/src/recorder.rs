@@ -730,7 +730,7 @@ pub fn list(dir: &Path) -> Vec<RecordingEntry> {
 
 /// Resolves a recording id from the UI to its video, refusing anything that
 /// could escape the recordings folder.
-fn video_for(dir: &Path, id: &str) -> Result<PathBuf, String> {
+pub fn video_for(dir: &Path, id: &str) -> Result<PathBuf, String> {
     let valid = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     if !valid {
         return Err(format!("invalid recording id {id:?}"));

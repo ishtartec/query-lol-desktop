@@ -141,7 +141,7 @@ const resultLabel = (r: Recording) =>
   r.win === true ? "Victory" : r.win === false ? "Defeat" : r.interrupted ? "Interrupted" : "Practice";
 const resultClass = (r: Recording) => r.win === true ? "rec-win" : r.win === false ? "rec-loss" : "rec-neutral";
 
-function Icon({ name, size = 16 }: { name: "play" | "pause" | "keep" | "kept" | "trash" | "prev" | "next" | "folder" | "close"; size?: number }) {
+function Icon({ name, size = 16 }: { name: "play" | "pause" | "keep" | "kept" | "trash" | "prev" | "next" | "folder" | "close" | "clip"; size?: number }) {
   const p = { width: size, height: size, viewBox: "0 0 24 24", "aria-hidden": true } as const;
   switch (name) {
     case "play": return <svg {...p}><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg>;
@@ -152,6 +152,7 @@ function Icon({ name, size = 16 }: { name: "play" | "pause" | "keep" | "kept" | 
     case "prev": return <svg {...p}><path d="M6 5v14M19 5l-9 7 9 7z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>;
     case "next": return <svg {...p}><path d="M18 5v14M5 5l9 7-9 7z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>;
     case "folder": return <svg {...p}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>;
+    case "clip": return <svg {...p}><path d="M6 4v16M18 4v16M6 8h12M6 16h12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
     case "close": return <svg {...p}><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
   }
 }
@@ -346,6 +347,7 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [confirmDel, setConfirmDel] = useState(false);
   const [mediaLen, setMediaLen] = useState(0);
+  const [clip, setClip] = useState<ClipRange | null>(null);
   // Interrupted recordings may not know their length until the video loads.
   const len = rec.duration_secs || mediaLen || 1;
   const listRef = useRef<HTMLDivElement>(null);
@@ -384,6 +386,8 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
       else if (k === "l") seek(now + 5);
       else if (k === "arrowright" && nextM) { e.preventDefault(); jump(nextM); }
       else if (k === "arrowleft" && prevM) { e.preventDefault(); jump(prevM); }
+      else if (k === "i") setClip(clipFrom(now, clip, len));
+      else if (k === "o") setClip(clipTo(now, clip));
       else if (k === "escape") onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -490,6 +494,7 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
                 </>}
               </svg>
               <div className="rec-played" style={{ width: pct(now) }} />
+              {clip && <div className="rec-clip-band" style={{ left: pct(clip.a), width: pct(clip.b - clip.a) }} />}
               {moments.map((m, i) => (
                 <button key={i}
                   className={`rec-mk rec-track-mk ${markClass(m)} ${selected === m ? "is-selected" : ""}`}
@@ -534,6 +539,8 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
               </div>
             </div>
           </div>
+
+          <ClipBar rec={rec} now={now} len={len} moment={selected} champ={champ?.name} range={clip} setRange={setClip} />
         </div>
 
         <aside className="rec-side">
@@ -564,9 +571,98 @@ export function RecordingPlayer({ rec, startAt, champions, onClose }: {
             <span><kbd>&larr;</kbd> <kbd>&rarr;</kbd> moments</span>
             <span><kbd>J</kbd> <kbd>L</kbd> ±5s</span>
             <span><kbd>Space</kbd> play</span>
+            <span><kbd>I</kbd> <kbd>O</kbd> clip</span>
           </div>
         </aside>
       </div>
+    </div>
+  );
+}
+
+// ---------- clip export ----------
+
+/** A clip in video seconds. */
+interface ClipRange { a: number; b: number }
+
+interface ClipResult { path: string; start_secs: number; end_secs: number; duration_secs: number; bytes: number }
+
+/** Length a one-click clip gets, and the span around a key moment. */
+const CLIP_DEFAULT = 20;
+const CLIP_AROUND = 10;
+
+const clipFrom = (t: number, cur: ClipRange | null, len: number): ClipRange =>
+  ({ a: t, b: cur && cur.b > t + 1 ? cur.b : Math.min(len, t + CLIP_DEFAULT) });
+const clipTo = (t: number, cur: ClipRange | null): ClipRange =>
+  ({ a: cur && cur.a < t - 1 ? cur.a : Math.max(0, t - CLIP_DEFAULT), b: t });
+
+const revealLabel = navigator.userAgent.includes("Windows") ? "Show in Explorer" : "Show in Finder";
+
+/** Mark a range and copy it into an MP4 in Downloads. The backend copies
+ * the samples without re-encoding, so the clip starts on the keyframe at or
+ * before the mark (recordings have one every 2 s). */
+function ClipBar({ rec, now, len, moment, champ, range, setRange }: {
+  rec: Recording; now: number; len: number; moment: KeyMoment | null; champ?: string;
+  range: ClipRange | null; setRange: (r: ClipRange | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<ClipResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // A new range makes the last result stale.
+  useEffect(() => { setDone(null); setError(null); }, [range?.a, range?.b]);
+
+  const set = (r: ClipRange | null) => setRange(r && { a: Math.max(0, r.a), b: Math.min(len, r.b) });
+  const dur = range ? range.b - range.a : 0;
+  const estimate = rec.bytes && len > 1 ? (rec.bytes / len) * (dur + 1) : 0;
+
+  const exportClip = () => {
+    if (!range || busy) return;
+    setBusy(true); setError(null); setDone(null);
+    const at = fmtClock(range.a - offsetOf(rec)).replace(/:/g, "m") + "s";
+    invoke<ClipResult>("export_clip", { id: rec.id, start: range.a, end: range.b, title: [champ, at].filter(Boolean).join(" ") })
+      .then(setDone)
+      .catch(e => setError(String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const early = done ? range!.a - done.start_secs : 0;
+  return (
+    <div className="rec-clip" aria-label="Export a clip">
+      <span className="rec-clip-label"><Icon name="clip" size={14} />Clip</span>
+      <button className="rec-btn rec-btn-quiet rec-btn-sm" onClick={() => set(clipFrom(now, range, len))}>Set start</button>
+      <button className="rec-btn rec-btn-quiet rec-btn-sm" onClick={() => set(clipTo(now, range))}>Set end</button>
+      {moment && (
+        <button className="rec-btn rec-btn-quiet rec-btn-sm"
+          onClick={() => set({ a: toVideo(rec, moment.time - CLIP_AROUND), b: toVideo(rec, moment.time + CLIP_AROUND) })}>
+          This moment ±{CLIP_AROUND}s
+        </button>
+      )}
+      {range ? (
+        <>
+          <span className="rec-clip-range">
+            {fmtClock(range.a - offsetOf(rec))} – {fmtClock(range.b - offsetOf(rec))}
+            <span> · {fmtClock(dur)}{estimate ? ` · ~${fmtSize(estimate)}` : ""}</span>
+          </span>
+          <button className="rec-btn rec-icon rec-clip-clear" aria-label="Clear clip" onClick={() => setRange(null)}><Icon name="close" size={13} /></button>
+          <span className="rec-clip-spacer" />
+          {error && <span className="rec-clip-error" title={error}>{error}</span>}
+          {done ? (
+            <span className="rec-clip-done">
+              Saved to Downloads · {fmtClock(done.duration_secs)} · {fmtSize(done.bytes)}
+              {early > 0.05 && <span> · starts {early.toFixed(1)} s early, on a keyframe</span>}
+              <button className="rec-btn rec-btn-quiet rec-btn-sm" onClick={() => { invoke("reveal_clip", { path: done.path }).catch(e => setError(String(e))); }}>
+                <Icon name="folder" size={14} />{revealLabel}
+              </button>
+            </span>
+          ) : (
+            <button className="rec-btn rec-btn-sm rec-clip-export" disabled={busy || dur < 1} onClick={exportClip}
+              title="Copied without re-encoding: starts on the keyframe up to 2 s before the start">
+              {busy ? "Exporting…" : "Export MP4"}
+            </button>
+          )}
+        </>
+      ) : (
+        <span className="rec-clip-hint">Mark a start and an end to save a clip you can share.</span>
+      )}
     </div>
   );
 }
