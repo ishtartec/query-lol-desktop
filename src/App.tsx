@@ -647,28 +647,26 @@ function analyzeEnemyComp(enemyIds: number[], pool?: PoolItem[]): ItemRec[] {
   const apCount = enemyIds.filter(id => CHAMP_DAMAGE_TYPE[id] === "ap").length;
   const adCount = enemyIds.length - apCount;
 
-  // Antiheal
-  if (healers.length >= 2) {
+  // Antiheal: healing has to be a real share of the enemy team, the same
+  // floor `suggestThreatResponse` uses (healers >= 25% of the threat). With no
+  // live stats in champ select every enemy weighs the same, so that is two of
+  // five. The share is over the full team, not the picks so far, so one healer
+  // among the first two picks does not trigger it. A single healer used to be
+  // enough: TRAIT_HEALERS is 56 of 173 champions, so a random team holds one
+  // 86% of the time (82.5% measured) and antiheal showed in nearly every draft.
+  // Two or more: 52%; three or more (high priority): 19%.
+  const healShare = healers.length / Math.max(enemyIds.length, 5);
+  if (healShare >= 0.25) {
     const names = healers.map(id => championCache?.[id.toString()]?.name || "?").join(", ");
+    const heavy = healers.length >= 3;
     recs.push({
       category: "Antiheal",
-      reason: `Heavy healing: ${names}`,
-      priority: "high",
+      reason: heavy ? `Heavy healing: ${names}` : `Healing: ${names}`,
+      priority: heavy ? "high" : "medium",
       items: [
         { id: 3165, name: "Morellonomicon" },
         { id: 3033, name: "Mortal Reminder" },
         { id: 3011, name: "Chemtech Putrifier" },
-      ],
-    });
-  } else if (healers.length === 1) {
-    const name = championCache?.[healers[0].toString()]?.name || "?";
-    recs.push({
-      category: "Antiheal",
-      reason: `${name} has healing`,
-      priority: "medium",
-      items: [
-        { id: 3165, name: "Morellonomicon" },
-        { id: 3033, name: "Mortal Reminder" },
       ],
     });
   }
