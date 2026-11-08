@@ -26,9 +26,46 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
     cfg.flash_key = s.flash_key.clone();
     if let Some(puuid) = s.summoner_puuid.as_deref() {
         cfg.set_lp_history(puuid, s.lp_history.clone());
+        cfg.set_goals(puuid, s.game_goal.clone(), s.goal_history.clone());
     }
     // If puuid isn't known yet (rare: pre-connect save), don't touch lp buckets.
     config::save(app, &cfg);
+}
+
+/// Summoner's Rift queues a goal is checked in: ranked solo/flex and the
+/// normal queues, the same set the lobby's improvement panel counts. ARAM,
+/// customs and the Practice Tool would skew CS/min and vision.
+const GOAL_QUEUES: [i64; 5] = [420, 440, 400, 430, 490];
+
+/// Checks the local player's game against the active goal. None when there
+/// is no local player or the game was a remake.
+fn evaluate_goal(goal: &config::GameGoal, stats: &models::PostGameStats, queue_id: i64) -> Option<config::GoalOutcome> {
+    if stats.game_duration_secs < 300 || stats.game_id <= 0 { return None; }
+    let me = stats.teams.iter().flat_map(|t| t.players.iter()).find(|p| p.is_local)?;
+    let mins = stats.game_duration_secs as f64 / 60.0;
+    let round = |v: f64, decimals: i32| { let f = 10f64.powi(decimals); (v * f).round() / f };
+    let value = match goal.metric.as_str() {
+        "deaths" => me.deaths as f64,
+        "cs_min" => round(me.cs as f64 / mins, 1),
+        "vision_min" => round(me.vision_score as f64 / mins, 2),
+        "kp" => round(me.kill_participation * 100.0, 0),
+        "damage_share" => round(me.damage_share * 100.0, 0),
+        _ => return None,
+    };
+    let met = if goal.metric == "deaths" { value <= goal.target } else { value >= goal.target };
+    Some(config::GoalOutcome {
+        game_id: stats.game_id,
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64,
+        metric: goal.metric.clone(),
+        target: goal.target,
+        value,
+        met,
+        champion_id: me.champion_id,
+        queue_id,
+    })
 }
 
 const FLASH_SPELL_ID: i64 = 4;
@@ -328,6 +365,9 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
                             let cfg = config::load(&app_handle);
                             let history = cfg.lp_history_for(puuid);
                             s.lp_history = history;
+                            let (goal, goal_history) = cfg.goals_for(puuid);
+                            s.game_goal = goal;
+                            s.goal_history = goal_history;
                             // Persist the migration so the next account
                             // that logs in doesn't inherit the legacy bucket.
                             if !cfg.legacy_lp_history.is_empty() && !cfg.accounts.contains_key(puuid) {
@@ -991,6 +1031,21 @@ async fn poll_loop(
                         }
                         stats.mistakes = detect_mistakes(&s);
                         timeline_backfill_tries = 0;
+                        // Check the game against the active goal. The gameflow
+                        // session still carries the queue during EndOfGame.
+                        if let Some(goal) = s.game_goal.clone() {
+                            let queue_id = lcu::get_current_queue(&creds).await.map(|(id, _)| id).unwrap_or(0);
+                            let seen = s.goal_history.iter().any(|o| o.game_id == stats.game_id);
+                            if GOAL_QUEUES.contains(&queue_id) && !seen {
+                                if let Some(outcome) = evaluate_goal(&goal, &stats, queue_id) {
+                                    log::info!("Goal {} {}: {} ({})", outcome.metric, outcome.target, outcome.value, if outcome.met { "met" } else { "missed" });
+                                    s.goal_history.push(outcome);
+                                    let excess = s.goal_history.len().saturating_sub(config::GOAL_HISTORY_MAX);
+                                    s.goal_history.drain(..excess);
+                                    save_config(&app_handle, &s);
+                                }
+                            }
+                        }
                         if recorder::is_recording(&rec) {
                             let info = recording_info(&s, Some(&stats));
                             finish_recording(&rec, &app_handle, info);
@@ -1218,6 +1273,32 @@ async fn set_flash_key(
     let mut s = state.lock().await;
     s.flash_key = key;
     orient_build_spells(&mut s);
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    save_config(&app_handle, &s);
+    Ok(())
+}
+
+/// Sets the per-game goal, or clears it when `metric` is None. Past outcomes
+/// are kept either way; the lobby shows the ones for the active metric.
+#[tauri::command]
+async fn set_game_goal(
+    metric: Option<String>,
+    target: Option<f64>,
+    state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let goal = match metric {
+        None => None,
+        Some(metric) => {
+            if !config::GOAL_METRICS.contains(&metric.as_str()) {
+                return Err(format!("Invalid goal metric: {}", metric));
+            }
+            let target = target.filter(|t| t.is_finite() && *t >= 0.0).ok_or("Invalid goal target")?;
+            Some(config::GameGoal { metric, target })
+        }
+    };
+    let mut s = state.lock().await;
+    s.game_goal = goal;
     let _ = app_handle.emit("app-state-changed", s.clone());
     save_config(&app_handle, &s);
     Ok(())
@@ -1518,6 +1599,7 @@ pub fn run() {
             set_tts_enabled,
             set_match_found_notify,
             set_flash_key,
+            set_game_goal,
             speak,
             list_capture_windows,
             set_record_games,

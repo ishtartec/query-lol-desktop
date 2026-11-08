@@ -91,6 +91,7 @@ Today's recap, your top champions vs your own baseline, LP progress, role-aware 
 - **Tilt gate** — after 3+ ranked losses in under 2 hours, a soft banner shows your personal historic winrate after a 3-loss streak (e.g. "drops from 48% to 31%") to encourage a break
 - **Champion-specific improvement** — for your top 3 most-played champions, compares KDA / CS-min / Gold-min / Winrate against your overall baseline with color-coded deltas (≥+5% green, ≤-5% red)
 - **Improvement priorities** — top 3 areas to improve based on your ranked history vs elo benchmarks, with visual bars and actionable advice
+- **Goal per game** — pick one goal (deaths ≤ N, CS/min, vision score/min, kill participation or damage share ≥ N) with a target suggested from your own recent average for your main role. Every ranked or normal game is checked against it after the game ("Goal ≤ 5 deaths · 3 ✓"), and the lobby shows the last 7 days: games, how many met, and the metric's trend against the target
 - **Match history** — recent games with champion icon, result, KDA, duration, and relative timestamps
 - **Mode filters** — filter by All, Ranked, Normal, or ARAM
 - **Practice Tool excluded** — Practice Tool games appear in the history marked "P" but never count towards win rate, streaks, the daily summary or improvement stats

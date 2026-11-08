@@ -263,6 +263,25 @@ interface LpEntry {
   rank: string;
 }
 
+type GoalMetric = "deaths" | "cs_min" | "vision_min" | "kp" | "damage_share";
+
+/** Percent metrics (kp, damage_share) are 0-100 here, as typed. */
+interface GameGoal {
+  metric: GoalMetric;
+  target: number;
+}
+
+interface GoalOutcome {
+  game_id: number;
+  timestamp: number;
+  metric: GoalMetric;
+  target: number;
+  value: number;
+  met: boolean;
+  champion_id: number;
+  queue_id: number;
+}
+
 interface GamePrediction {
   ally_avg_wr: number;
   enemy_avg_wr: number;
@@ -367,6 +386,8 @@ interface AppState {
   flash_key: string;
   flash_key_detected: string | null;
   matchup: MatchupAdjustment | null;
+  game_goal: GameGoal | null;
+  goal_history: GoalOutcome[];
 }
 
 // --- Constants ---
@@ -2629,6 +2650,7 @@ function App() {
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
     auto_apply: true, tts_enabled: false, record_games: false, match_found_notify: true, recording_supported: false, recording_permission: false, recording: { active: false, error: null }, region: "euw", flash_key: "auto", flash_key_detected: null,
+    game_goal: null, goal_history: [],
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2815,6 +2837,7 @@ function App() {
               <div className="lobby-grid">
                 <ChampionImprovement history={playedHistory} />
                 <div className="lobby-side">
+                  <GoalPanel goal={state.game_goal} outcomes={state.goal_history} history={playedHistory} ranked={state.ranked} />
                   {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
                   {state.ranked && <ImprovementPanel history={playedHistory} ranked={state.ranked} />}
                 </div>
@@ -3052,7 +3075,8 @@ function App() {
       {inPostGame && state.post_game && (
         <PostGameView stats={state.post_game} showBack={true} onViewPlayer={viewPlayer}
           recording={recordingFor(state.post_game.game_id)} onWatch={watch}
-          recordingError={state.record_games ? state.recording.error : null} />
+          recordingError={state.record_games ? state.recording.error : null}
+          goalOutcome={state.goal_history.find(o => o.game_id === state.post_game?.game_id)} />
       )}
 
       {watchedRec && (
@@ -3645,6 +3669,232 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
         </div>
       ))}
     </section>
+  );
+}
+
+// --- Per-game goal ---
+
+const GOAL_METRICS: Record<GoalMetric, { label: string; unit: string; atMost: boolean; decimals: number; step: number; percent: boolean }> = {
+  deaths:       { label: "Deaths",             unit: "deaths",       atMost: true,  decimals: 0, step: 1,    percent: false },
+  cs_min:       { label: "CS/min",             unit: "CS/min",       atMost: false, decimals: 1, step: 0.1,  percent: false },
+  vision_min:   { label: "Vision score/min",   unit: "vision/min",   atMost: false, decimals: 2, step: 0.05, percent: false },
+  kp:           { label: "Kill participation", unit: "KP",           atMost: false, decimals: 0, step: 5,    percent: true },
+  damage_share: { label: "Damage share",       unit: "damage share", atMost: false, decimals: 0, step: 1,    percent: true },
+};
+
+/** Queues a goal is checked in (mirrors GOAL_QUEUES in lib.rs). */
+const GOAL_QUEUES = [420, 440, 400, 430, 490];
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+
+function formatGoalValue(metric: GoalMetric, v: number): string {
+  const m = GOAL_METRICS[metric];
+  return `${v.toFixed(m.decimals)}${m.percent ? "%" : ""}`;
+}
+
+/** "≤ 5 deaths", "≥ 7.0 CS/min", "≥ 55% KP". */
+function goalText(goal: { metric: GoalMetric; target: number }): string {
+  const m = GOAL_METRICS[goal.metric];
+  const unit = goal.metric === "deaths" && goal.target === 1 ? "death" : m.unit;
+  return `${m.atMost ? "≤" : "≥"} ${formatGoalValue(goal.metric, goal.target)} ${unit}`;
+}
+
+/** A default target a little better than the player's own recent average,
+ *  capped at the role-adjusted benchmark for their tier (and never below
+ *  what they already do). KP and damage share are not in match history, so
+ *  those come from past goal outcomes when there are enough, else the
+ *  benchmark itself. */
+function suggestGoalTarget(metric: GoalMetric, history: MatchHistoryEntry[], tier: string | null, outcomes: GoalOutcome[]): { target: number; basis: string } {
+  const games = history
+    .filter(m => GOAL_QUEUES.includes(m.queue_id) && m.duration_secs > 300 && m.gold_earned > 0)
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 20);
+  const { role, confidence } = inferMainRole(games);
+  const useRole = role && confidence >= 0.5 ? role : null;
+  const tierKey = tier && ELO_BENCHMARKS[tier.toUpperCase()] ? tier : "GOLD";
+  const bench = useRole ? getRoleAdjustedBenchmark(tierKey, useRole) : ELO_BENCHMARKS[tierKey.toUpperCase()];
+  const benchLabel = `${tierKey.charAt(0).toUpperCase()}${tierKey.slice(1).toLowerCase()}${useRole ? ` ${roleName(useRole)}` : ""}`;
+  const snap = (v: number, step: number) => Math.round(v / step) * step;
+  const raise = (avg: number, ref: number) => Math.max(avg, Math.min(ref, avg * 1.1));
+
+  const mins = games.reduce((s, m) => s + m.duration_secs / 60, 0);
+  const own = games.length >= 3;
+  const avgOf = `your average over ${games.length} games`;
+  switch (metric) {
+    case "deaths": {
+      if (!own) return { target: 5, basis: "a common starting point" };
+      const avg = games.reduce((s, m) => s + m.deaths, 0) / games.length;
+      return { target: Math.max(2, Math.ceil(avg) - 1), basis: `${avgOf} is ${avg.toFixed(1)}` };
+    }
+    case "cs_min": {
+      if (!own) return { target: snap(bench.cs_min, 0.1), basis: `${benchLabel} benchmark` };
+      const avg = games.reduce((s, m) => s + m.cs, 0) / mins;
+      return { target: snap(raise(avg, bench.cs_min), 0.1), basis: `${avgOf} is ${avg.toFixed(1)}` };
+    }
+    case "vision_min": {
+      if (!own) return { target: snap(bench.vision_min, 0.05), basis: `${benchLabel} benchmark` };
+      const avg = games.reduce((s, m) => s + m.vision_score, 0) / mins;
+      return { target: snap(raise(avg, bench.vision_min), 0.05), basis: `${avgOf} is ${avg.toFixed(2)}` };
+    }
+    case "kp":
+    case "damage_share": {
+      const ref = (metric === "kp" ? bench.kp : bench.dmg_share) * 100;
+      const step = GOAL_METRICS[metric].step;
+      const past = outcomes.filter(o => o.metric === metric).slice(-20);
+      if (past.length < 3) return { target: snap(ref, step), basis: `${benchLabel} benchmark` };
+      const avg = past.reduce((s, o) => s + o.value, 0) / past.length;
+      return { target: snap(raise(avg, ref), step), basis: `your average over ${past.length} games is ${avg.toFixed(0)}%` };
+    }
+  }
+}
+
+function GoalEditor({ goal, outcomes, history, tier, onDone }: {
+  goal: GameGoal | null; outcomes: GoalOutcome[]; history: MatchHistoryEntry[]; tier: string | null; onDone?: () => void;
+}) {
+  const [metric, setMetric] = useState<GoalMetric>(goal?.metric ?? "deaths");
+  const suggestion = suggestGoalTarget(metric, history, tier, outcomes);
+  const initial = (m: GoalMetric) => m === goal?.metric ? goal.target : suggestGoalTarget(m, history, tier, outcomes).target;
+  const [target, setTarget] = useState(() => initial(metric).toFixed(GOAL_METRICS[metric].decimals));
+  const [error, setError] = useState<string | null>(null);
+  const spec = GOAL_METRICS[metric];
+  const parsed = Number(target);
+  const valid = target.trim() !== "" && Number.isFinite(parsed) && parsed >= 0 && (!spec.percent || parsed <= 100);
+
+  function pick(m: GoalMetric) {
+    setMetric(m);
+    setTarget(initial(m).toFixed(GOAL_METRICS[m].decimals));
+  }
+
+  async function save() {
+    if (!valid) return;
+    try {
+      await invoke("set_game_goal", { metric, target: parsed });
+      onDone?.();
+    } catch (e) { setError(String(e)); }
+  }
+
+  return (
+    <div className="goal-editor">
+      <div className="goal-editor-row">
+        <Select label="Goal metric" value={metric} onChange={pick}
+          options={(Object.keys(GOAL_METRICS) as GoalMetric[]).map(k => ({ value: k, label: GOAL_METRICS[k].label }))} />
+        <span className="goal-op" aria-hidden="true">{spec.atMost ? "≤" : "≥"}</span>
+        <input className="goal-input" type="number" inputMode="decimal" aria-label={`Target ${spec.label.toLowerCase()}`}
+          min={0} max={spec.percent ? 100 : undefined} step={spec.step} value={target}
+          onChange={e => setTarget(e.target.value)} onKeyDown={e => { if (e.key === "Enter") save(); }} />
+        {spec.percent && <span className="goal-unit">%</span>}
+      </div>
+      <div className="goal-hint">
+        Suggested {formatGoalValue(metric, suggestion.target)}: {suggestion.basis}.
+        {suggestion.target.toFixed(spec.decimals) !== target && (
+          <button type="button" className="goal-link" onClick={() => setTarget(suggestion.target.toFixed(spec.decimals))}>Use it</button>
+        )}
+      </div>
+      <div className="goal-actions">
+        <button type="button" className="q-btn q-btn-primary goal-btn" disabled={!valid} onClick={save}>
+          {goal ? "Save goal" : "Set goal"}
+        </button>
+        {onDone && <button type="button" className="q-btn q-btn-secondary goal-btn" onClick={onDone}>Cancel</button>}
+      </div>
+      {error && <div className="goal-error">{error}</div>}
+    </div>
+  );
+}
+
+/** The metric over the week, oldest left, against the current target. */
+function GoalSparkline({ outcomes, goal }: { outcomes: GoalOutcome[]; goal: GameGoal }) {
+  const w = 280, h = 52, padX = 6, padY = 7;
+  const values = outcomes.map(o => o.value);
+  let lo = Math.min(goal.target, ...values), hi = Math.max(goal.target, ...values);
+  if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+  const x = (i: number) => outcomes.length === 1 ? w / 2 : padX + (i / (outcomes.length - 1)) * (w - padX * 2);
+  const y = (v: number) => padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
+  const path = outcomes.map((o, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(o.value).toFixed(1)}`).join(" ");
+  return (
+    <svg className="goal-spark" viewBox={`0 0 ${w} ${h}`} role="img"
+      aria-label={`${GOAL_METRICS[goal.metric].label} in the last ${outcomes.length} games: ${values.map(v => formatGoalValue(goal.metric, v)).join(", ")}`}>
+      <line className="goal-spark-target" x1={0} x2={w} y1={y(goal.target)} y2={y(goal.target)} />
+      {outcomes.length > 1 && <path className="goal-spark-line" d={path} />}
+      {outcomes.map((o, i) => (
+        <circle key={o.game_id} className={o.met ? "is-met" : "is-missed"} cx={x(i)} cy={y(o.value)} r={3.5}>
+          <title>{`${formatGoalValue(o.metric, o.value)} · ${new Date(o.timestamp).toLocaleDateString(undefined, { weekday: "short", day: "numeric" })}`}</title>
+        </circle>
+      ))}
+    </svg>
+  );
+}
+
+function GoalPanel({ goal, outcomes, history, ranked }: {
+  goal: GameGoal | null; outcomes: GoalOutcome[]; history: MatchHistoryEntry[]; ranked: RankedInfo | null;
+}) {
+  const [editing, setEditing] = useState(false);
+  const tier = ranked && ranked.tier !== "UNRANKED" ? ranked.tier : null;
+
+  if (!goal || editing) {
+    return (
+      <section className="goal-panel q-card" aria-label="Goal">
+        <SectionLabel meta={goal ? "change goal" : "checked after each game"}>Goal</SectionLabel>
+        {!goal && <p className="goal-intro">Pick one thing to work on. Each ranked or normal game is checked against it.</p>}
+        <GoalEditor key={goal ? `${goal.metric}-${goal.target}` : "new"} goal={goal} outcomes={outcomes}
+          history={history} tier={tier} onDone={goal ? () => setEditing(false) : undefined} />
+      </section>
+    );
+  }
+
+  const since = Date.now() - WEEK_MS;
+  const week = outcomes.filter(o => o.metric === goal.metric && o.timestamp >= since);
+  const met = week.filter(o => o.met).length;
+  const avg = week.length ? week.reduce((s, o) => s + o.value, 0) / week.length : null;
+
+  return (
+    <section className="goal-panel q-card" aria-label="Goal">
+      <SectionLabel meta="last 7 days">Goal</SectionLabel>
+      <div className="goal-head">
+        <span className="goal-current">{goalText(goal)}</span>
+        <div className="goal-head-actions">
+          <button type="button" className="q-btn q-btn-secondary goal-btn" onClick={() => setEditing(true)}>Change</button>
+          <button type="button" className="q-btn q-btn-secondary goal-btn" onClick={() => invoke("set_game_goal", { metric: null, target: null })}>Clear</button>
+        </div>
+      </div>
+      {week.length === 0 ? (
+        <p className="goal-intro">No games with this goal in the last 7 days yet.</p>
+      ) : (
+        <>
+          <div className="goal-stats">
+            <div className="daily-stat">
+              <span className="goal-stat-value">{week.length}</span>
+              <span className="daily-stat-label">{week.length === 1 ? "game" : "games"}</span>
+            </div>
+            <div className="daily-stat">
+              <span className="goal-stat-value">{met}<span className="goal-stat-of"> / {week.length}</span></span>
+              <span className="daily-stat-label">met</span>
+            </div>
+            {avg !== null && (
+              <div className="daily-stat">
+                <span className="goal-stat-value">{formatGoalValue(goal.metric, avg)}</span>
+                <span className="daily-stat-label">average</span>
+              </div>
+            )}
+          </div>
+          <GoalSparkline outcomes={week} goal={goal} />
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Post-game line: "Goal ≤ 5 deaths · 3 ✓". */
+function GoalResult({ outcome }: { outcome: GoalOutcome }) {
+  return (
+    <span className={`pg-goal ${outcome.met ? "is-met" : "is-missed"}`}>
+      <span className="pg-goal-label">Goal {goalText(outcome)}</span>
+      <span className="pg-goal-value">
+        {formatGoalValue(outcome.metric, outcome.value)}
+        {outcome.met
+          ? <CheckIcon size={13} />
+          : <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></svg>}
+        <span className="goal-sr">{outcome.met ? "met" : "missed"}</span>
+      </span>
+    </span>
   );
 }
 
@@ -5457,10 +5707,10 @@ function teamBests(players: PostGamePlayer[], metric: PgMetric) {
 }
 type TeamBests = ReturnType<typeof teamBests>;
 
-function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recordingError }: {
+function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recordingError, goalOutcome }: {
   stats: PostGameStats; showBack?: boolean; onViewPlayer?: (puuid: string) => void;
   recording?: Recording; onWatch?: (rec: Recording, at?: number) => void;
-  recordingError?: string | null;
+  recordingError?: string | null; goalOutcome?: GoalOutcome;
 }) {
   const [metric, setMetric] = useState<PgMetric>("damage");
   const sorted = [...stats.teams].sort((a, b) => (b.is_winner ? 1 : 0) - (a.is_winner ? 1 : 0));
@@ -5486,6 +5736,7 @@ function PostGameView({ stats, showBack, onViewPlayer, recording, onWatch, recor
           {[`${mins}:${secs}`, localChamp?.name, local?.position ? POSITION_LABELS[local.position.toLowerCase()] || local.position : null,
             local ? `${local.kills} / ${local.deaths} / ${local.assists}` : null].filter(Boolean).join(" · ")}
         </span>
+        {goalOutcome && <GoalResult outcome={goalOutcome} />}
         {local?.is_mvp && <span className="pg-outcome-badge"><Badge tone="gold">MVP of your team</Badge></span>}
       </div>
       {recording && onWatch && <RecordingCard rec={recording} onWatch={onWatch} compact />}

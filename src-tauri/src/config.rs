@@ -44,7 +44,42 @@ pub struct UserConfig {
 pub struct AccountState {
     #[serde(default)]
     pub lp_history: Vec<LpEntry>,
+    /// The one goal the player is working on (None = no goal).
+    #[serde(default)]
+    pub goal: Option<GameGoal>,
+    /// How each game went against the goal active at the time, oldest first,
+    /// capped at `GOAL_HISTORY_MAX`.
+    #[serde(default)]
+    pub goal_history: Vec<GoalOutcome>,
 }
+
+/// Per-game goal. `metric` is one of `GOAL_METRICS`; deaths is "at most",
+/// every other metric "at least". Percent metrics (kp, damage_share) are
+/// stored as 0-100, not fractions, so the target reads as typed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameGoal {
+    pub metric: String,
+    pub target: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalOutcome {
+    pub game_id: i64,
+    /// Epoch ms when the game was evaluated (the end of the game).
+    pub timestamp: i64,
+    pub metric: String,
+    pub target: f64,
+    /// Rounded to the precision the UI shows, so "7.0 vs 7.0" never reads as a miss.
+    pub value: f64,
+    pub met: bool,
+    #[serde(default)]
+    pub champion_id: i64,
+    #[serde(default)]
+    pub queue_id: i64,
+}
+
+pub const GOAL_METRICS: [&str; 5] = ["deaths", "cs_min", "vision_min", "kp", "damage_share"];
+pub const GOAL_HISTORY_MAX: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LpEntry {
@@ -71,6 +106,19 @@ impl UserConfig {
             return self.legacy_lp_history.clone();
         }
         vec![]
+    }
+
+    /// Active goal and goal outcomes for a puuid.
+    pub fn goals_for(&self, puuid: &str) -> (Option<GameGoal>, Vec<GoalOutcome>) {
+        self.accounts.get(puuid)
+            .map(|acc| (acc.goal.clone(), acc.goal_history.clone()))
+            .unwrap_or_default()
+    }
+
+    pub fn set_goals(&mut self, puuid: &str, goal: Option<GameGoal>, history: Vec<GoalOutcome>) {
+        let acc = self.accounts.entry(puuid.to_string()).or_default();
+        acc.goal = goal;
+        acc.goal_history = history;
     }
 
     /// Stores LP history for a puuid and clears the migration field.

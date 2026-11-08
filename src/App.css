@@ -1164,6 +1164,51 @@
 .improve-empty-body { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
 .improve-empty-body strong { color: var(--text-primary); font-weight: 600; }
 
+/* === Per-game goal (lobby) === */
+/* Above the panels below it so the metric Select's list can overlap them. */
+.goal-panel { position: relative; z-index: 3; display: flex; flex-direction: column; gap: 12px; }
+.goal-intro { margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.goal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.goal-current { font-size: 18px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.goal-head-actions, .goal-actions { display: flex; gap: 8px; }
+.goal-btn { height: 30px; padding: 0 12px; font-size: 12px; }
+.goal-btn:disabled { opacity: .5; cursor: default; }
+.goal-stats { display: flex; gap: 28px; }
+.goal-stat-value { font-size: 20px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.goal-stat-of { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.goal-spark { display: block; width: 100%; height: auto; }
+.goal-spark-target { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 4; }
+.goal-spark-line { fill: none; stroke: var(--border-strong); stroke-width: 1.5; stroke-linejoin: round; }
+.goal-spark circle.is-met { fill: var(--positive); }
+.goal-spark circle.is-missed { fill: var(--negative); }
+.goal-editor { display: flex; flex-direction: column; gap: 10px; }
+.goal-editor-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.goal-op, .goal-unit { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.goal-input {
+  width: 72px; height: 32px; padding: 0 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong); background: var(--surface-sunken); color: var(--text-primary);
+  font: 600 13px Inter, -apple-system, sans-serif; font-variant-numeric: tabular-nums;
+}
+.goal-input:focus-visible { outline: 2px solid var(--accent-gold); outline-offset: 2px; }
+.goal-hint { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+.goal-link {
+  margin-left: 6px; padding: 0; border: none; background: none; cursor: pointer;
+  font: 600 12px Inter, -apple-system, sans-serif; color: var(--accent-gold-text);
+}
+.goal-link:hover { text-decoration: underline; }
+.goal-error { font-size: 12px; color: var(--negative); }
+.goal-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Post-game: "Goal ≤ 5 deaths · 3 ✓" in the title row. */
+.pg-goal {
+  display: inline-flex; align-items: center; gap: 8px; height: 26px; padding: 0 10px;
+  border-radius: 999px; background: var(--surface-2); font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.pg-goal-label { color: var(--text-secondary); }
+.pg-goal-value { position: relative; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; }
+.pg-goal.is-met .pg-goal-value { color: var(--positive); }
+.pg-goal.is-missed .pg-goal-value { color: var(--negative); }
+
 /* === Performance panel (vs role-elo benchmark + phase trends) === */
 .perf-panel {
   margin-top: 16px; padding: 14px 16px;

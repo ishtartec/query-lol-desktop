@@ -117,6 +117,10 @@ pub struct AppState {
     /// How the build was adjusted for the lane opponent (None until one is
     /// known, and never for ADC/support or ARAM).
     pub matchup: Option<MatchupAdjustment>,
+    /// The active per-game goal and how recent games went against it, for
+    /// the current account (hydrated with `lp_history`).
+    pub game_goal: Option<crate::config::GameGoal>,
+    pub goal_history: Vec<crate::config::GoalOutcome>,
 }
 
 // --- Post-game stats ---
@@ -268,6 +272,8 @@ impl Default for AppState {
             flash_key: "auto".to_string(),
             flash_key_detected: None,
             matchup: None,
+            game_goal: None,
+            goal_history: vec![],
         }
     }
 }
