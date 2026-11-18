@@ -52,7 +52,28 @@ fn riot_install_path() -> Option<PathBuf> {
         let value = content.lines()
             .find_map(|l| l.trim().strip_prefix("product_install_full_path:"))?
             .trim().trim_matches('"').trim();
-        (!value.is_empty()).then(|| PathBuf::from(value))
+        // The metadata folder is writable by other local users, so only trust
+        // an absolute local path: a UNC/network path would make Windows
+        // authenticate to that host just to read it. Checked on the parsed
+        // path, not the string, so mixed slashes or \\?\UNC\ can't slip by.
+        use std::path::Component;
+        let path = PathBuf::from(value);
+        if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
+            return None;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use std::path::Prefix;
+            match path.components().next() {
+                Some(Component::Prefix(p)) if matches!(p.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_)) => {}
+                _ => return None,
+            }
+        }
+        #[cfg(target_os = "macos")]
+        if value.starts_with("//") {
+            return None;
+        }
+        Some(path)
     }
 }
 
