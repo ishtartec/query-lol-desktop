@@ -32,9 +32,41 @@ fn stat_i64(stats: &serde_json::Value, keys: &[&str]) -> i64 {
     0
 }
 
+/// Where the Riot Client says League is installed, from its product settings
+/// (`product_install_full_path`). The game is not always where the default
+/// paths below assume: Riot Client 143 refuses to patch an install sitting
+/// directly in /Applications and moves it into a subfolder.
+fn riot_install_path() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    let metadata = PathBuf::from("/Users/Shared/Riot Games/Metadata");
+    #[cfg(target_os = "windows")]
+    let metadata = PathBuf::from(std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".into()))
+        .join("Riot Games\\Metadata");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    return None;
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let settings = metadata.join("league_of_legends.live").join("league_of_legends.live.product_settings.yaml");
+        let content = std::fs::read_to_string(settings).ok()?;
+        let value = content.lines()
+            .find_map(|l| l.trim().strip_prefix("product_install_full_path:"))?
+            .trim().trim_matches('"').trim();
+        (!value.is_empty()).then(|| PathBuf::from(value))
+    }
+}
+
 /// Try to find and parse the League client lockfile.
 pub fn read_lockfile() -> Option<LcuCredentials> {
     let mut possible_paths: Vec<Option<PathBuf>> = vec![];
+
+    // The install the Riot Client itself points at comes first.
+    if let Some(install) = riot_install_path() {
+        #[cfg(target_os = "macos")]
+        possible_paths.push(Some(install.join("Contents/LoL/lockfile")));
+        #[cfg(target_os = "windows")]
+        possible_paths.push(Some(install.join("lockfile")));
+    }
 
     // macOS paths
     #[cfg(target_os = "macos")]
